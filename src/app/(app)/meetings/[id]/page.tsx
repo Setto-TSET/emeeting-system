@@ -14,6 +14,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { meetingStatusLabels, meetingStatusColors, displayFormats, MeetingStatus, Meeting, canViewFile, fileVisibilityLabels, fileVisibilityColors, fileVisibilityIcons, users } from "@/data";
+import { Switch } from "@/components/ui/switch";
 import { ComingSoon, ComingSoonBadge } from "@/components/ui/ComingSoon";
 import { can, canEditMeeting, denialReason } from "@/lib/authz";
 import { useCurrentUser } from "@/context/UserContext";
@@ -732,6 +733,26 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   <p className="text-xs text-muted-foreground mb-1">ชื่อผู้ส่ง Email</p>
                   <p className="font-medium">{emailSender}</p>
                   <p className="text-xs text-muted-foreground">(อีเมลระบบ: notify@e-office.cloud)</p>
+                </div>
+                <div className="md:col-span-2 rounded-lg border p-3 bg-muted/30">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium mb-0.5">เปิดให้บุคคลภายนอกเข้าห้องประชุมเองได้</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        เปิดเมื่อมีวิทยากรหรือผู้ทรงคุณวุฒิภายนอกที่ไม่มีบัญชีในระบบ —
+                        ผู้ที่ได้รับลิงก์จะกรอกชื่อแล้วเข้าห้องได้เลย
+                        {!meeting.allowGuestJoin && " ขณะนี้ปิดอยู่ เข้าได้เฉพาะองค์ประชุมเท่านั้น"}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={!!meeting.allowGuestJoin}
+                      disabled={!canEdit}
+                      onCheckedChange={(v) => {
+                        updateMeeting(meeting.id, { allowGuestJoin: v });
+                        toast.success(v ? "เปิดให้บุคคลภายนอกเข้าร่วมได้แล้ว" : "ปิดรับบุคคลภายนอกแล้ว");
+                      }}
+                    />
+                  </div>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">การเก็บบันทึกลง Drive</p>

@@ -13,6 +13,7 @@ import { useCurrentUser } from "@/context/UserContext";
 import { SimulatedDocumentViewer, DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { ExternalConferenceStage } from "@/components/meeting/ExternalConferenceStage";
 import { resolveConference } from "@/lib/conference";
+import { can } from "@/lib/authz";
 import { MeetingParticipant, MeetingFile, canViewFile } from "@/data";
 
 /** สถานะไมค์จำลองที่คงที่ต่อคน — hash จาก id แทนการสุ่มใหม่ทุก render */
@@ -177,10 +178,13 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     );
   }
 
-  const isManager =
-    currentUser.systemRole === "admin" ||
-    currentUser.systemRole === "secretary" ||
-    meeting.organizerId === currentUser.id;
+  // สิทธิ์คุมห้อง — เดิมให้แค่ admin/secretary ทำให้ผู้จัดที่เป็นบทบาทอื่นคุมห้องตัวเองไม่ได้
+  const isManager = can(currentUser, "meeting.host", meeting);
+
+  // เข้าห้องได้ในฐานะองค์ประชุมไหม
+  const isInvited = can(currentUser, "meeting.join", meeting);
+  // ผู้จัดเปิดให้คนนอกเข้าเองได้หรือไม่ (ค่าเริ่มต้นคือปิด)
+  const guestJoinAllowed = meeting.allowGuestJoin === true;
 
   // เอกสารที่ผู้ใช้คนนี้มีสิทธิ์เห็น — ผู้เข้าร่วมดูได้อย่างเดียว ไม่มีดาวน์โหลด
   const visibleFiles = meeting.files.filter((f) => canViewFile(f, currentUser, meeting));
@@ -191,6 +195,34 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   // การประชุมนี้วิ่งบนแพลตฟอร์มไหน — mock = ห้องจำลองในเว็บ, ที่เหลือ = เปิดแอปภายนอก
   const conference = resolveConference(meeting);
   const isExternalConference = conference.spec.launchMode === "external";
+
+  // กันคนที่ไม่ได้ถูกเชิญ — เดิมใครเปิด URL ก็เห็นฟอร์มแล้วเติมชื่อตัวเองเข้า roster ได้เลย
+  if (!hasJoined && !isInvited && !guestJoinAllowed) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center pb-2">
+            <div className="mx-auto h-12 w-12 rounded-2xl bg-muted border flex items-center justify-center mb-3">
+              <span className="material-symbols-outlined text-[28px] text-muted-foreground">lock</span>
+            </div>
+            <CardTitle className="text-lg font-semibold">คุณไม่ได้อยู่ในองค์ประชุมนี้</CardTitle>
+            <CardDescription>{meeting.name}</CardDescription>
+          </CardHeader>
+          <CardContent className="text-center space-y-4 pt-2">
+            <p className="text-xs text-muted-foreground">
+              ห้องประชุมนี้เปิดเฉพาะผู้ที่ได้รับเชิญ
+              หากคุณควรเข้าร่วมได้ กรุณาติดต่อ{" "}
+              <span className="font-medium text-foreground">{meeting.organizer}</span> เพื่อขอเพิ่มชื่อ
+            </p>
+            <Button variant="outline" onClick={() => router.push("/portal")} className="w-full">
+              <span className="material-symbols-outlined text-[18px] mr-1.5">arrow_back</span>
+              กลับไปหน้าการประชุมของฉัน
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // Guest join prompt UI
   if (!hasJoined) {
