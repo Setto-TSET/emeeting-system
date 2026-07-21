@@ -339,7 +339,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               <span>•</span>
               <span className="flex items-center text-red-500 font-semibold gap-1">
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-600 animate-ping"></span>
-                LIVE {meeting.participants.filter(p => p.present).length + 1} คนในสาย
+                LIVE {meeting.participants.filter(p => p.present).length} คนในสาย
               </span>
             </div>
           </div>
