@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState, useRef, use } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,8 +13,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { meetingStatusLabels, meetingStatusColors, displayFormats, MeetingStatus, Meeting, canViewFile, fileVisibilityLabels, fileVisibilityColors, fileVisibilityIcons, users } from "@/data";
+import { meetingStatusLabels, meetingStatusColors, displayFormats, MeetingStatus, Meeting, canViewFile, fileVisibilityLabels, fileVisibilityColors, fileVisibilityIcons, users, fileTypeLabels, MeetingFile, FileVisibility } from "@/data";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { today } from "@/lib/clock";
 import { ComingSoon, ComingSoonBadge } from "@/components/ui/ComingSoon";
 import { can, canEditMeeting, denialReason } from "@/lib/authz";
 import { useCurrentUser } from "@/context/UserContext";
@@ -92,6 +94,12 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const [commentText, setCommentText] = useState("");
   const [forceParticipants, setForceParticipants] = useState(shouldForce);
   const [fileDesc, setFileDesc] = useState("");
+  // ข้อมูลไฟล์สำหรับเดโม — ยังไม่เก็บตัวไฟล์จริง เก็บแค่ระเบียนเอกสาร
+  const [fileName, setFileName] = useState("");
+  const [fileSizeKb, setFileSizeKb] = useState<number | null>(null);
+  const [fileType, setFileType] = useState<MeetingFile["type"]>("attachment");
+  const [fileVisibility, setFileVisibility] = useState<FileVisibility>("participants");
+  const filePickerRef = useRef<HTMLInputElement>(null);
 
   const changeStatus = (s: MeetingStatus) => {
     updateMeeting(meeting.id, { status: s });
@@ -143,6 +151,35 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     toast.success(`เพิ่มสิทธิ์${permType === "manager" ? "ผู้จัดการประชุม" : "ผู้อ่าน"}สำเร็จ`);
     setPermName(""); setPermType("reader");
     setAddPermOpen(false);
+  };
+
+  const closeFileDialog = () => {
+    setAddFileOpen(false);
+    setFileName(""); setFileSizeKb(null); setFileDesc("");
+    setFileType("attachment"); setFileVisibility("participants");
+  };
+
+  const submitFile = () => {
+    const name = fileName.trim();
+    if (!name) { toast.error("กรุณาระบุชื่อเอกสาร"); return; }
+
+    // เดโม: เก็บแค่ระเบียนเอกสาร ยังไม่เก็บตัวไฟล์
+    // ถ้าเลือกไฟล์จริงมาจะได้ขนาดจริง ถ้าพิมพ์ชื่อเองจะสุ่มขนาดให้ดูสมจริง
+    const sizeKb = fileSizeKb ?? Math.floor(120 + Math.random() * 1800);
+    addMeetingFile(meeting.id, {
+      id: `F-${Date.now()}`,
+      name: /\.(pdf|docx|xlsx)$/i.test(name) ? name : `${name}.pdf`,
+      description: fileDesc.trim() || "เอกสารประกอบการประชุม",
+      size: sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`,
+      uploadedAt: today,
+      uploadedBy: currentUser.name,
+      type: fileType,
+      visibility: fileVisibility,
+    });
+    toast.success("เพิ่มเอกสารเรียบร้อย", {
+      description: `${name} · ${fileVisibilityLabels[fileVisibility]}`,
+    });
+    closeFileDialog();
   };
 
   const removePermission = (index: number) => {
@@ -868,33 +905,87 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           <div className="space-y-3 py-2">
             <div className="border-2 border-dashed border-border rounded-lg p-8 text-center bg-muted/20">
               <span className="material-symbols-outlined text-primary text-[36px] mb-2">cloud_upload</span>
-              <p className="text-sm font-medium">คลิก &quot;เลือกไฟล์&quot; หรือลากไฟล์มาที่นี่</p>
-              <p className="text-xs text-muted-foreground mt-1">รองรับ PDF, DOCX, XLSX (สูงสุด 20 MB)</p>
-              <Button size="sm" variant="outline" className="mt-3">เลือกไฟล์</Button>
+              {fileName ? (
+                <>
+                  <p className="text-sm font-medium truncate">{fileName}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {fileSizeKb !== null ? `${fileSizeKb.toLocaleString()} KB` : "ระบุขนาดอัตโนมัติ"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">เลือกไฟล์จากเครื่อง หรือพิมพ์ชื่อเอกสารด้านล่าง</p>
+                  <p className="text-xs text-muted-foreground mt-1">รองรับ PDF, DOCX, XLSX</p>
+                </>
+              )}
+              {/* อ่านเฉพาะชื่อและขนาดจากไฟล์จริง — ยังไม่เก็บตัวไฟล์ (ระบบเดโม) */}
+              <input
+                ref={filePickerRef}
+                type="file"
+                accept=".pdf,.docx,.xlsx"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  setFileName(f.name);
+                  setFileSizeKb(Math.max(1, Math.round(f.size / 1024)));
+                }}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                type="button"
+                className="mt-3"
+                onClick={() => filePickerRef.current?.click()}
+              >
+                {fileName ? "เปลี่ยนไฟล์" : "เลือกไฟล์"}
+              </Button>
             </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                ชื่อเอกสาร<span className="text-destructive">*</span>
+              </label>
+              <Input
+                placeholder="เช่น ระเบียบวาระการประชุม 8-2569.pdf"
+                value={fileName}
+                onChange={e => setFileName(e.target.value)}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">ประเภทเอกสาร</label>
+                <Select value={fileType} onValueChange={v => setFileType(v as MeetingFile["type"])}>
+                  <SelectTrigger className="w-full h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(fileTypeLabels) as MeetingFile["type"][]).map(t => (
+                      <SelectItem key={t} value={t}>{fileTypeLabels[t]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">ใครเห็นเอกสารนี้ได้</label>
+                <Select value={fileVisibility} onValueChange={v => setFileVisibility(v as FileVisibility)}>
+                  <SelectTrigger className="w-full h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(fileVisibilityLabels) as FileVisibility[]).map(v => (
+                      <SelectItem key={v} value={v}>{fileVisibilityLabels[v]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">คำอธิบายไฟล์</label>
               <Input placeholder="อธิบายไฟล์นี้..." value={fileDesc} onChange={e => setFileDesc(e.target.value)} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddFileOpen(false)}>ยกเลิก</Button>
-            <Button onClick={() => {
-              const newFile = {
-                id: `F-${Date.now()}`,
-                name: "เอกสารเพิ่มเติม_" + Date.now().toString().slice(-4) + ".pdf",
-                description: fileDesc.trim() || "เอกสารอัปโหลดเพิ่มเติม",
-                size: "450 KB",
-                uploadedAt: new Date().toISOString().split('T')[0],
-                uploadedBy: currentUser.name,
-                type: "attachment" as const,
-                visibility: "participants" as const,
-              };
-              addMeetingFile(meeting.id, newFile);
-              setFileDesc("");
-              setAddFileOpen(false);
-              toast.success("อัปโหลดสำเร็จ");
-            }}>บันทึก</Button>
+            <Button variant="outline" onClick={closeFileDialog}>ยกเลิก</Button>
+            <Button onClick={submitFile}>บันทึก</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
