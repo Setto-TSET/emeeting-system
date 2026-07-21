@@ -1,0 +1,189 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
+import { committees, meetingRooms, Meeting } from "@/data";
+import { useMeetings } from "@/context/MeetingContext";
+import { useCurrentUser } from "@/context/UserContext";
+import { conferenceProviders, detectProvider } from "@/lib/conference";
+
+const meetingTypes = ["การประชุมคณะกรรมการ", "การประชุมคณะทำงาน", "การประชุมภายในทีม", "การประชุมวิสามัญ", "การประชุมสามัญประจำปี"];
+
+export default function NewMeetingPage() {
+  const router = useRouter();
+  const { addMeeting } = useMeetings();
+  const { currentUser } = useCurrentUser();
+  const [form, setForm] = useState({
+    name: "",
+    shortName: "",
+    type: "การประชุมคณะกรรมการ",
+    committeeId: committees[0].id,
+    organizer: "",
+    date: "2026-07-25",
+    startTime: "09:00",
+    endTime: "12:00",
+    roomId: meetingRooms[0].id,
+    conferenceLink: "",
+    description: "",
+  });
+
+  const update = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(p => ({ ...p, [k]: v }));
+
+  const provider = detectProvider(form.conferenceLink);
+  const detectedSpec = conferenceProviders[provider];
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim()) { toast.error("กรุณากรอกชื่อการประชุม"); return; }
+
+    const committee = committees.find(c => c.id === form.committeeId)!;
+    // ฟอร์มเก็บ roomId แต่ทุกหน้าที่แสดงผลคาดหวัง "ชื่อห้อง" — แปลงตรงนี้จุดเดียว
+    const room = meetingRooms.find(r => r.id === form.roomId)!;
+
+    const newMeeting: Meeting = {
+      id: `MT-${Date.now()}`,
+      name: form.name.trim(),
+      shortName: form.shortName.trim() || form.name.trim().slice(0, 20),
+      type: form.type,
+      committeeId: committee.id,
+      committee: committee.name,
+      organizerId: currentUser.id,
+      organizer: form.organizer.trim() || currentUser.name,
+      organizerEmail: currentUser.email,
+      emailSenderName: currentUser.department,
+      date: form.date,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      location: room.name,
+      conferenceLink: form.conferenceLink.trim() || undefined,
+      conferenceProvider: provider,
+      status: "prepare",
+      displayFormat: 2,
+      participants: [],
+      files: [],
+      agenda: [],
+      secretGroups: [],
+      // ผู้สร้างเป็นผู้จัดการประชุมโดยอัตโนมัติ
+      permissions: [{ userId: currentUser.id, name: currentUser.name, type: "manager" }],
+      savedToDrive: false,
+      createdAt: new Date().toISOString().split("T")[0],
+    };
+
+    addMeeting(newMeeting);
+    toast.success("สร้างการประชุมสำเร็จ", { description: "ระบบจะนำท่านไปยังหน้ารายละเอียดเพื่อจัดการองค์ประชุม" });
+    router.push(`/meetings/${newMeeting.id}`);
+  };
+
+  return (
+    <div className="p-4 md:p-6 pb-16 max-w-[900px] mx-auto">
+      <header className="mb-5">
+        <h1 className="text-lg md:text-xl font-semibold mb-0.5">สร้างการประชุม</h1>
+        <p className="text-xs text-muted-foreground">กรอกข้อมูลการประชุมและกำหนดผู้จัดการประชุม</p>
+      </header>
+
+      <form onSubmit={submit}>
+        <Card className="card-shadow">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">ข้อมูลการประชุม</CardTitle>
+            <CardDescription className="text-xs">ช่องที่มีเครื่องหมาย <span className="text-destructive">*</span> จำเป็นต้องกรอก</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="md:col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">ชื่อการประชุม<span className="text-destructive">*</span></label>
+                <Input value={form.name} onChange={e => update("name", e.target.value)} placeholder="เช่น การประชุมคณะกรรมการบริหาร ครั้งที่ 8/2569" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">ชื่อย่อ</label>
+                <Input value={form.shortName} onChange={e => update("shortName", e.target.value)} placeholder="เช่น กก.บริหาร 8/69" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">ประเภทการประชุม<span className="text-destructive">*</span></label>
+                <Select value={form.type} onValueChange={v => update("type", v)}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>{meetingTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">คณะทำงาน<span className="text-destructive">*</span></label>
+                <Select value={form.committeeId} onValueChange={v => update("committeeId", v)}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>{committees.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">ผู้จัดการประชุม<span className="text-destructive">*</span></label>
+                <Input value={form.organizer} onChange={e => update("organizer", e.target.value)} placeholder="ชื่อผู้จัด" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">วันที่ประชุม<span className="text-destructive">*</span></label>
+                <Input type="date" value={form.date} onChange={e => update("date", e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">เวลาเริ่ม<span className="text-destructive">*</span></label>
+                <Input type="time" value={form.startTime} onChange={e => update("startTime", e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">เวลาสิ้นสุด<span className="text-destructive">*</span></label>
+                <Input type="time" value={form.endTime} onChange={e => update("endTime", e.target.value)} />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">สถานที่ประชุม<span className="text-destructive">*</span></label>
+                <Select value={form.roomId} onValueChange={v => update("roomId", v)}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>{meetingRooms.map(r => <SelectItem key={r.id} value={r.id}>{r.name} — {r.location} {r.floor}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">ลิงก์ประชุมออนไลน์ (ถ้ามี)</label>
+                <Input
+                  type="url"
+                  value={form.conferenceLink}
+                  onChange={e => update("conferenceLink", e.target.value)}
+                  placeholder="วางลิงก์จาก Teams / Zoom / Google Meet ได้เลย"
+                />
+                {/* ระบบตรวจผู้ให้บริการจากลิงก์อัตโนมัติ — ผู้จัดไม่ต้องเลือกเอง */}
+                <div className="mt-2 flex items-center gap-2 text-xs">
+                  <span className="material-symbols-outlined text-[16px] text-muted-foreground">
+                    {detectedSpec.icon}
+                  </span>
+                  <span className="text-muted-foreground">ระบบตรวจพบ:</span>
+                  <span className="font-medium">{detectedSpec.label}</span>
+                  {detectedSpec.launchMode === "external" && (
+                    <span className="text-muted-foreground">— ผู้เข้าร่วมจะกดเปิดแอปจากหน้าประชุม</span>
+                  )}
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">รายละเอียดเพิ่มเติม</label>
+                <Textarea value={form.description} onChange={e => update("description", e.target.value)} placeholder="วัตถุประสงค์การประชุม, หมายเหตุ..." />
+              </div>
+            </div>
+
+            <div className="rounded-lg border-2 border-dashed border-border p-4 text-center">
+              <p className="text-xs text-muted-foreground mb-2">หลังจากบันทึก คุณสามารถ:</p>
+              <div className="flex flex-wrap justify-center gap-2 text-xs">
+                <span className="px-2 py-0.5 rounded bg-muted">จัดการองค์ประชุม</span>
+                <span className="px-2 py-0.5 rounded bg-muted">เพิ่มระเบียบวาระ</span>
+                <span className="px-2 py-0.5 rounded bg-muted">แนบไฟล์ระเบียบ/คำสั่ง</span>
+                <span className="px-2 py-0.5 rounded bg-muted">กำหนดกลุ่มชั้นความลับ</span>
+                <span className="px-2 py-0.5 rounded bg-muted">เพิ่มสิทธิ์ผู้ใช้งาน</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={() => router.push("/meetings")}>ยกเลิก</Button>
+          <Button type="submit">บันทึกการประชุม</Button>
+        </div>
+      </form>
+    </div>
+  );
+}
