@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from "sonner";
 import { meetingStatusLabels, meetingStatusColors, displayFormats, MeetingStatus, Meeting, canViewFile, fileVisibilityLabels, fileVisibilityColors, fileVisibilityIcons, users } from "@/data";
 import { ComingSoon, ComingSoonBadge } from "@/components/ui/ComingSoon";
+import { can, canEditMeeting, denialReason } from "@/lib/authz";
 import { useCurrentUser } from "@/context/UserContext";
 import { useMeetings } from "@/context/MeetingContext";
 
@@ -231,7 +232,15 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     setAddParticipantOpen(false);
   };
 
-  const canEdit = meeting.status !== "endorsed";
+  // สิทธิ์แยกตามการกระทำ — เดิมใช้ตัวเดียวเช็คแค่สถานะ ทำให้ใครที่เป็น manager
+  // ก็รับรองประชุมของคนอื่น ส่งอีเมลหาองค์ประชุมทุกคน หรือเพิ่มตัวเองเป็นผู้จัดการได้
+  const canEdit = canEditMeeting(currentUser, meeting);
+  const canManageParticipants = can(currentUser, "meeting.manageParticipants", meeting) && meeting.status !== "endorsed";
+  const canManagePermissions = can(currentUser, "meeting.managePermissions", meeting) && meeting.status !== "endorsed";
+  const canNotify = can(currentUser, "meeting.notify", meeting);
+  const canChangeStatus = can(currentUser, "meeting.changeStatus", meeting) && meeting.status !== "endorsed";
+  const canEndorse = can(currentUser, "meeting.endorse", meeting);
+  const noPermissionReason = denialReason(currentUser, "meeting.edit", meeting);
 
   return (
     <div className="p-4 md:p-6 pb-16 max-w-[1400px] mx-auto">
@@ -268,16 +277,16 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 </Link>
               </Button>
             )}
-            {meeting.status === "prepare" && canEdit && (
+            {meeting.status === "prepare" && canNotify && (
               <Button size="sm" onClick={() => setNotifyDialog(true)}><span className={iconSm}>send</span>แจ้งวาระ</Button>
             )}
-            {meeting.status === "notified" && canEdit && (
+            {meeting.status === "notified" && canChangeStatus && (
               <Button size="sm" onClick={() => setOpenTimeDialog(true)}><span className={iconSm}>play_circle</span>เปิดประชุม</Button>
             )}
-            {meeting.status === "in_progress" && canEdit && (
+            {meeting.status === "in_progress" && canChangeStatus && (
               <Button size="sm" onClick={closeMeeting}><span className={iconSm}>stop_circle</span>ปิดประชุม</Button>
             )}
-            {meeting.status === "waiting_endorse" && canEdit && (
+            {meeting.status === "waiting_endorse" && canEndorse && (
               <>
                 <Button size="sm" variant="outline" onClick={() => setEndorseNotifyOpen(true)}><span className={iconSm}>mail</span>แจ้งรับรอง</Button>
                 <Button size="sm" onClick={() => setEndorseDialog(true)}><span className={iconSm}>verified</span>รับรองการประชุม</Button>
@@ -308,7 +317,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>เปลี่ยนสถานะ (คืนสถานะ)</DropdownMenuLabel>
                 {statusOrder.map(s => (
-                  <DropdownMenuItem key={s} disabled={s === meeting.status || !canEdit} onClick={() => changeStatus(s)}>
+                  <DropdownMenuItem key={s} disabled={s === meeting.status || !canChangeStatus} onClick={() => changeStatus(s)}>
                     {meetingStatusLabels[s]}
                   </DropdownMenuItem>
                 ))}
@@ -328,6 +337,19 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           </div>
         </div>
       </div>
+
+      {/* บอกเหตุผลเมื่อดูได้แต่แก้ไม่ได้ — ไม่งั้นผู้ใช้เห็นหน้าที่ปุ่มหายไปเฉยๆ โดยไม่รู้ว่าทำไม */}
+      {!canEdit && (
+        <Card className="card-shadow mb-4 border-amber-300 bg-amber-50">
+          <CardContent className="p-3 flex items-start gap-2">
+            <span className="material-symbols-outlined text-[18px] text-amber-700 shrink-0">visibility</span>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-amber-900">กำลังดูในโหมดอ่านอย่างเดียว</p>
+              <p className="text-[11px] text-amber-800 mt-0.5">{noPermissionReason}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Status stepper */}
       <Card className="card-shadow mb-4">
@@ -439,7 +461,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 <CardTitle className="text-sm">องค์ประชุมชุดปัจจุบัน ({meeting.participants.length})</CardTitle>
                 <CardDescription className="text-xs">จัดการรายชื่อองค์ประชุม การตอบรับ และการเข้าร่วมจริง</CardDescription>
               </div>
-              {canEdit && (
+              {canManageParticipants && (
                 <Button size="sm" onClick={() => setAddParticipantOpen(true)}>
                   <span className={iconSm}>person_add</span> เพิ่มองค์ประชุม
                 </Button>
@@ -482,7 +504,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                             className="border rounded px-2 py-0.5 text-xs bg-transparent"
                             value={p.attendance || "pending"}
                             onChange={e => setAttendance(p.id, e.target.value as "attend" | "representative" | "absent")}
-                            disabled={!canEdit}
+                            disabled={!canManageParticipants}
                           >
                             <option value="pending">รอตอบรับ</option>
                             <option value="attend">เข้าร่วม</option>
@@ -492,7 +514,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                         </td>
                         {(meeting.status === "in_progress" || meeting.status === "waiting_endorse" || meeting.status === "endorsed") && (
                           <td className="py-2 px-2 text-center">
-                            <input type="checkbox" checked={!!p.present} onChange={() => togglePresent(p.id)} disabled={!canEdit} className="w-4 h-4 accent-primary" />
+                            <input type="checkbox" checked={!!p.present} onChange={() => togglePresent(p.id)} disabled={!canManageParticipants} className="w-4 h-4 accent-primary" />
                           </td>
                         )}
                       </tr>
@@ -576,7 +598,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 <CardTitle className="text-sm">บริหารจัดการสิทธิ์</CardTitle>
                 <CardDescription className="text-xs">สิทธิ์การเข้าถึงมี 2 ประเภท: ผู้จัดการประชุม และ ผู้อ่าน</CardDescription>
               </div>
-              {canEdit && (
+              {canManagePermissions && (
                 <Button size="sm" onClick={() => setAddPermOpen(true)}>
                   <span className={iconSm}>person_add</span> เพิ่มสิทธิ์
                 </Button>
@@ -606,7 +628,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                             size="icon-sm"
                             variant="ghost"
                             className="text-destructive"
-                            disabled={!canEdit}
+                            disabled={!canManagePermissions}
                             title={`ลบสิทธิ์ของ ${p.name}`}
                             onClick={() => removePermission(i)}
                           >
