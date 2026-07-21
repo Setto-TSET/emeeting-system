@@ -6,22 +6,35 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { signIn, demoAccounts } from "@/lib/session";
+import { useCurrentUser } from "@/context/UserContext";
+import { systemRoleLabels, SystemRole } from "@/data";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { setCurrentUser } = useCurrentUser();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     toast.loading("กำลังตรวจสอบข้อมูล...", { id: "login" });
-    setTimeout(() => {
-      toast.success("เข้าสู่ระบบสำเร็จ", { id: "login" });
-      router.push("/dashboard");
-    }, 1200);
+
+    // เดิมฟอร์มนี้ไม่เคยอ่านค่า email/password เลย — กดปุ่มก็เข้าระบบได้เสมอ
+    const result = await signIn(email, password);
+
+    if (!result.ok) {
+      toast.error(result.reason, { id: "login" });
+      setIsSubmitting(false);
+      return;
+    }
+
+    setCurrentUser(result.user);
+    toast.success(`เข้าสู่ระบบสำเร็จ — ${result.user.name}`, { id: "login" });
+    router.push("/dashboard");
   };
 
   return (
@@ -163,6 +176,30 @@ export default function LoginPage() {
                 )}
               </Button>
             </form>
+
+          {/* บัญชีสำหรับทดสอบสิทธิ์ — ส่วนนี้ต้องเอาออกเมื่อมีระบบยืนยันตัวตนจริง */}
+          <div className="mt-6 rounded-lg border border-dashed p-3">
+            <p className="text-[11px] font-medium text-muted-foreground mb-2 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[14px]">science</span>
+              บัญชีทดสอบ (ยังไม่ตรวจรหัสผ่าน — กดเพื่อกรอกอีเมลอัตโนมัติ)
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {demoAccounts().map((a) => (
+                <button
+                  key={a.email}
+                  type="button"
+                  onClick={() => setEmail(a.email)}
+                  className="text-[10px] rounded-md border px-2 py-1 hover:border-primary hover:text-primary transition-colors"
+                  title={a.email}
+                >
+                  {a.name}
+                  <span className="text-muted-foreground ml-1">
+                    ({systemRoleLabels[a.roleLabel as SystemRole]})
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="mt-12 pt-6 border-t border-border flex items-center justify-center gap-4 text-xs text-muted-foreground/60">
             <span>© 2569 e-Office</span>
