@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { today } from "@/lib/clock";
 import { ComingSoon, ComingSoonBadge } from "@/components/ui/ComingSoon";
+import { DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { can, canEditMeeting, denialReason } from "@/lib/authz";
 import { useCurrentUser } from "@/context/UserContext";
 import { useMeetings } from "@/context/MeetingContext";
@@ -100,6 +101,13 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const [fileType, setFileType] = useState<MeetingFile["type"]>("attachment");
   const [fileVisibility, setFileVisibility] = useState<FileVisibility>("participants");
   const filePickerRef = useRef<HTMLInputElement>(null);
+  // เปิดอ่านเอกสารในเว็บ — ระบบไม่มีการดาวน์โหลดไฟล์ออก
+  const [previewFile, setPreviewFile] = useState<MeetingFile | null>(null);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewZoom, setPreviewZoom] = useState(100);
+  const openFilePreview = (f: MeetingFile) => {
+    setPreviewFile(f); setPreviewPage(1); setPreviewZoom(100);
+  };
 
   const changeStatus = (s: MeetingStatus) => {
     updateMeeting(meeting.id, { status: s });
@@ -360,16 +368,6 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
-                {/* การสร้างไฟล์เอกสารจริงต้องใช้ backend — ยังไม่เปิดใช้งาน */}
-                <DropdownMenuItem disabled title="ยังไม่เปิดใช้งาน — รอเชื่อมต่อระบบสร้างเอกสาร">
-                  <span className={iconSm}>description</span> ร่างรายงาน (Word)
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled title="ยังไม่เปิดใช้งาน — รอเชื่อมต่อระบบสร้างเอกสาร">
-                  <span className={iconSm}>picture_as_pdf</span> พิมพ์รายงาน (PDF)
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled title="ยังไม่เปิดใช้งาน — รอเชื่อมต่อระบบสร้างเอกสาร">
-                  <span className={iconSm}>table_chart</span> พิมพ์รายงาน (Excel)
-                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -617,8 +615,9 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                            "รายงานฉบับสมบูรณ์"}
                         </Badge>
                       </div>
-                      <Button size="icon-sm" variant="ghost" disabled title="ยังไม่เปิดใช้งาน — รอระบบจัดเก็บไฟล์ (จะเปิดใช้เมื่ออัปโหลดไฟล์จริงได้)">
-                        <span className={iconSm}>download</span>
+                      <Button size="sm" variant="ghost" className="text-primary shrink-0" onClick={() => openFilePreview(f)}>
+                        <span className={`${iconSm} mr-1`}>visibility</span>
+                        ดูเอกสาร
                       </Button>
                     </div>
                   ))}
@@ -1323,6 +1322,17 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {previewFile && (
+        <DocumentLightbox
+          file={previewFile}
+          onClose={() => setPreviewFile(null)}
+          currentPage={previewPage}
+          setCurrentPage={setPreviewPage}
+          zoom={previewZoom}
+          setZoom={setPreviewZoom}
+        />
+      )}
     </div>
   );
 }

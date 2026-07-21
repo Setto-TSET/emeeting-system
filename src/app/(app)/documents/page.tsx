@@ -19,7 +19,6 @@ import {
 } from "@/data";
 import { useCurrentUser } from "@/context/UserContext";
 import { useMeetings } from "@/context/MeetingContext";
-import { isParticipant } from "@/lib/access";
 import { DocumentLightbox } from "@/components/meeting/DocumentPreview";
 
 const iconSm = "material-symbols-outlined text-[16px]";
@@ -60,8 +59,6 @@ export default function DocumentsPage() {
   const [committeeFilter, setCommitteeFilter] = useState<string>("all");
   const [view, setView] = useState<"tree" | "list">("tree");
 
-  // ผู้เข้าร่วม: ดูเอกสารได้ในเว็บ แต่ดาวน์โหลดไม่ได้
-  const readOnly = isParticipant(currentUser.systemRole);
   const [previewFile, setPreviewFile] = useState<MeetingFile | null>(null);
   const [previewPage, setPreviewPage] = useState(1);
   const [previewZoom, setPreviewZoom] = useState(100);
@@ -230,7 +227,7 @@ export default function DocumentsPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {filtered.map(({ file, meeting }) => (
-              <FileRow key={file.id + meeting.id} file={file} meetingId={meeting.id} meetingName={meeting.name} meetingDate={meeting.date} readOnly={readOnly} onPreview={openPreview} />
+              <FileRow key={file.id + meeting.id} file={file} meetingId={meeting.id} meetingName={meeting.name} meetingDate={meeting.date} onPreview={openPreview} />
             ))}
           </CardContent>
         </Card>
@@ -269,7 +266,7 @@ export default function DocumentsPage() {
                             </p>
                             <div className="space-y-1.5 pl-4 border-l-2 border-border">
                               {files.map(({ file, meeting }) => (
-                                <FileRow key={file.id} file={file} meetingId={meeting.id} meetingName={meeting.name} meetingDate={meeting.date} compact readOnly={readOnly} onPreview={openPreview} />
+                                <FileRow key={file.id} file={file} meetingId={meeting.id} meetingName={meeting.name} meetingDate={meeting.date} compact onPreview={openPreview} />
                               ))}
                             </div>
                           </div>
@@ -305,7 +302,6 @@ function FileRow({
   meetingName,
   meetingDate,
   compact = false,
-  readOnly = false,
   onPreview,
 }: {
   file: MeetingFile;
@@ -313,8 +309,6 @@ function FileRow({
   meetingName: string;
   meetingDate: string;
   compact?: boolean;
-  /** ผู้เข้าร่วม: ดูได้อย่างเดียว ไม่มีปุ่มดาวน์โหลด */
-  readOnly?: boolean;
   onPreview?: (file: MeetingFile) => void;
 }) {
   return (
@@ -341,16 +335,11 @@ function FileRow({
         <span className="material-symbols-outlined text-[11px] mr-0.5">{fileVisibilityIcons[file.visibility]}</span>
         {fileVisibilityLabels[file.visibility]}
       </Badge>
-      {readOnly ? (
-        <Button size="sm" variant="ghost" className="text-primary" onClick={() => onPreview?.(file)}>
-          <span className={`${iconSm} mr-1`}>visibility</span>
-          ดูเอกสาร
-        </Button>
-      ) : (
-        <Button size="icon-sm" variant="ghost" disabled title="ยังไม่เปิดใช้งาน — รอระบบจัดเก็บไฟล์ (จะเปิดใช้เมื่ออัปโหลดไฟล์จริงได้)">
-          <span className={iconSm}>download</span>
-        </Button>
-      )}
+      {/* ดูอย่างเดียวทุกบทบาท — ระบบไม่มีการดาวน์โหลดไฟล์ออกนอกเว็บ */}
+      <Button size="sm" variant="ghost" className="text-primary" onClick={() => onPreview?.(file)}>
+        <span className={`${iconSm} mr-1`}>visibility</span>
+        ดูเอกสาร
+      </Button>
     </div>
   );
 }

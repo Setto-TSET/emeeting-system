@@ -9,6 +9,7 @@ import Link from "next/link";
 import { meetingStatusLabels, canViewFile, MeetingFile, Meeting } from "@/data";
 import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
+import { DocumentLightbox } from "@/components/meeting/DocumentPreview";
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
@@ -20,6 +21,14 @@ export default function ReportsPage() {
   const [q, setQ] = useState("");
   const { meetings } = useMeetings();
   const { currentUser } = useCurrentUser();
+
+  // เปิดอ่านรายงานในเว็บ — ระบบไม่มีการดาวน์โหลดไฟล์ออก
+  const [previewFile, setPreviewFile] = useState<MeetingFile | null>(null);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewZoom, setPreviewZoom] = useState(100);
+  const openPreview = (f: MeetingFile) => {
+    setPreviewFile(f); setPreviewPage(1); setPreviewZoom(100);
+  };
 
   /**
    * รายงานที่ผู้ใช้คนนี้มีสิทธิ์เห็นเท่านั้น
@@ -47,14 +56,6 @@ export default function ReportsPage() {
       <Card className="card-shadow mb-4">
         <CardContent className="p-4 flex flex-wrap gap-2">
           <Input placeholder="ค้นหาชื่อการประชุม..." value={q} onChange={e => setQ(e.target.value)} className="max-w-sm h-9" />
-          <div className="ml-auto flex gap-2">
-            <Button size="sm" variant="outline" disabled title="ยังไม่เปิดใช้งาน — รอเชื่อมต่อระบบสร้างเอกสาร">
-              <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span> ส่งออก PDF
-            </Button>
-            <Button size="sm" variant="outline" disabled title="ยังไม่เปิดใช้งาน — รอเชื่อมต่อระบบสร้างเอกสาร">
-              <span className="material-symbols-outlined text-[16px]">table_chart</span> ส่งออก Excel
-            </Button>
-          </div>
         </CardContent>
       </Card>
 
@@ -83,8 +84,9 @@ export default function ReportsPage() {
                   <Badge className="text-[10px]" variant={f.type === "report_final" ? "default" : "secondary"}>
                     {f.type === "report_final" ? "ฉบับสมบูรณ์" : "ร่าง"}
                   </Badge>
-                  <Button size="icon-sm" variant="ghost" disabled title="ยังไม่เปิดใช้งาน — รอระบบจัดเก็บไฟล์ (จะเปิดใช้เมื่ออัปโหลดไฟล์จริงได้)">
-                    <span className="material-symbols-outlined text-[16px]">download</span>
+                  <Button size="sm" variant="ghost" className="text-primary shrink-0" onClick={() => openPreview(f)}>
+                    <span className="material-symbols-outlined text-[16px] mr-1">visibility</span>
+                    ดูเอกสาร
                   </Button>
                 </div>
               ))}
@@ -103,6 +105,17 @@ export default function ReportsPage() {
           </div>
         )}
       </div>
+
+      {previewFile && (
+        <DocumentLightbox
+          file={previewFile}
+          onClose={() => setPreviewFile(null)}
+          currentPage={previewPage}
+          setCurrentPage={setPreviewPage}
+          zoom={previewZoom}
+          setZoom={setPreviewZoom}
+        />
+      )}
     </div>
   );
 }
