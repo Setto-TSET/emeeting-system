@@ -19,8 +19,9 @@ type MeetingContextType = {
  * เพื่อให้เบราว์เซอร์ที่เคยเปิดระบบมาก่อนโหลดข้อมูลชุดใหม่ แทนที่จะค้างข้อมูลเก่าใน localStorage
  * v2 — เพิ่ม conferenceProvider + ลิงก์ตัวอย่าง Teams/Zoom
  * v3 — เพิ่ม userId/committeeId/organizerId (เปลี่ยนการจับคู่จากอีเมล/ชื่อ มาเป็น id)
+ * v4 — เพิ่ม conferenceRoomKey/transcriptStatus (เตรียม seam ระบบประชุมในเว็บ + ถอดเสียง)
  */
-const STORAGE_KEY = "meeting_system_meetings_v3";
+const STORAGE_KEY = "meeting_system_meetings_v4";
 
 const MeetingContext = createContext<MeetingContextType | null>(null);
 

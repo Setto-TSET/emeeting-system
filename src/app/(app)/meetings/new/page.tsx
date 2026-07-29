@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { committees, meetingRooms, Meeting } from "@/data";
 import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
-import { conferenceProviders, detectProvider } from "@/lib/conference";
+import { conferenceProviders, detectProvider, newConferenceRoomKey } from "@/lib/conference";
 
 const meetingTypes = ["การประชุมคณะกรรมการ", "การประชุมคณะทำงาน", "การประชุมภายในทีม", "การประชุมวิสามัญ", "การประชุมสามัญประจำปี"];
 
@@ -63,6 +63,9 @@ export default function NewMeetingPage() {
       location: room.name,
       conferenceLink: form.conferenceLink.trim() || undefined,
       conferenceProvider: provider,
+      // กุญแจห้องสำหรับเครื่องยนต์ที่ฝังในเว็บ — เดาไม่ได้ สร้างตั้งแต่สร้างประชุม
+      conferenceRoomKey: newConferenceRoomKey(),
+      transcriptStatus: "none",
       status: "prepare",
       displayFormat: 2,
       participants: [],

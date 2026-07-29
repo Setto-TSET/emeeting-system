@@ -7,7 +7,7 @@
 // โดยไม่ต้องแก้หน้าจอ — แค่ใส่ลิงก์เข้ามา ระบบจะตรวจเองว่าเป็นเจ้าไหน
 // ═══════════════════════════════════════════
 
-export type ConferenceProvider = "mock" | "teams" | "zoom" | "google_meet" | "other";
+export type ConferenceProvider = "mock" | "webex" | "teams" | "zoom" | "google_meet" | "other";
 
 /**
  * วิธีพาผู้ใช้เข้าห้องประชุม
@@ -48,6 +48,18 @@ export const conferenceProviders: Record<ConferenceProvider, ConferenceProviderS
     launchMode: "simulated",
     hostPatterns: ["meet.e-office.cloud"],
     joinHint: "เข้าห้องประชุมจำลองภายในเว็บนี้",
+    canEmbed: true,
+  },
+  webex: {
+    id: "webex",
+    label: "Cisco Webex",
+    shortLabel: "Webex",
+    icon: "videocam",
+    brandClass: "bg-[#00bceb] hover:bg-[#00a5d1]",
+    // ฝังในเว็บได้ผ่าน Browser SDK — แต่ยังใช้จริงไม่ได้จนกว่าจะมี license + backend
+    launchMode: "sdk",
+    hostPatterns: ["webex.com", "webex.com.cn"],
+    joinHint: "เข้าห้องประชุม Webex ภายในหน้านี้",
     canEmbed: true,
   },
   teams: {
@@ -95,6 +107,18 @@ export const conferenceProviders: Record<ConferenceProvider, ConferenceProviderS
     canEmbed: false,
   },
 };
+
+/**
+ * สร้างกุญแจห้องประชุมที่เดาไม่ได้ สำหรับเครื่องยนต์ที่ฝังในเว็บ
+ * ห้ามใช้ meeting.id เป็นชื่อห้อง ไม่งั้นใครเดา id ได้ก็เข้าห้องลับได้
+ */
+export function newConferenceRoomKey(): string {
+  const rand =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID().replace(/-/g, "")
+      : Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return `emeeting-${rand}`;
+}
 
 /** ตรวจว่าลิงก์ที่ผู้จัดวางมาเป็นของเจ้าไหน */
 export function detectProvider(url?: string | null): ConferenceProvider {

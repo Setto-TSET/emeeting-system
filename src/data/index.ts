@@ -318,6 +318,16 @@ export type Meeting = {
    * ผู้จัดเปิดสวิตช์นี้เมื่อมีวิทยากร/ผู้ทรงคุณวุฒิภายนอกที่ไม่ได้อยู่ในระบบ
    */
   allowGuestJoin?: boolean;
+  /**
+   * กุญแจห้องประชุมที่เดาไม่ได้ — สำหรับเครื่องยนต์ที่ฝังในเว็บ (Webex/Jitsi)
+   * ห้ามใช้ meeting.id เป็นชื่อห้องตรงๆ ไม่งั้นใครเดา id ได้ก็เข้าห้องลับได้
+   * backend แลกกุญแจนี้เป็นห้องจริงของผู้ให้บริการ
+   */
+  conferenceRoomKey?: string;
+  /** สถานะการถอดเสียง — none | processing | ready | failed (ดู services/transcription) */
+  transcriptStatus?: "none" | "processing" | "ready" | "failed";
+  /** id ของร่างรายงานที่ AI สรุปให้ (ผูกกับไฟล์ report_draft) — เลขาฯ แก้ก่อนรับรอง */
+  summaryDraftId?: string;
   /** วาระที่กำลังพูดคุยอยู่ในห้องประชุมออนไลน์ */
   activeAgendaId?: string | null;
   /** ข้อความแชทระหว่างการประชุมออนไลน์ */
