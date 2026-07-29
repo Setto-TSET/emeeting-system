@@ -20,8 +20,9 @@ type MeetingContextType = {
  * v2 — เพิ่ม conferenceProvider + ลิงก์ตัวอย่าง Teams/Zoom
  * v3 — เพิ่ม userId/committeeId/organizerId (เปลี่ยนการจับคู่จากอีเมล/ชื่อ มาเป็น id)
  * v4 — เพิ่ม conferenceRoomKey/transcriptStatus (เตรียม seam ระบบประชุมในเว็บ + ถอดเสียง)
+ * v5 — ตัวอย่าง MT-2569-008 เปลี่ยนเป็น provider webex เพื่อโชว์ engine ฝัง (mock)
  */
-const STORAGE_KEY = "meeting_system_meetings_v4";
+const STORAGE_KEY = "meeting_system_meetings_v5";
 
 const MeetingContext = createContext<MeetingContextType | null>(null);
 

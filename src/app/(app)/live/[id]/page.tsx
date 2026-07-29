@@ -12,7 +12,9 @@ import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
 import { SimulatedDocumentViewer, DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { ExternalConferenceStage } from "@/components/meeting/ExternalConferenceStage";
+import { WebexEmbedStage } from "@/components/meeting/WebexEmbedStage";
 import { resolveConference } from "@/lib/conference";
+import { resolveVideoSurface } from "@/services/video";
 import { can } from "@/lib/authz";
 import { MeetingParticipant, MeetingFile, canViewFile } from "@/data";
 
@@ -192,9 +194,11 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   // เอกสารที่โฮสต์กำลังแชร์ให้ทุกคนดูพร้อมกัน (ถ้าผู้ใช้คนนี้มีสิทธิ์เห็น)
   const sharedFile = sharedFileId ? visibleFiles.find((f) => f.id === sharedFileId) : undefined;
 
-  // การประชุมนี้วิ่งบนแพลตฟอร์มไหน — mock = ห้องจำลองในเว็บ, ที่เหลือ = เปิดแอปภายนอก
+  // การประชุมนี้วิ่งบนแพลตฟอร์มไหน
   const conference = resolveConference(meeting);
-  const isExternalConference = conference.spec.launchMode === "external";
+  const videoSurface = resolveVideoSurface(meeting);
+  const isExternalConference = videoSurface.kind === "external";
+  const isEmbedConference = videoSurface.kind === "embed";
 
   // กันคนที่ไม่ได้ถูกเชิญ — เดิมใครเปิด URL ก็เห็นฟอร์มแล้วเติมชื่อตัวเองเข้า roster ได้เลย
   if (!hasJoined && !isInvited && !guestJoinAllowed) {
@@ -384,8 +388,23 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
         {/* Left Side: Video Grid & Shared Presentation */}
         <div className="flex-1 flex flex-col p-4 space-y-4 overflow-y-auto">
           
-          {/* Main content pane: เอกสารที่แชร์ > เวทีประชุมภายนอก > ห้องจำลองในเว็บ */}
-          {isExternalConference && !sharedFile ? (
+          {/* Main content pane: เอกสารที่แชร์ > engine ฝัง > เวทีประชุมภายนอก > ห้องจำลองในเว็บ */}
+          {isEmbedConference && !sharedFile ? (
+            <WebexEmbedStage
+              meeting={meeting}
+              isHost={isManager}
+              onLeave={() => {
+                if (localParticipant) {
+                  const updatedParticipants = meeting.participants.map((p) =>
+                    p.id === localParticipant.id ? { ...p, present: false } : p
+                  );
+                  updateMeeting(meeting.id, { participants: updatedParticipants });
+                }
+                toast.info("คุณได้ออกจากห้องประชุม Webex เรียบร้อย");
+                router.push("/portal");
+              }}
+            />
+          ) : isExternalConference && !sharedFile ? (
             <ExternalConferenceStage conference={conference} meetingName={meeting.name} />
           ) : sharedFile ? (
             <div className="flex-1 min-h-[300px] border border-border rounded-2xl bg-card overflow-hidden flex flex-col relative">
@@ -510,7 +529,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
           {/* Grid Toolbar Controls — ซ่อนเมื่อประชุมผ่านแพลตฟอร์มภายนอก เพราะไมค์/กล้องคุมจากแอปนั้น */}
           <div
             className={`h-16 bg-card border border-border rounded-2xl items-center justify-center gap-2 sm:gap-4 px-4 shrink-0 shadow-lg ${
-              isExternalConference ? "hidden" : "flex"
+              (isExternalConference || isEmbedConference) ? "hidden" : "flex"
             }`}
           >
             <Button

@@ -413,6 +413,10 @@ export const meetings: Meeting[] = [
     startTime: "09:00",
     endTime: "12:00",
     location: "ห้องประชุม A-101",
+    // ตัวอย่างประชุมที่ใช้ Webex ฝังในเว็บ + AI สรุปให้ (mock — ยังไม่มี license จริง)
+    conferenceProvider: "webex",
+    conferenceRoomKey: "emeeting-demo-webex-mt008",
+    transcriptStatus: "none",
     status: "in_progress",
     displayFormat: 1,
     participants: [

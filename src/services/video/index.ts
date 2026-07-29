@@ -7,7 +7,20 @@
 
 import { resolveConference } from "@/lib/conference";
 import type { Meeting } from "@/data";
-import type { VideoSurface, EmbeddedEngineId } from "./types";
+import type { VideoSurface, EmbeddedEngineId, EmbeddedEngine } from "./types";
+import { webexMockEngine } from "./webexMock";
+
+/**
+ * Registry ของ engine ที่ระบบรู้จัก
+ * วันต่อ Webex จริง: เปลี่ยน webex ให้ชี้ไป engine ที่ mount() เรียก @webex/browser-sdk
+ * — หน้าจอไม่ต้องแก้
+ */
+export const embeddedEngines: Record<EmbeddedEngineId, EmbeddedEngine> = {
+  webex: webexMockEngine,
+  // jitsi, acs — ยังไม่ implement
+  jitsi: webexMockEngine, // placeholder เพื่อให้ type ครบ ยังไม่มีการประชุมไหนตั้งเป็น jitsi
+  acs: webexMockEngine,   // placeholder
+};
 
 /** map provider ที่ฝังได้ → id ของ engine */
 const embedEngineByProvider: Partial<Record<string, EmbeddedEngineId>> = {
