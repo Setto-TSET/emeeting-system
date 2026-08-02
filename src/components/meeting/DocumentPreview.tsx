@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { MeetingFile } from "@/data";
+import { getFileObjectUrl } from "@/services/fileStorage";
 
 // ==========================================
 // Simulated Premium Document Page Viewer Component
@@ -249,7 +251,128 @@ export function SimulatedDocumentViewer({ file, currentPage, setCurrentPage, zoo
 }
 
 // ==========================================
-// Lightbox wrapper — เปิดอ่านเอกสารเต็มจอ (อ่านอย่างเดียว)
+// Real Document Viewer — เรนเดอร์ไฟล์จริงจาก IndexedDB (PDF ผ่าน iframe, รูปผ่าน img)
+// ==========================================
+function RealDocumentViewer({ file }: { file: MeetingFile }) {
+  const [url, setUrl] = useState<string | null>(null);
+  // ค่าเริ่มต้นตัดสินจาก prop ตั้งแต่ render แรก — ไม่ต้อง setState ใน effect
+  const [status, setStatus] = useState<"loading" | "ready" | "notfound" | "error">(
+    () => (file.storageKey ? "loading" : "notfound")
+  );
+
+  useEffect(() => {
+    if (!file.storageKey) return;
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    getFileObjectUrl(file.storageKey)
+      .then((u) => {
+        if (cancelled) {
+          if (u) URL.revokeObjectURL(u);
+          return;
+        }
+        if (!u) {
+          setStatus("notfound");
+          return;
+        }
+        objectUrl = u;
+        setUrl(u);
+        setStatus("ready");
+      })
+      .catch(() => setStatus("error"));
+    return () => {
+      cancelled = true;
+      // คืน memory เมื่อปิด lightbox — ไม่งั้น blob URL ค้างจนปิดหน้า
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [file.storageKey]);
+
+  if (status === "loading") {
+    return (
+      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+        <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
+        กำลังโหลดไฟล์...
+      </div>
+    );
+  }
+  if (status === "notfound") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 p-8">
+        <span className="material-symbols-outlined text-[44px] text-muted-foreground">cloud_off</span>
+        <p className="text-sm font-medium">ไม่พบไฟล์ในเครื่องนี้</p>
+        <p className="text-xs text-muted-foreground max-w-sm">
+          ไฟล์อัปโหลดถูกเก็บในเบราว์เซอร์ของผู้อัปโหลด เปิดจากเครื่องอื่นจึงยังไม่เห็น —
+          เมื่อต่อ backend แล้วจะเปิดได้ทุกที่
+        </p>
+      </div>
+    );
+  }
+  if (status === "error" || !url) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-destructive text-sm">
+        โหลดไฟล์ไม่สำเร็จ
+      </div>
+    );
+  }
+
+  const isPdf = /pdf/i.test(file.mimeType || "") || /\.pdf$/i.test(file.name);
+  const isImage = /^image\//i.test(file.mimeType || "") || /\.(png|jpg|jpeg|gif|webp)$/i.test(file.name);
+
+  if (isPdf) {
+    // iframe เรนเดอร์ PDF ด้วย native viewer ของเบราว์เซอร์ — ตั้ง toolbar=0 ซ่อนปุ่มดาวน์โหลด
+    return (
+      <iframe
+        src={`${url}#toolbar=0&navpanes=0`}
+        className="flex-1 w-full h-full rounded-lg border-0 bg-white"
+        title={file.name}
+      />
+    );
+  }
+  if (isImage) {
+    return (
+      <div className="flex-1 flex items-center justify-center overflow-auto bg-white rounded-lg">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt={file.name} className="max-w-full max-h-full object-contain" />
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 p-8">
+      <span className="material-symbols-outlined text-[44px] text-muted-foreground">description</span>
+      <p className="text-sm font-medium">ไฟล์นี้ไม่รองรับการดูในเว็บ</p>
+      <p className="text-xs text-muted-foreground">
+        รองรับเฉพาะ PDF และรูปภาพ · ไฟล์ Word/Excel ต้องเปิดในโปรแกรมของตนเอง (จะเปิดได้เมื่อต่อ backend)
+      </p>
+    </div>
+  );
+}
+
+// ==========================================
+// Watermark — ทับหน้าเอกสารด้วยชื่อ+เวลา — screenshot จะติดลายน้ำไปด้วย
+// เป็นเพียงตัวยับยั้ง ไม่ใช่การป้องกัน (ดูแผน anti-leak)
+// ==========================================
+function Watermark({ text }: { text: string }) {
+  const rows = 6;
+  const cols = 4;
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden select-none">
+      <div className="w-full h-full grid" style={{ gridTemplateRows: `repeat(${rows}, 1fr)`, gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+        {Array.from({ length: rows * cols }).map((_, i) => (
+          <div key={i} className="flex items-center justify-center">
+            <span
+              className="text-[11px] font-medium text-black/10 -rotate-30 whitespace-nowrap"
+              style={{ transform: "rotate(-30deg)" }}
+            >
+              {text}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// Lightbox wrapper — เปิดอ่านเอกสารเต็มจอ (อ่านอย่างเดียว + ชั้นยับยั้งการรั่วไหล)
 // ==========================================
 type DocumentLightboxProps = {
   file: MeetingFile;
@@ -258,12 +381,47 @@ type DocumentLightboxProps = {
   setCurrentPage: (p: number) => void;
   zoom: number;
   setZoom: (z: number) => void;
+  /** ชื่อผู้ดู — ใส่ในลายน้ำและป้ายท้ายบอก audit */
+  viewerName?: string;
 };
 
-export function DocumentLightbox({ file, onClose, currentPage, setCurrentPage, zoom, setZoom }: DocumentLightboxProps) {
+export function DocumentLightbox({ file, onClose, currentPage, setCurrentPage, zoom, setZoom, viewerName }: DocumentLightboxProps) {
+  // เบลอเนื้อหาเมื่อสลับหน้าต่าง — กันคนถ่ายจอจากด้านหลัง / กด Alt+PrtSc ขณะไม่ได้จ้องอยู่
+  const [windowActive, setWindowActive] = useState(true);
+  useEffect(() => {
+    const onVis = () => setWindowActive(document.visibilityState === "visible");
+    const onBlur = () => setWindowActive(false);
+    const onFocus = () => setWindowActive(true);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
+  // ปิด Ctrl/Cmd+P (print) เพราะ print → save as PDF = ดาวน์โหลดทางอ้อม
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const hasRealFile = !!file.storageKey;
+  const watermarkText = `${viewerName ?? "ผู้ชม"} · ${new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`;
+
   return (
-    <div className="fixed inset-0 z-[2000] bg-foreground/50 backdrop-blur-sm flex items-center justify-center p-4 md:p-8">
-      <div className="w-full max-w-4xl h-[85vh] bg-card border border-border rounded-3xl overflow-hidden flex flex-col shadow-2xl">
+    <div
+      className="fixed inset-0 z-[2000] bg-foreground/50 backdrop-blur-sm flex items-center justify-center p-4 md:p-8"
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="w-full max-w-4xl h-[85vh] bg-card border border-border rounded-3xl overflow-hidden flex flex-col shadow-2xl relative">
         {/* Lightbox header */}
         <div className="h-14 bg-muted px-6 border-b border-border flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 min-w-0">
@@ -285,14 +443,36 @@ export function DocumentLightbox({ file, onClose, currentPage, setCurrentPage, z
         </div>
 
         {/* Viewer canvas — พื้นเทาให้แผ่นเอกสารสีขาวเด่นขึ้นมา */}
-        <div className="flex-1 p-6 overflow-y-auto flex flex-col justify-between bg-muted/60">
-          <SimulatedDocumentViewer
-            file={file}
-            currentPage={currentPage}
-            setCurrentPage={setCurrentPage}
-            zoom={zoom}
-            setZoom={setZoom}
-          />
+        <div className="flex-1 relative bg-muted/60 overflow-hidden">
+          <div
+            className={`absolute inset-0 p-6 flex flex-col ${windowActive ? "" : "blur-lg"} transition-[filter] duration-150`}
+          >
+            {hasRealFile ? (
+              <RealDocumentViewer file={file} />
+            ) : (
+              <div className="flex-1 overflow-y-auto flex flex-col justify-between">
+                <SimulatedDocumentViewer
+                  file={file}
+                  currentPage={currentPage}
+                  setCurrentPage={setCurrentPage}
+                  zoom={zoom}
+                  setZoom={setZoom}
+                />
+              </div>
+            )}
+          </div>
+          {/* Watermark ทับด้านบนสุด — screenshot จะติดลายน้ำนี้ไปด้วย */}
+          <Watermark text={watermarkText} />
+          {/* Overlay เมื่อหน้าต่างไม่ active — ซ่อนเนื้อหาจากการถ่ายจอด้านหลัง */}
+          {!windowActive && (
+            <div className="absolute inset-0 bg-background/70 backdrop-blur-md flex items-center justify-center">
+              <div className="text-center">
+                <span className="material-symbols-outlined text-[36px] text-muted-foreground">visibility_off</span>
+                <p className="text-sm font-medium mt-2">หน้าต่างไม่ active — เนื้อหาถูกซ่อน</p>
+                <p className="text-xs text-muted-foreground mt-1">กลับมาที่หน้านี้เพื่อดูต่อ</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Viewer footer — อ่านอย่างเดียว ไม่มีดาวน์โหลด */}

@@ -876,6 +876,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
           setCurrentPage={setViewerPage}
           zoom={viewerZoom}
           setZoom={setViewerZoom}
+          viewerName={currentUser.name}
         />
       )}
     </div>

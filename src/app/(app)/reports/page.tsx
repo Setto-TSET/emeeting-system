@@ -114,6 +114,7 @@ export default function ReportsPage() {
           setCurrentPage={setPreviewPage}
           zoom={previewZoom}
           setZoom={setPreviewZoom}
+          viewerName={currentUser.name}
         />
       )}
     </div>

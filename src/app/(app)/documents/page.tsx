@@ -290,6 +290,7 @@ export default function DocumentsPage() {
           setCurrentPage={setPreviewPage}
           zoom={previewZoom}
           setZoom={setPreviewZoom}
+          viewerName={currentUser.name}
         />
       )}
     </div>

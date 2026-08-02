@@ -219,6 +219,7 @@ export default function MyMeetingsPage() {
           setCurrentPage={setViewerPage}
           zoom={viewerZoom}
           setZoom={setViewerZoom}
+          viewerName={currentUser.name}
         />
       )}
     </div>

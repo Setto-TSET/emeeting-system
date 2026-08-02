@@ -264,6 +264,10 @@ export type MeetingFile = {
   visibility: FileVisibility;
   allowedPositions?: string[];   // เช่น ["ประธาน","เลขานุการ"]
   allowedUserIds?: string[];     // whitelist รายบุคคล (AppUser.id)
+  /** กุญแจไฟล์ใน IndexedDB — ถ้ามี = อัปโหลดจริง, ไม่มี = ตัวอย่าง render simulated */
+  storageKey?: string;
+  mimeType?: string;
+  sizeBytes?: number;
 };
 
 export const fileTypeLabels: Record<MeetingFile["type"], string> = {

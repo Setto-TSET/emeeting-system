@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { today } from "@/lib/clock";
 import { ComingSoon, ComingSoonBadge } from "@/components/ui/ComingSoon";
 import { DocumentLightbox } from "@/components/meeting/DocumentPreview";
+import { putFile, formatBytes } from "@/services/fileStorage";
 import { can, canEditMeeting, denialReason } from "@/lib/authz";
 import { useCurrentUser } from "@/context/UserContext";
 import { useMeetings } from "@/context/MeetingContext";
@@ -100,6 +101,8 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const [fileSizeKb, setFileSizeKb] = useState<number | null>(null);
   const [fileType, setFileType] = useState<MeetingFile["type"]>("attachment");
   const [fileVisibility, setFileVisibility] = useState<FileVisibility>("participants");
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const filePickerRef = useRef<HTMLInputElement>(null);
   // เปิดอ่านเอกสารในเว็บ — ระบบไม่มีการดาวน์โหลดไฟล์ออก
   const [previewFile, setPreviewFile] = useState<MeetingFile | null>(null);
@@ -165,29 +168,49 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     setAddFileOpen(false);
     setFileName(""); setFileSizeKb(null); setFileDesc("");
     setFileType("attachment"); setFileVisibility("participants");
+    setPendingFile(null); setUploading(false);
   };
 
-  const submitFile = () => {
+  const submitFile = async () => {
     const name = fileName.trim();
     if (!name) { toast.error("กรุณาระบุชื่อเอกสาร"); return; }
 
-    // เดโม: เก็บแค่ระเบียนเอกสาร ยังไม่เก็บตัวไฟล์
-    // ถ้าเลือกไฟล์จริงมาจะได้ขนาดจริง ถ้าพิมพ์ชื่อเองจะสุ่มขนาดให้ดูสมจริง
-    const sizeKb = fileSizeKb ?? Math.floor(120 + Math.random() * 1800);
-    addMeetingFile(meeting.id, {
-      id: `F-${Date.now()}`,
-      name: /\.(pdf|docx|xlsx)$/i.test(name) ? name : `${name}.pdf`,
-      description: fileDesc.trim() || "เอกสารประกอบการประชุม",
-      size: sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`,
-      uploadedAt: today,
-      uploadedBy: currentUser.name,
-      type: fileType,
-      visibility: fileVisibility,
-    });
-    toast.success("เพิ่มเอกสารเรียบร้อย", {
-      description: `${name} · ${fileVisibilityLabels[fileVisibility]}`,
-    });
-    closeFileDialog();
+    setUploading(true);
+    try {
+      // ถ้ามี File จริง → เก็บลง IndexedDB · ถ้าไม่มี (พิมพ์ชื่อเอง) → เก็บเฉพาะระเบียน
+      let storageMeta: { storageKey?: string; mimeType?: string; sizeBytes?: number } = {};
+      if (pendingFile) {
+        const stored = await putFile(pendingFile);
+        storageMeta = { storageKey: stored.storageKey, mimeType: stored.mimeType, sizeBytes: stored.sizeBytes };
+      }
+
+      const displaySize = pendingFile
+        ? formatBytes(pendingFile.size)
+        : (() => {
+            const kb = fileSizeKb ?? Math.floor(120 + Math.random() * 1800);
+            return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
+          })();
+
+      addMeetingFile(meeting.id, {
+        id: `F-${Date.now()}`,
+        name: /\.(pdf|docx|xlsx|png|jpg|jpeg)$/i.test(name) ? name : `${name}.pdf`,
+        description: fileDesc.trim() || "เอกสารประกอบการประชุม",
+        size: displaySize,
+        uploadedAt: today,
+        uploadedBy: currentUser.name,
+        type: fileType,
+        visibility: fileVisibility,
+        ...storageMeta,
+      });
+      toast.success("เพิ่มเอกสารเรียบร้อย", {
+        description: `${name} · ${fileVisibilityLabels[fileVisibility]}${pendingFile ? " · ไฟล์บันทึกแล้ว" : ""}`,
+      });
+      closeFileDialog();
+    } catch (e) {
+      console.error(e);
+      toast.error("บันทึกไฟล์ไม่สำเร็จ", { description: "IndexedDB ปฏิเสธการเขียน" });
+      setUploading(false);
+    }
   };
 
   const removePermission = (index: number) => {
@@ -917,15 +940,20 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   <p className="text-xs text-muted-foreground mt-1">รองรับ PDF, DOCX, XLSX</p>
                 </>
               )}
-              {/* อ่านเฉพาะชื่อและขนาดจากไฟล์จริง — ยังไม่เก็บตัวไฟล์ (ระบบเดโม) */}
+              {/* เลือกไฟล์แล้วจะบันทึกจริงลง IndexedDB ตอนกด "บันทึก" */}
               <input
                 ref={filePickerRef}
                 type="file"
-                accept=".pdf,.docx,.xlsx"
+                accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg"
                 className="hidden"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (!f) return;
+                  if (f.size > 20 * 1024 * 1024) {
+                    toast.error("ไฟล์เกิน 20 MB");
+                    return;
+                  }
+                  setPendingFile(f);
                   setFileName(f.name);
                   setFileSizeKb(Math.max(1, Math.round(f.size / 1024)));
                 }}
@@ -984,7 +1012,9 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeFileDialog}>ยกเลิก</Button>
-            <Button onClick={submitFile}>บันทึก</Button>
+            <Button onClick={submitFile} disabled={uploading}>
+              {uploading ? "กำลังบันทึก..." : "บันทึก"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1331,6 +1361,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           setCurrentPage={setPreviewPage}
           zoom={previewZoom}
           setZoom={setPreviewZoom}
+          viewerName={currentUser.name}
         />
       )}
     </div>
