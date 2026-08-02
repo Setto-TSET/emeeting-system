@@ -66,6 +66,7 @@ export default function NewMeetingPage() {
       // กุญแจห้องสำหรับเครื่องยนต์ที่ฝังในเว็บ — เดาไม่ได้ สร้างตั้งแต่สร้างประชุม
       conferenceRoomKey: newConferenceRoomKey(),
       transcriptStatus: "none",
+      description: form.description.trim() || undefined,
       status: "prepare",
       displayFormat: 2,
       participants: [],

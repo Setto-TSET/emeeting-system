@@ -47,14 +47,20 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     setInitialized(true);
   }, []);
 
-  // Save to localStorage when meetings change
-  const saveMeetings = (newMeetings: Meeting[]) => {
-    setMeetings(newMeetings);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newMeetings));
-    } catch (e) {
-      console.error("Failed to save meetings to localStorage", e);
-    }
+  /**
+   * mutate ทุกอย่างต้องผ่านฟังก์ชันนี้ — รับ updater ที่ทำงานกับ prev ล่าสุด
+   * ห้ามอ่าน `meetings` จาก closure ตอน mutate เพราะ 2 call ในเทิร์นเดียวกันจะทับกัน
+   */
+  const mutate = (updater: (prev: Meeting[]) => Meeting[]) => {
+    setMeetings((prev) => {
+      const next = updater(prev);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch (e) {
+        console.error("Failed to save meetings to localStorage", e);
+      }
+      return next;
+    });
   };
 
   // Listen to storage events to sync across tabs
@@ -73,25 +79,17 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addMeeting = (meeting: Meeting) => {
-    saveMeetings([meeting, ...meetings]);
+    mutate((prev) => [meeting, ...prev]);
   };
 
   const updateMeeting = (meetingId: string, updated: Partial<Meeting>) => {
-    const next = meetings.map((m) => (m.id === meetingId ? { ...m, ...updated } : m));
-    saveMeetings(next);
+    mutate((prev) => prev.map((m) => (m.id === meetingId ? { ...m, ...updated } : m)));
   };
 
   const addMeetingFile = (meetingId: string, file: MeetingFile) => {
-    const next = meetings.map((m) => {
-      if (m.id === meetingId) {
-        return {
-          ...m,
-          files: [...m.files, file],
-        };
-      }
-      return m;
-    });
-    saveMeetings(next);
+    mutate((prev) =>
+      prev.map((m) => (m.id === meetingId ? { ...m, files: [...m.files, file] } : m))
+    );
   };
 
   const addMeetingComment = (
@@ -99,28 +97,31 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     agendaId: string,
     comment: { by: string; text: string; time: string }
   ) => {
-    const next = meetings.map((m) => {
-      if (m.id === meetingId) {
-        return {
-          ...m,
-          agenda: m.agenda.map((a) =>
-            a.id === agendaId ? { ...a, comments: [...a.comments, comment] } : a
-          ),
-        };
-      }
-      return m;
-    });
-    saveMeetings(next);
+    mutate((prev) =>
+      prev.map((m) =>
+        m.id === meetingId
+          ? {
+              ...m,
+              agenda: m.agenda.map((a) =>
+                a.id === agendaId ? { ...a, comments: [...a.comments, comment] } : a
+              ),
+            }
+          : m
+      )
+    );
   };
 
   const updateActiveAgenda = (meetingId: string, agendaId: string | null) => {
-    const next = meetings.map((m) => (m.id === meetingId ? { ...m, activeAgendaId: agendaId } : m));
-    saveMeetings(next);
+    mutate((prev) =>
+      prev.map((m) => (m.id === meetingId ? { ...m, activeAgendaId: agendaId } : m))
+    );
   };
 
   const joinMeetingAsExternal = (meetingId: string, name: string, role: string) => {
+    // dedup ด้วย sessionId ไม่ใช่ชื่อ — คนสองคนที่ชื่อซ้ำต้องแยกกันได้
+    const sessionId = `P-EXT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const newParticipant: MeetingParticipant = {
-      id: `P-EXT-${Date.now()}`,
+      id: sessionId,
       userId: null, // แขกภายนอก ไม่มีบัญชีในระบบ
       name,
       position: "ผู้เข้าร่วมประชุม",
@@ -131,34 +132,28 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       present: true,
       inSystem: false,
     };
-
-    const next = meetings.map((m) => {
-      if (m.id === meetingId) {
-        // Prevent duplicate guest additions
-        if (m.participants.some((p) => p.name === name)) return m;
-        return {
-          ...m,
-          participants: [...m.participants, newParticipant],
-        };
-      }
-      return m;
-    });
-    saveMeetings(next);
+    mutate((prev) =>
+      prev.map((m) =>
+        m.id === meetingId ? { ...m, participants: [...m.participants, newParticipant] } : m
+      )
+    );
     return newParticipant;
   };
 
   const addChatMessage = (meetingId: string, msg: { sender: string; text: string; time: string }) => {
-    const next = meetings.map((m) => {
-      if (m.id === meetingId) {
-        const chatMessages = m.chatMessages || [];
-        return {
-          ...m,
-          chatMessages: [...chatMessages, { id: `msg-${Date.now()}-${Math.random()}`, ...msg }],
-        };
-      }
-      return m;
-    });
-    saveMeetings(next);
+    mutate((prev) =>
+      prev.map((m) =>
+        m.id === meetingId
+          ? {
+              ...m,
+              chatMessages: [
+                ...(m.chatMessages || []),
+                { id: `msg-${Date.now()}-${Math.random()}`, ...msg },
+              ],
+            }
+          : m
+      )
+    );
   };
 
   return (

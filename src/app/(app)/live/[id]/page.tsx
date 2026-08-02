@@ -57,7 +57,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const [sharedFileId, setSharedFileId] = useState<string | null>(null); // For simulated presentation share
 
   // Webcam stream
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  // เก็บใน ref ไม่ใช่ state — เพราะ effect cleanup อ่านจาก closure ตอน mount
+  // ถ้าใช้ state ค่าที่ cleanup เห็นจะเป็น null เสมอ กล้องจึงไม่ถูกปิดตอนออกจากห้อง
+  const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Speaker Simulator
@@ -81,9 +83,12 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       );
       updateMeeting(meeting.id, { participants: updatedParticipants });
     } else if (currentUser.systemRole === "admin" || currentUser.systemRole === "secretary") {
-      // Allow managers to bypass guest login screen automatically
+      // ผู้จัดการเข้าห้องได้เลยโดยไม่ต้องผ่านฟอร์ม guest
+      // ⚠️ ห้ามเขียนกลับเข้า roster ของประชุม — ไม่งั้นทุกครั้งที่ admin เปิดดู
+      // จะถูกเติมเป็นองค์ประชุมถาวร ทำให้ยอด "N คนในสาย" บวม
+      // และถูกนับรวมตอนแจ้งวาระทางอีเมล
       const managerParticipant: MeetingParticipant = {
-        id: `P-${currentUser.id}`,
+        id: `P-visitor-${currentUser.id}`,
         userId: currentUser.id,
         name: currentUser.name,
         position: currentUser.systemRole === "secretary" ? "เลขานุการ" : "ผู้จัดประชุม",
@@ -96,10 +101,6 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       };
       setLocalParticipant(managerParticipant);
       setHasJoined(true);
-      // Add to participants if not already there
-      if (!meeting.participants.some((p) => p.userId === currentUser.id)) {
-        updateMeeting(meeting.id, { participants: [...meeting.participants, managerParticipant] });
-      }
     }
   }, [meeting?.id, currentUser]);
 
@@ -118,55 +119,61 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     toast.success("เข้าร่วมประชุมสำเร็จ", { description: "คุณได้เข้าร่วมในฐานะบุคคลภายนอก" });
   };
 
-  // Webcam hook
+  // Webcam hook — ปิดกล้องอย่างสนิทตอนออกจากห้อง / navigate
   useEffect(() => {
+    const stopStream = () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    };
+
     if (cameraOn && hasJoined) {
+      let cancelled = false;
       navigator.mediaDevices
         .getUserMedia({ video: true, audio: false })
         .then((s) => {
-          setStream(s);
-          if (videoRef.current) {
-            videoRef.current.srcObject = s;
+          if (cancelled) {
+            // ถ้า effect cleanup วิ่งก่อน getUserMedia จะ resolve — ปิด track ทันที
+            s.getTracks().forEach((t) => t.stop());
+            return;
           }
+          streamRef.current = s;
+          if (videoRef.current) videoRef.current.srcObject = s;
         })
         .catch((err) => {
           console.warn("Could not access webcam, using simulated visual feed.", err);
-          // Don't toast error as it might annoy users without webcams, handle fallback gracefully
         });
-    } else {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-        setStream(null);
-      }
+      return () => {
+        cancelled = true;
+        stopStream();
+      };
     }
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-      }
-    };
+
+    stopStream();
+    return stopStream;
   }, [cameraOn, hasJoined]);
 
   // Random Speaker Highlight Simulation
+  // อ่านค่า meeting/localParticipant ผ่าน ref เพื่อไม่ให้ interval รีเซ็ตทุก context write
+  // (ทุกครั้งที่แชท/สลับวาระ meeting.participants จะเป็น array ใหม่ interval เดิมจะถูกล้าง)
+  const speakerCtxRef = useRef({ meeting, localParticipant });
   useEffect(() => {
-    if (!hasJoined || !meeting || meeting.status !== "in_progress") return;
-
+    speakerCtxRef.current = { meeting, localParticipant };
+  });
+  useEffect(() => {
+    if (!hasJoined) return;
     const interval = setInterval(() => {
-      // Pick a random present participant to speak
-      const presentParticipants = meeting.participants.filter((p) => p.present || p.id === localParticipant?.id);
-      if (presentParticipants.length > 0) {
-        const randIdx = Math.floor(Math.random() * presentParticipants.length);
-        const speaker = presentParticipants[randIdx];
-        // 70% chance someone speaks, 30% silence
-        if (Math.random() < 0.7) {
-          setActiveSpeakerId(speaker.id);
-        } else {
-          setActiveSpeakerId(null);
-        }
-      }
+      const { meeting: m, localParticipant: lp } = speakerCtxRef.current;
+      if (!m || m.status !== "in_progress") return;
+      const presentParticipants = m.participants.filter((p) => p.present || p.id === lp?.id);
+      if (presentParticipants.length === 0) return;
+      const randIdx = Math.floor(Math.random() * presentParticipants.length);
+      setActiveSpeakerId(Math.random() < 0.7 ? presentParticipants[randIdx].id : null);
     }, 6000);
 
     return () => clearInterval(interval);
-  }, [hasJoined, meeting?.participants, localParticipant]);
+  }, [hasJoined]);
 
   if (!meeting) {
     return (
@@ -325,8 +332,6 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       toast.info("ยกเลิกการแชร์หน้าจอ");
     }
   };
-
-  const currentSpeaker = meeting.participants.find((p) => p.id === activeSpeakerId);
 
   return (
     <div className="fixed inset-0 bg-background text-foreground flex flex-col font-sans overflow-hidden z-[1000]">

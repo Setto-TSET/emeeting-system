@@ -310,6 +310,8 @@ export type Meeting = {
   secretGroups: { id: string; name: string; participantIds: string[] }[];
   permissions: { userId: string; name: string; type: "manager" | "reader" }[];
   extraTextBoxes?: { id: string; name: string }[];
+  /** รายละเอียด/วัตถุประสงค์เพิ่มเติมของประชุม — กรอกตอนสร้าง */
+  description?: string;
   savedToDrive: boolean;
   createdAt: string;
   /**
