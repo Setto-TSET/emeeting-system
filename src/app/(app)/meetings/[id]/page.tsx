@@ -405,7 +405,15 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               <Button size="sm" onClick={() => setOpenTimeDialog(true)}><span className={iconSm}>play_circle</span>เปิดประชุม</Button>
             )}
             {meeting.status === "in_progress" && canChangeStatus && (
-              <Button size="sm" onClick={closeMeeting}><span className={iconSm}>stop_circle</span>ปิดประชุม</Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  closeMeeting();
+                  toast.info("ประชุมจบแล้ว — สามารถขอ Transcript ได้", { description: "ไปที่แท็บ 'สรุปประชุม' เพื่อสร้างรายงาน" });
+                }}
+              >
+                <span className={iconSm}>stop_circle</span>ปิดประชุม
+              </Button>
             )}
             {meeting.status === "waiting_endorse" && canEndorse && (
               <>
@@ -732,8 +740,9 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={transcriptBusy || meeting.transcriptStatus === "ready" || meeting.transcriptStatus === "processing"}
+                    disabled={transcriptBusy || meeting.transcriptStatus === "ready" || meeting.transcriptStatus === "processing" || meeting.status === "in_progress"}
                     onClick={requestTranscript}
+                    title={meeting.status === "in_progress" ? "ต้องปิดประชุมก่อน" : undefined}
                   >
                     {transcriptBusy
                       ? <><span className="material-symbols-outlined animate-spin text-[14px] mr-1">progress_activity</span>กำลังดึง...</>

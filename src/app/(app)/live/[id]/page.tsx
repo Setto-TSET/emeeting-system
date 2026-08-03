@@ -378,6 +378,31 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
             </div>
           )}
 
+          {/* End Meeting Button (Host only) */}
+          {isManager && meeting.status === "in_progress" && (
+            <Button
+              size="sm"
+              onClick={() => {
+                // Force all participants out
+                const updatedParticipants = meeting.participants.map((p) => ({
+                  ...p,
+                  present: false,
+                }));
+                updateMeeting(meeting.id, { participants: updatedParticipants, status: "waiting_endorse" });
+                toast.success("จบการประชุมแล้ว", {
+                  description: "สามารถขอ Transcript ได้ที่หน้าจัดการประชุม"
+                });
+                // Delay before redirecting to allow notification
+                setTimeout(() => router.push("/meetings/" + meeting.id), 1500);
+              }}
+              className="h-8 font-semibold bg-orange-600 hover:bg-orange-700 text-white rounded-lg px-3"
+              title="จบการประชุมสำหรับทุกคน"
+            >
+              <span className="material-symbols-outlined text-[16px] mr-1">stop_circle</span>
+              จบการประชุมเลย
+            </Button>
+          )}
+
           <Button
             variant="destructive"
             size="sm"
