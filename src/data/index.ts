@@ -430,6 +430,7 @@ export const meetings: Meeting[] = [
     conferenceProvider: "webex",
     conferenceRoomKey: "emeeting-demo-webex-mt008",
     transcriptStatus: "none",
+    allowGuestJoin: true,
     status: "in_progress",
     displayFormat: 1,
     participants: [

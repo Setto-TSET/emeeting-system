@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, use } from "react";
+import { useState, useRef, use, useEffect } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ import { putFile, formatBytes } from "@/services/fileStorage";
 import { can, canEditMeeting, denialReason } from "@/lib/authz";
 import { useCurrentUser } from "@/context/UserContext";
 import { useMeetings } from "@/context/MeetingContext";
+import { createInviteToken, getTokensForMeeting, revokeToken, buildJoinUrl, type InviteToken } from "@/lib/inviteTokens";
 import { generateMockTranscript } from "@/services/transcription/mockProvider";
 import { mockSummarizer } from "@/services/summarize/mockSummarizer";
 import { buildReportMarkdown } from "@/services/summarize/reportBuilder";
@@ -113,6 +114,44 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const [previewZoom, setPreviewZoom] = useState(100);
   const openFilePreview = (f: MeetingFile) => {
     setPreviewFile(f); setPreviewPage(1); setPreviewZoom(100);
+  };
+
+  // ─── Magic Link guest invite ───
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteTokens, setInviteTokens] = useState<InviteToken[]>([]);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [showEmailPreview, setShowEmailPreview] = useState<InviteToken | null>(null);
+
+  useEffect(() => {
+    setInviteTokens(getTokensForMeeting(meeting.id));
+  }, [meeting.id]);
+
+  const handleSendInvite = () => {
+    if (!inviteEmail.trim()) {
+      toast.error("กรุณาระบุ email ของผู้ได้รับเชิญ");
+      return;
+    }
+    const token = createInviteToken(meeting.id, inviteEmail.trim(), currentUser.name, inviteName.trim() || undefined);
+    setInviteTokens(getTokensForMeeting(meeting.id));
+    setInviteEmail("");
+    setInviteName("");
+    setShowEmailPreview(token);
+    toast.success("สร้าง Magic Link สำเร็จ", { description: `ส่งให้ ${inviteEmail.trim()}` });
+  };
+
+  const handleCopyLink = (token: string) => {
+    const url = buildJoinUrl(token);
+    navigator.clipboard.writeText(url);
+    setCopiedToken(token);
+    toast.success("คัดลอกลิงก์แล้ว");
+    setTimeout(() => setCopiedToken(null), 2000);
+  };
+
+  const handleRevokeToken = (tokenId: string) => {
+    revokeToken(tokenId);
+    setInviteTokens(getTokensForMeeting(meeting.id));
+    toast.success("ยกเลิกลิงก์เชิญแล้ว");
   };
 
   // ─── Phase C-4: Transcript + Summary pipeline ───
@@ -947,6 +986,96 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                     />
                   </div>
                 </div>
+
+                {/* ─── Magic Link Invite Section ─── */}
+                {meeting.allowGuestJoin && canEdit && (
+                  <div className="md:col-span-2 rounded-lg border p-3 bg-primary/5 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[18px] text-primary">link</span>
+                      <p className="text-xs font-semibold">เชิญบุคคลภายนอกผ่าน Magic Link</p>
+                    </div>
+
+                    {/* Invite form */}
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <Input
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        placeholder="Email ผู้รับเชิญ *"
+                        type="email"
+                        className="h-9 text-sm flex-1"
+                      />
+                      <Input
+                        value={inviteName}
+                        onChange={(e) => setInviteName(e.target.value)}
+                        placeholder="ชื่อ (ไม่บังคับ)"
+                        className="h-9 text-sm sm:w-44"
+                      />
+                      <Button size="sm" onClick={handleSendInvite} className="h-9 px-4 flex-shrink-0">
+                        <span className="material-symbols-outlined text-[16px] mr-1">send</span>
+                        สร้างลิงก์เชิญ
+                      </Button>
+                    </div>
+
+                    {/* Existing tokens */}
+                    {inviteTokens.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] text-muted-foreground font-medium">ลิงก์ที่สร้างแล้ว ({inviteTokens.length})</p>
+                        <div className="space-y-1">
+                          {inviteTokens.map((t) => (
+                            <div key={t.token} className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11px] ${t.used ? "bg-muted/50 opacity-60" : "bg-background"}`}>
+                              <span className="material-symbols-outlined text-[14px] text-muted-foreground">
+                                {t.used ? "check_circle" : "link"}
+                              </span>
+                              <span className="truncate flex-1 font-medium">{t.guestEmail}</span>
+                              {t.guestName && <span className="text-muted-foreground">({t.guestName})</span>}
+                              <span className="text-muted-foreground flex-shrink-0">
+                                {t.used ? "ใช้แล้ว" : `หมดอายุ ${new Date(t.expiresAt).toLocaleDateString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`}
+                              </span>
+                              {!t.used && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-1.5"
+                                    onClick={() => handleCopyLink(t.token)}
+                                    title="คัดลอกลิงก์"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">
+                                      {copiedToken === t.token ? "check" : "content_copy"}
+                                    </span>
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-1.5"
+                                    onClick={() => setShowEmailPreview(t)}
+                                    title="ดูตัวอย่าง Email"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">visibility</span>
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-1.5 text-destructive hover:text-destructive"
+                                    onClick={() => handleRevokeToken(t.token)}
+                                    title="ยกเลิก"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">close</span>
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <p className="text-[10px] text-muted-foreground">
+                      ลิงก์ใช้ได้ครั้งเดียว หมดอายุ 48 ชม. · ในระบบจริงจะส่ง Email อัตโนมัติ · ตอนนี้คัดลอกลิงก์ส่งเองได้
+                    </p>
+                  </div>
+                )}
+
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">การเก็บบันทึกลง Drive</p>
                   <div className="flex items-center gap-1.5">
@@ -1499,6 +1628,78 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           confidentialityLevel={meeting.confidentialityLevel ?? "normal"}
         />
       )}
+
+      {/* Magic Link — Email Preview Dialog */}
+      <Dialog open={!!showEmailPreview} onOpenChange={(v) => !v && setShowEmailPreview(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[20px] text-primary">mail</span>
+              ตัวอย่าง Email เชิญประชุม
+            </DialogTitle>
+            <DialogDescription>
+              ในระบบจริง Email นี้จะถูกส่งอัตโนมัติ · ตอนนี้คัดลอกลิงก์ส่งเองได้
+            </DialogDescription>
+          </DialogHeader>
+          {showEmailPreview && (
+            <div className="space-y-3 py-2">
+              <div className="rounded-lg border bg-background overflow-hidden">
+                {/* Email header */}
+                <div className="border-b px-4 py-2 bg-muted/30 space-y-1 text-xs">
+                  <div className="flex gap-2"><span className="text-muted-foreground w-12">From:</span><span className="font-medium">e-Meeting &lt;notify@e-office.cloud&gt;</span></div>
+                  <div className="flex gap-2"><span className="text-muted-foreground w-12">To:</span><span className="font-medium">{showEmailPreview.guestEmail}</span></div>
+                  <div className="flex gap-2"><span className="text-muted-foreground w-12">Subject:</span><span className="font-medium">คุณได้รับเชิญเข้าร่วมประชุม: {meeting.name}</span></div>
+                </div>
+                {/* Email body */}
+                <div className="p-4 text-sm space-y-3">
+                  <p>เรียน {showEmailPreview.guestName || showEmailPreview.guestEmail}</p>
+                  <p>
+                    {meeting.organizer} ขอเชิญท่านเข้าร่วมประชุม <strong>{meeting.name}</strong>
+                  </p>
+                  <div className="rounded-lg bg-muted/40 border p-3 space-y-1 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[14px]">calendar_today</span>
+                      วันที่: {meeting.date}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[14px]">schedule</span>
+                      เวลา: {meeting.time}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[14px]">place</span>
+                      สถานที่: {meeting.location}
+                    </div>
+                  </div>
+                  <div className="py-2">
+                    <Button
+                      className="w-full"
+                      onClick={() => handleCopyLink(showEmailPreview.token)}
+                    >
+                      <span className="material-symbols-outlined text-[16px] mr-1.5">
+                        {copiedToken === showEmailPreview.token ? "check" : "link"}
+                      </span>
+                      {copiedToken === showEmailPreview.token ? "คัดลอกแล้ว!" : "คัดลอก Magic Link"}
+                    </Button>
+                    <p className="text-[10px] text-center text-muted-foreground mt-1.5">
+                      {buildJoinUrl(showEmailPreview.token).replace(/^https?:\/\//, "")}
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    ลิงก์นี้ใช้ได้ครั้งเดียว หมดอายุภายใน 48 ชั่วโมง
+                    <br />ท่านไม่จำเป็นต้องสร้างบัญชี — คลิกลิงก์แล้วกรอกชื่อเพื่อเข้าร่วม
+                  </p>
+                  <div className="border-t pt-2 text-[10px] text-muted-foreground">
+                    ส่งจากระบบ e-Meeting · ระบบบริหารการประชุมและจองห้องประชุม
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEmailPreview(null)}>ปิด</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
