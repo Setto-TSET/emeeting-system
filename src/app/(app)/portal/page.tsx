@@ -9,6 +9,7 @@ import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
 import { DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { meetingStatusLabels, meetingStatusColors, canViewFile, isMyMeeting, Meeting, MeetingFile } from "@/data";
+import { downloadIcs } from "@/lib/calendar";
 
 export default function MyMeetingsPage() {
   const router = useRouter();
@@ -114,6 +115,27 @@ export default function MyMeetingsPage() {
                     {isExpanded ? "expand_less" : "expand_more"}
                   </span>
                 </button>
+
+                {/* แจ้งเตือน + ปฏิทิน */}
+                {m.notifiedAt && (
+                  <div className="px-4 pb-2">
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/60 dark:bg-blue-950/20 px-3 py-2 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-[11px] text-blue-700 dark:text-blue-400">
+                        <span className="material-symbols-outlined text-[16px]">notifications</span>
+                        <span>แจ้งวาระเมื่อ {new Date(m.notifiedAt).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px] gap-1 border-blue-300 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                        onClick={() => downloadIcs(m)}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">calendar_add_on</span>
+                        เพิ่มลงปฏิทิน
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 {/* ปุ่มเข้าประชุม */}
                 <div className="px-4 pb-4">

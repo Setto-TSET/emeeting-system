@@ -345,6 +345,10 @@ export type Meeting = {
    * top_secret = ลับมาก — user-select: none, watermark refresh ทุก 5 วิ
    */
   confidentialityLevel?: "normal" | "restricted" | "top_secret";
+  /** วันเวลาที่ส่งแจ้งวาระ */
+  notifiedAt?: string;
+  /** วันเวลาที่ส่ง reminder (1 วันก่อนประชุม) */
+  reminderSentAt?: string;
 };
 
 export type MeetingChatMessage = {

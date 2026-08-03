@@ -24,6 +24,7 @@ import { can, canEditMeeting, denialReason } from "@/lib/authz";
 import { useCurrentUser } from "@/context/UserContext";
 import { useMeetings } from "@/context/MeetingContext";
 import { createInviteToken, getTokensForMeeting, revokeToken, buildJoinUrl, type InviteToken } from "@/lib/inviteTokens";
+import { downloadIcs } from "@/lib/calendar";
 import { generateMockTranscript } from "@/services/transcription/mockProvider";
 import { mockSummarizer } from "@/services/summarize/mockSummarizer";
 import { buildReportMarkdown } from "@/services/summarize/reportBuilder";
@@ -75,6 +76,9 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const [addParticipantOpen, setAddParticipantOpen] = useState(false);
   const [participantName, setParticipantName] = useState("");
   const [participantPos, setParticipantPos] = useState("กรรมการ");
+  const [participantSearch, setParticipantSearch] = useState("");
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [selectedUsersPos, setSelectedUsersPos] = useState<Record<string, string>>({});
   const [addFileOpen, setAddFileOpen] = useState(false);
   const [secretGroupOpen, setSecretGroupOpen] = useState(false);
   const [displayFormatOpen, setDisplayFormatOpen] = useState(false);
@@ -208,10 +212,39 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     toast.success(`เปลี่ยนสถานะเป็น: ${meetingStatusLabels[s]}`);
   };
 
+  const [notifyPreviewStep, setNotifyPreviewStep] = useState<"config" | "preview">("config");
+
+  const systemParticipants = meeting.participants.filter(p => p.inSystem);
+  const externalParticipants = meeting.participants.filter(p => !p.inSystem);
+
   const notifyAgenda = () => {
-    updateMeeting(meeting.id, { status: "notified" });
+    const sysCount = systemParticipants.length;
+    const extCount = externalParticipants.length;
+    const extList = [...externalParticipants];
+
     setNotifyDialog(false);
-    toast.success("ส่ง Email แจ้งวาระเรียบร้อย", { description: `แจ้งไปยัง ${meeting.participants.length} ราย` });
+    setNotifyPreviewStep("config");
+
+    const now = new Date().toISOString();
+    updateMeeting(meeting.id, { status: "notified", notifiedAt: now });
+
+    for (const ext of extList) {
+      if (ext.email && ext.email !== "-") {
+        createInviteToken(meeting.id, ext.email, currentUser.name, ext.name);
+      }
+    }
+
+    toast.success("ส่ง Email แจ้งวาระเรียบร้อย", {
+      description: `แจ้งคนในระบบ ${sysCount} ราย, บุคคลภายนอก ${extCount} ราย`,
+    });
+  };
+
+  const sendReminder = () => {
+    const now = new Date().toISOString();
+    updateMeeting(meeting.id, { reminderSentAt: now });
+    toast.success("ส่ง Reminder พร้อมลิงก์ประชุมแล้ว", {
+      description: `แจ้งเตือนไปยัง ${meeting.participants.length} ราย`,
+    });
   };
 
   const confirmOpenMeeting = (useCurrentTime: boolean) => {
@@ -368,28 +401,65 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     });
   };
 
-  const addParticipant = (inSystem: boolean) => {
+  const addExternalParticipant = () => {
     if (!participantName.trim()) { toast.error("กรุณากรอกชื่อ"); return; }
-    // ถ้าเป็นคนในระบบ ผูกกับบัญชีจริงเพื่อให้สิทธิ์ทำงานถูกต้อง
-    const matched = inSystem
-      ? users.find((u) => u.name === participantName.trim())
-      : undefined;
     updateMeeting(meeting.id, {
       participants: [...meeting.participants, {
         id: `P-${Date.now()}`,
-        userId: matched?.id ?? null,
+        userId: null,
         name: participantName,
         position: participantPos,
-        role: matched?.position ?? (inSystem ? "ผู้ใช้ในระบบ" : "ผู้ทรงคุณวุฒิภายนอก"),
-        department: matched?.department ?? (inSystem ? "-" : "ภายนอก"),
-        email: matched?.email ?? "-",
+        role: "ผู้ทรงคุณวุฒิภายนอก",
+        department: "ภายนอก",
+        email: "-",
         attendance: "pending",
-        inSystem,
+        inSystem: false,
       }]
     });
     toast.success("เพิ่มองค์ประชุมสำเร็จ");
     setParticipantName(""); setParticipantPos("กรรมการ");
     setAddParticipantOpen(false);
+  };
+
+  const addSelectedSystemUsers = () => {
+    if (selectedUserIds.length === 0) { toast.error("กรุณาเลือกผู้ใช้อย่างน้อย 1 คน"); return; }
+    const newParticipants = selectedUserIds.map((uid, i) => {
+      const u = users.find(x => x.id === uid)!;
+      return {
+        id: `P-${Date.now()}-${i}`,
+        userId: u.id,
+        name: u.name,
+        position: selectedUsersPos[uid] || "กรรมการ",
+        role: u.position,
+        department: u.department,
+        email: u.email,
+        attendance: "pending" as const,
+        inSystem: true,
+      };
+    });
+    updateMeeting(meeting.id, {
+      participants: [...meeting.participants, ...newParticipants]
+    });
+    toast.success(`เพิ่มองค์ประชุม ${newParticipants.length} คนสำเร็จ`);
+    setSelectedUserIds([]); setSelectedUsersPos({}); setParticipantSearch("");
+    setAddParticipantOpen(false);
+  };
+
+  const existingUserIds = new Set(meeting.participants.filter(p => p.userId).map(p => p.userId));
+  const availableUsers = users.filter(u => !existingUserIds.has(u.id) && u.systemRole !== "external");
+  const filteredUsers = participantSearch.trim()
+    ? availableUsers.filter(u =>
+        u.name.includes(participantSearch) ||
+        u.department.includes(participantSearch) ||
+        u.position.includes(participantSearch) ||
+        u.email.toLowerCase().includes(participantSearch.toLowerCase())
+      )
+    : availableUsers;
+
+  const toggleUserSelection = (uid: string) => {
+    setSelectedUserIds(prev =>
+      prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]
+    );
   };
 
   // สิทธิ์แยกตามการกระทำ — เดิมใช้ตัวเดียวเช็คแค่สถานะ ทำให้ใครที่เป็น manager
@@ -439,6 +509,17 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
             )}
             {meeting.status === "prepare" && canNotify && (
               <Button size="sm" onClick={() => setNotifyDialog(true)}><span className={iconSm}>send</span>แจ้งวาระ</Button>
+            )}
+            {meeting.status === "notified" && canNotify && !meeting.reminderSentAt && (
+              <Button size="sm" variant="outline" onClick={sendReminder}>
+                <span className={iconSm}>notifications_active</span>ส่ง Reminder + ลิงก์ประชุม
+              </Button>
+            )}
+            {meeting.status === "notified" && meeting.reminderSentAt && (
+              <Badge variant="secondary" className="text-[10px] h-8 px-3">
+                <span className="material-symbols-outlined text-[14px] mr-1 text-green-600">check_circle</span>
+                ส่ง Reminder แล้ว
+              </Badge>
             )}
             {meeting.status === "notified" && canChangeStatus && (
               <Button size="sm" onClick={() => setOpenTimeDialog(true)}><span className={iconSm}>play_circle</span>เปิดประชุม</Button>
@@ -1102,33 +1183,208 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
         </TabsContent>
       </Tabs>
 
-      {/* Notify Dialog */}
-      <Dialog open={notifyDialog} onOpenChange={setNotifyDialog}>
-        <DialogContent>
+      {/* Notify Dialog — Enhanced */}
+      <Dialog open={notifyDialog} onOpenChange={(open) => { setNotifyDialog(open); if (!open) setNotifyPreviewStep("config"); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>แจ้งวาระการประชุม</DialogTitle>
-            <DialogDescription>ส่ง Email รายละเอียดการประชุมไปยังองค์ประชุมทั้งหมด</DialogDescription>
+            <DialogDescription>ส่ง Email รายละเอียดวาระ + ปฏิทิน (.ics) ไปยังองค์ประชุมทั้งหมด</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">ผู้รับ ({meeting.participants.length} คน)</label>
-              <div className="rounded-md border p-2 bg-muted/30 max-h-32 overflow-y-auto text-xs">
-                {meeting.participants.map(p => p.name).join(", ")}
+
+          {notifyPreviewStep === "config" ? (
+            <>
+            <div className="space-y-4 py-2 overflow-y-auto flex-1 min-h-0">
+              {/* ผู้รับ — คนในระบบ */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[14px]">group</span>
+                  ผู้ใช้ในระบบ ({systemParticipants.length} คน)
+                </label>
+                <div className="rounded-md border p-2 bg-muted/30 max-h-28 overflow-y-auto">
+                  <div className="flex flex-wrap gap-1.5">
+                    {systemParticipants.map(p => (
+                      <Badge key={p.id} variant="secondary" className="text-[11px] gap-1">
+                        <span className="material-symbols-outlined text-[12px]">person</span>
+                        {p.name}
+                        <span className="text-muted-foreground">({p.email})</span>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">ระบบดึงอีเมลจากข้อมูลผู้ใช้อัตโนมัติ + แสดงแจ้งเตือนในหน้าพอร์ทัลของแต่ละคน</p>
               </div>
+
+              {/* ผู้รับ — บุคคลภายนอก */}
+              {externalParticipants.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[14px]">person_add</span>
+                    บุคคลภายนอก ({externalParticipants.length} คน) — ส่ง Magic Link
+                  </label>
+                  <div className="rounded-md border p-2 bg-amber-50/50 dark:bg-amber-950/20 max-h-28 overflow-y-auto">
+                    <div className="flex flex-wrap gap-1.5">
+                      {externalParticipants.map(p => (
+                        <Badge key={p.id} variant="outline" className="text-[11px] gap-1 border-amber-300 text-amber-700 dark:text-amber-400">
+                          <span className="material-symbols-outlined text-[12px]">link</span>
+                          {p.name}
+                          {p.email !== "-" && <span className="text-muted-foreground">({p.email})</span>}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">ผู้ใช้ภายนอกจะได้รับ Magic Link เข้าประชุมโดยไม่ต้องสร้างบัญชี</p>
+                </div>
+              )}
+
+              {/* สิ่งที่จะส่ง */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">สิ่งที่จะส่งในอีเมล</label>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 rounded-md border px-3 py-2 bg-muted/20">
+                    <span className="material-symbols-outlined text-[18px] text-primary">description</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">รายละเอียดวาระการประชุม</p>
+                      <p className="text-[11px] text-muted-foreground">{meeting.agenda.length} วาระ · {meeting.date} · {meeting.startTime}-{meeting.endTime} · {meeting.location}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-md border px-3 py-2 bg-muted/20">
+                    <span className="material-symbols-outlined text-[18px] text-blue-600">calendar_add_on</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">ไฟล์ปฏิทิน (.ics)</p>
+                      <p className="text-[11px] text-muted-foreground">ผู้รับกดเพิ่มลง Google Calendar / Outlook ได้ทันที · มี alarm แจ้ง 1 วันก่อน + 30 นาทีก่อน</p>
+                    </div>
+                    <Button variant="outline" size="sm" className="text-[11px] h-7" onClick={() => downloadIcs(meeting)}>
+                      <span className="material-symbols-outlined text-[14px] mr-1">download</span>ทดลองดาวน์โหลด
+                    </Button>
+                  </div>
+                  {meeting.conferenceLink && (
+                    <div className="flex items-center gap-2 rounded-md border px-3 py-2 bg-muted/20">
+                      <span className="material-symbols-outlined text-[18px] text-green-600">video_call</span>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">ลิงก์ประชุมออนไลน์</p>
+                        <p className="text-[11px] text-muted-foreground break-all">{meeting.conferenceLink}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Reminder */}
+              <div className="rounded-lg border border-dashed border-blue-300 bg-blue-50/50 dark:bg-blue-950/20 px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <span className="material-symbols-outlined text-[18px] text-blue-600 mt-0.5">notifications_active</span>
+                  <div>
+                    <p className="text-sm font-medium text-blue-700 dark:text-blue-400">Reminder อัตโนมัติ</p>
+                    <p className="text-[11px] text-blue-600/80 dark:text-blue-400/80">
+                      ระบบจะส่งอีเมลเตือนพร้อมลิงก์เข้าประชุม <strong>1 วันก่อนวันประชุม</strong> อัตโนมัติ
+                      {meeting.reminderSentAt && (
+                        <span className="ml-1 text-green-600">✓ ส่งแล้วเมื่อ {new Date(meeting.reminderSentAt).toLocaleString("th-TH")}</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
             </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">CC</label>
-              <Input placeholder="อีเมล CC เพิ่มเติม (คั่นด้วย ,)" />
+            <DialogFooter className="gap-2 pt-2 border-t flex-shrink-0">
+              <Button variant="outline" onClick={() => setNotifyDialog(false)}>ยกเลิก</Button>
+              <Button variant="outline" onClick={() => setNotifyPreviewStep("preview")}>
+                <span className={iconSm}>visibility</span>ดูตัวอย่างอีเมล
+              </Button>
+              <Button onClick={notifyAgenda}>
+                <span className={iconSm}>send</span>ส่งแจ้งวาระ ({meeting.participants.length} คน)
+              </Button>
+            </DialogFooter>
+            </>
+          ) : (
+            <>
+            {/* Email Preview */}
+            <div className="space-y-3 py-2 overflow-y-auto flex-1 min-h-0">
+              <div className="rounded-lg border bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
+                {/* Email Header */}
+                <div className="border-b px-4 py-3 bg-muted/30 space-y-1.5">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-medium text-muted-foreground w-12">From:</span>
+                    <span>{meeting.emailSenderName} &lt;notify@e-office.cloud&gt;</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-medium text-muted-foreground w-12">To:</span>
+                    <span className="truncate">{meeting.participants.map(p => p.email).filter(e => e !== "-").join(", ") || "ผู้เข้าร่วมทุกท่าน"}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-medium text-muted-foreground w-12">Subject:</span>
+                    <span className="font-medium">แจ้งวาระ: {meeting.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-medium text-muted-foreground w-12">แนบ:</span>
+                    <Badge variant="secondary" className="text-[10px] gap-1">
+                      <span className="material-symbols-outlined text-[12px]">event</span>
+                      {meeting.shortName}.ics
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* Email Body */}
+                <div className="px-4 py-4 text-sm space-y-3">
+                  <p>เรียน ผู้เข้าร่วมประชุมทุกท่าน</p>
+                  <p>ขอเรียนเชิญเข้าร่วม<strong>{meeting.name}</strong></p>
+
+                  <div className="rounded-md border px-3 py-2.5 bg-muted/20 space-y-1 text-[13px]">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[14px] text-muted-foreground">calendar_today</span>
+                      <span>วันที่: <strong>{meeting.date}</strong></span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[14px] text-muted-foreground">schedule</span>
+                      <span>เวลา: <strong>{meeting.startTime} - {meeting.endTime} น.</strong></span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[14px] text-muted-foreground">place</span>
+                      <span>สถานที่: <strong>{meeting.location}</strong></span>
+                    </div>
+                    {meeting.conferenceLink && (
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[14px] text-muted-foreground">video_call</span>
+                        <span>ประชุมออนไลน์: <span className="text-blue-600 underline">{meeting.conferenceLink.slice(0, 50)}…</span></span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="font-medium mb-1.5">วาระการประชุม:</p>
+                    <ol className="list-none space-y-1 text-[13px]">
+                      {meeting.agenda.map(a => (
+                        <li key={a.id} className="flex items-start gap-2">
+                          <Badge variant="outline" className="text-[10px] mt-0.5 flex-shrink-0">{a.no}</Badge>
+                          <span>{a.title}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  <div className="rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-[12px] text-blue-700 dark:text-blue-400">
+                    <span className="material-symbols-outlined text-[14px] align-middle mr-1">calendar_add_on</span>
+                    กดไฟล์แนบ <strong>{meeting.shortName}.ics</strong> เพื่อเพิ่มกิจกรรมลงปฏิทินของท่านอัตโนมัติ
+                  </div>
+
+                  <hr />
+                  <p className="text-[11px] text-muted-foreground">
+                    อีเมลนี้ส่งจากระบบ e-Meeting อัตโนมัติ · ระบบจะส่งเตือนอีกครั้ง 1 วันก่อนวันประชุม พร้อมลิงก์เข้าห้องประชุม
+                  </p>
+                </div>
+              </div>
+
             </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">หัวข้อ</label>
-              <Input defaultValue={`แจ้งวาระ: ${meeting.name}`} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNotifyDialog(false)}>ยกเลิก</Button>
-            <Button onClick={notifyAgenda}><span className={iconSm}>send</span>ส่ง Email</Button>
-          </DialogFooter>
+            <DialogFooter className="gap-2 pt-2 border-t flex-shrink-0">
+              <Button variant="outline" onClick={() => setNotifyPreviewStep("config")}>
+                <span className={iconSm}>arrow_back</span>กลับ
+              </Button>
+              <Button onClick={notifyAgenda}>
+                <span className={iconSm}>send</span>ส่งแจ้งวาระ ({meeting.participants.length} คน)
+              </Button>
+            </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -1149,34 +1405,122 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
       </Dialog>
 
       {/* Add participant */}
-      <Dialog open={addParticipantOpen} onOpenChange={setAddParticipantOpen}>
-        <DialogContent>
+      <Dialog open={addParticipantOpen} onOpenChange={(open) => {
+        setAddParticipantOpen(open);
+        if (!open) { setSelectedUserIds([]); setSelectedUsersPos({}); setParticipantSearch(""); setParticipantName(""); setParticipantPos("กรรมการ"); }
+      }}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>เพิ่มองค์ประชุม</DialogTitle>
             <DialogDescription>เลือกจากผู้ใช้ในระบบ หรือเพิ่มบุคคลภายนอก</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">ชื่อ - สกุล</label>
-              <Input value={participantName} onChange={e => setParticipantName(e.target.value)} placeholder="เช่น นาย สมชาย ใจดี" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">ตำแหน่งในที่ประชุม</label>
-              <select className="w-full border rounded px-2 h-9 text-sm bg-transparent" value={participantPos} onChange={e => setParticipantPos(e.target.value)}>
-                <option>ประธาน</option>
-                <option>รองประธาน</option>
-                <option>กรรมการ</option>
-                <option>เลขานุการ</option>
-                <option>ผู้เข้าร่วม</option>
-                <option>ที่ปรึกษา</option>
-              </select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddParticipantOpen(false)}>ยกเลิก</Button>
-            <Button variant="outline" onClick={() => addParticipant(false)}>เพิ่มบุคคลภายนอก</Button>
-            <Button onClick={() => addParticipant(true)}>เพิ่มจากผู้ใช้ในระบบ</Button>
-          </DialogFooter>
+          <Tabs defaultValue="system" className="w-full">
+            <TabsList className="w-full">
+              <TabsTrigger value="system" className="flex-1 gap-1">
+                <span className="material-symbols-outlined text-[16px]">group</span>
+                ผู้ใช้ในระบบ
+              </TabsTrigger>
+              <TabsTrigger value="external" className="flex-1 gap-1">
+                <span className="material-symbols-outlined text-[16px]">person_add</span>
+                บุคคลภายนอก
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="system" className="mt-3 space-y-3">
+              <div className="relative">
+                <span className="material-symbols-outlined text-[18px] text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2">search</span>
+                <Input
+                  value={participantSearch}
+                  onChange={e => setParticipantSearch(e.target.value)}
+                  placeholder="ค้นหาชื่อ ตำแหน่ง หน่วยงาน..."
+                  className="pl-9"
+                />
+              </div>
+
+              <div className="border rounded-lg max-h-[280px] overflow-y-auto">
+                {filteredUsers.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    <span className="material-symbols-outlined text-[28px] block mb-1">person_off</span>
+                    {participantSearch ? "ไม่พบผู้ใช้ที่ตรงกับคำค้น" : "ผู้ใช้ทั้งหมดอยู่ในที่ประชุมแล้ว"}
+                  </div>
+                ) : (
+                  filteredUsers.map(u => {
+                    const selected = selectedUserIds.includes(u.id);
+                    return (
+                      <div
+                        key={u.id}
+                        className={`flex items-center gap-3 px-3 py-2.5 border-b last:border-b-0 cursor-pointer transition-colors ${selected ? "bg-primary/5" : "hover:bg-muted/50"}`}
+                        onClick={() => toggleUserSelection(u.id)}
+                      >
+                        <div className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${selected ? "bg-primary border-primary" : "border-muted-foreground/30"}`}>
+                          {selected && <span className="material-symbols-outlined text-[14px] text-primary-foreground">check</span>}
+                        </div>
+                        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <span className="text-primary text-xs font-semibold">{u.name.charAt(u.name.indexOf(" ") + 1)}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{u.name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">{u.position} · {u.department}</p>
+                        </div>
+                        {selected && (
+                          <select
+                            className="border rounded px-1.5 py-0.5 text-[11px] bg-transparent flex-shrink-0"
+                            value={selectedUsersPos[u.id] || "กรรมการ"}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => setSelectedUsersPos(prev => ({ ...prev, [u.id]: e.target.value }))}
+                          >
+                            <option>ประธาน</option>
+                            <option>รองประธาน</option>
+                            <option>กรรมการ</option>
+                            <option>เลขานุการ</option>
+                            <option>ผู้เข้าร่วม</option>
+                            <option>ที่ปรึกษา</option>
+                          </select>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {selectedUserIds.length > 0 && (
+                <p className="text-xs text-muted-foreground">เลือกแล้ว {selectedUserIds.length} คน</p>
+              )}
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAddParticipantOpen(false)}>ยกเลิก</Button>
+                <Button onClick={addSelectedSystemUsers} disabled={selectedUserIds.length === 0}>
+                  <span className="material-symbols-outlined text-[16px] mr-1">group_add</span>
+                  เพิ่ม {selectedUserIds.length > 0 ? `${selectedUserIds.length} คน` : "ผู้ใช้ที่เลือก"}
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+
+            <TabsContent value="external" className="mt-3 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">ชื่อ - สกุล</label>
+                <Input value={participantName} onChange={e => setParticipantName(e.target.value)} placeholder="เช่น นาย สมชาย ใจดี" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">ตำแหน่งในที่ประชุม</label>
+                <select className="w-full border rounded px-2 h-9 text-sm bg-transparent" value={participantPos} onChange={e => setParticipantPos(e.target.value)}>
+                  <option>ประธาน</option>
+                  <option>รองประธาน</option>
+                  <option>กรรมการ</option>
+                  <option>เลขานุการ</option>
+                  <option>ผู้เข้าร่วม</option>
+                  <option>ที่ปรึกษา</option>
+                </select>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAddParticipantOpen(false)}>ยกเลิก</Button>
+                <Button onClick={addExternalParticipant}>
+                  <span className="material-symbols-outlined text-[16px] mr-1">person_add</span>
+                  เพิ่มบุคคลภายนอก
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
 
@@ -1663,7 +2007,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-[14px]">schedule</span>
-                      เวลา: {meeting.time}
+                      เวลา: {meeting.startTime} - {meeting.endTime} น.
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-[14px]">place</span>

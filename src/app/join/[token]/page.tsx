@@ -166,7 +166,7 @@ export default function JoinByTokenPage({ params }: { params: Promise<{ token: s
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="material-symbols-outlined text-[14px]">schedule</span>
-                    {meeting.time}
+                    {meeting.startTime} - {meeting.endTime} น.
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="material-symbols-outlined text-[14px]">place</span>
