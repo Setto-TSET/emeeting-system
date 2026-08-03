@@ -13,6 +13,7 @@ import { useCurrentUser } from "@/context/UserContext";
 import { SimulatedDocumentViewer, DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { ExternalConferenceStage } from "@/components/meeting/ExternalConferenceStage";
 import { WebexEmbedStage } from "@/components/meeting/WebexEmbedStage";
+import { ZegoCloudEmbedStage } from "@/components/meeting/ZegoCloudEmbedStage";
 import { resolveConference } from "@/lib/conference";
 import { resolveVideoSurface } from "@/services/video";
 import { requestVideoCredential, type VideoCredential } from "@/services/credentials";
@@ -445,7 +446,23 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
         <div className="flex-1 flex flex-col p-4 space-y-4 overflow-y-auto">
           
           {/* Main content pane: เอกสารที่แชร์ > engine ฝัง > เวทีประชุมภายนอก > ห้องจำลองในเว็บ */}
-          {isEmbedConference && !sharedFile ? (
+          {isEmbedConference && !sharedFile && videoSurface.kind === "embed" && videoSurface.engineId === "zegocloud" ? (
+            <ZegoCloudEmbedStage
+              meeting={meeting}
+              isHost={isManager}
+              credential={videoCredential}
+              onLeave={() => {
+                if (localParticipant) {
+                  const updatedParticipants = meeting.participants.map((p) =>
+                    p.id === localParticipant.id ? { ...p, present: false } : p
+                  );
+                  updateMeeting(meeting.id, { participants: updatedParticipants });
+                }
+                toast.info("คุณได้ออกจากห้องประชุม ZegoCloud เรียบร้อย");
+                router.push("/portal");
+              }}
+            />
+          ) : isEmbedConference && !sharedFile ? (
             <WebexEmbedStage
               meeting={meeting}
               isHost={isManager}

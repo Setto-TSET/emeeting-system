@@ -29,6 +29,7 @@ export default function NewMeetingPage() {
     startTime: "09:00",
     endTime: "12:00",
     roomId: meetingRooms[0].id,
+    conferenceEngine: "mock" as "mock" | "zegocloud" | "external",
     conferenceLink: "",
     description: "",
     confidentialityLevel: "normal" as "normal" | "restricted" | "top_secret",
@@ -36,7 +37,10 @@ export default function NewMeetingPage() {
 
   const update = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(p => ({ ...p, [k]: v }));
 
-  const provider = detectProvider(form.conferenceLink);
+  const externalProvider = detectProvider(form.conferenceLink);
+  const provider = form.conferenceEngine === "zegocloud" ? "zegocloud" as const
+    : form.conferenceEngine === "external" ? externalProvider
+    : "mock" as const;
   const detectedSpec = conferenceProviders[provider];
 
   const submit = (e: React.FormEvent) => {
@@ -62,7 +66,7 @@ export default function NewMeetingPage() {
       startTime: form.startTime,
       endTime: form.endTime,
       location: room.name,
-      conferenceLink: form.conferenceLink.trim() || undefined,
+      conferenceLink: form.conferenceEngine === "external" ? (form.conferenceLink.trim() || undefined) : undefined,
       conferenceProvider: provider,
       // กุญแจห้องสำหรับเครื่องยนต์ที่ฝังในเว็บ — เดาไม่ได้ สร้างตั้งแต่สร้างประชุม
       conferenceRoomKey: newConferenceRoomKey(),
@@ -147,25 +151,46 @@ export default function NewMeetingPage() {
                 </Select>
               </div>
               <div className="md:col-span-2">
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">ลิงก์ประชุมออนไลน์ (ถ้ามี)</label>
-                <Input
-                  type="url"
-                  value={form.conferenceLink}
-                  onChange={e => update("conferenceLink", e.target.value)}
-                  placeholder="วางลิงก์จาก Teams / Zoom / Google Meet ได้เลย"
-                />
-                {/* ระบบตรวจผู้ให้บริการจากลิงก์อัตโนมัติ — ผู้จัดไม่ต้องเลือกเอง */}
-                <div className="mt-2 flex items-center gap-2 text-xs">
-                  <span className="material-symbols-outlined text-[16px] text-muted-foreground">
-                    {detectedSpec.icon}
-                  </span>
-                  <span className="text-muted-foreground">ระบบตรวจพบ:</span>
-                  <span className="font-medium">{detectedSpec.label}</span>
-                  {detectedSpec.launchMode === "external" && (
-                    <span className="text-muted-foreground">— ผู้เข้าร่วมจะกดเปิดแอปจากหน้าประชุม</span>
-                  )}
-                </div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">ระบบประชุมออนไลน์</label>
+                <select
+                  value={form.conferenceEngine}
+                  onChange={e => update("conferenceEngine", e.target.value as typeof form.conferenceEngine)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="mock">ห้องจำลอง (Mock)</option>
+                  <option value="zegocloud">ZegoCloud (ประชุมในเว็บ)</option>
+                  <option value="external">วางลิงก์ภายนอก (Teams / Zoom / Meet)</option>
+                </select>
               </div>
+              {form.conferenceEngine === "external" && (
+                <div className="md:col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">ลิงก์ประชุมออนไลน์</label>
+                  <Input
+                    type="url"
+                    value={form.conferenceLink}
+                    onChange={e => update("conferenceLink", e.target.value)}
+                    placeholder="วางลิงก์จาก Teams / Zoom / Google Meet ได้เลย"
+                  />
+                  <div className="mt-2 flex items-center gap-2 text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-muted-foreground">
+                      {detectedSpec.icon}
+                    </span>
+                    <span className="text-muted-foreground">ระบบตรวจพบ:</span>
+                    <span className="font-medium">{detectedSpec.label}</span>
+                    {detectedSpec.launchMode === "external" && (
+                      <span className="text-muted-foreground">— ผู้เข้าร่วมจะกดเปิดแอปจากหน้าประชุม</span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {form.conferenceEngine === "zegocloud" && (
+                <div className="md:col-span-2">
+                  <div className="rounded-lg bg-[#0055FF]/5 border border-[#0055FF]/20 px-3 py-2 flex items-center gap-2 text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-[#0055FF]">videocam</span>
+                    <span className="text-muted-foreground">ผู้เข้าร่วมจะประชุมผ่าน ZegoCloud ในหน้าเว็บนี้โดยตรง ไม่ต้องติดตั้งแอป</span>
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">ชั้นความลับ</label>
                 <select
