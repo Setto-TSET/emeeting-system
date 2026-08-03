@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Meeting } from "@/data";
+import type { EmbeddedSession } from "@/services/video/types";
 
 // ═══════════════════════════════════════════
 // WebexEmbedStage — UI จำลอง Webex ที่ฝังในเว็บ สำหรับเดโม Phase C
@@ -22,9 +23,22 @@ type Props = {
   meeting: Meeting;
   isHost: boolean;
   onLeave: () => void;
+  /** ถ้า null = backend ยังไม่พร้อม → ทำงานในโหมด demo */
+  credential?: { token: string; providerRoomId: string } | null;
 };
 
-export function WebexEmbedStage({ meeting, isHost, onLeave }: Props) {
+export function WebexEmbedStage({ meeting, isHost, onLeave, credential }: Props) {
+  // containerRef: mounting point สำหรับ Webex Browser SDK จริง (ยังไม่มี engine จริง)
+  // เมื่อมี license + backend: engine.mount(containerRef.current!, ctx) แล้วเก็บใน sessionRef
+  const containerRef = useRef<HTMLDivElement>(null);
+  const sessionRef   = useRef<EmbeddedSession | null>(null);
+
+  const handleLeave = () => {
+    sessionRef.current?.dispose(); // คืน mic/camera ก่อนออก — ไม่ให้ไฟกล้องค้าง
+    sessionRef.current = null;
+    onLeave();
+  };
+
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(false);
   const [screenSharing, setScreenSharing] = useState(false);
@@ -50,7 +64,9 @@ export function WebexEmbedStage({ meeting, isHost, onLeave }: Props) {
   const ss = String(elapsedSec % 60).padStart(2, "0");
 
   return (
-    <div className="flex-1 min-h-[400px] rounded-2xl overflow-hidden border border-border bg-[#0b1220] text-white flex flex-col shadow-xl">
+    <div className="flex-1 min-h-[400px] rounded-2xl overflow-hidden border border-border bg-[#0b1220] text-white flex flex-col shadow-xl relative">
+      {/* mounting point สำหรับ Webex Browser SDK จริง — SDK เรียก element นี้ทับ mock UI */}
+      <div ref={containerRef} className="absolute inset-0 pointer-events-none" aria-hidden />
       {/* Header แบรนด์ Webex */}
       <div className="h-11 px-4 flex items-center justify-between border-b border-white/10 bg-[#00bceb]/10">
         <div className="flex items-center gap-2">
@@ -58,7 +74,9 @@ export function WebexEmbedStage({ meeting, isHost, onLeave }: Props) {
             <span className="material-symbols-outlined text-white text-[16px]">videocam</span>
           </div>
           <span className="text-sm font-semibold">Cisco Webex</span>
-          <Badge className="bg-white/10 text-white/80 border-white/20 text-[10px]">demo</Badge>
+          <Badge className="bg-white/10 text-white/80 border-white/20 text-[10px]">
+            {credential ? "connected" : "demo mode"}
+          </Badge>
         </div>
         <div className="flex items-center gap-3 text-[11px] text-white/70">
           <span className="flex items-center gap-1">
@@ -130,7 +148,7 @@ export function WebexEmbedStage({ meeting, isHost, onLeave }: Props) {
         )}
         <div className="w-4" />
         <Button
-          onClick={onLeave}
+          onClick={handleLeave}
           className="h-10 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold"
         >
           <span className="material-symbols-outlined text-[18px] mr-1.5">call_end</span>

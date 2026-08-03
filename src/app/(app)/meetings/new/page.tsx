@@ -31,6 +31,7 @@ export default function NewMeetingPage() {
     roomId: meetingRooms[0].id,
     conferenceLink: "",
     description: "",
+    confidentialityLevel: "normal" as "normal" | "restricted" | "top_secret",
   });
 
   const update = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(p => ({ ...p, [k]: v }));
@@ -67,6 +68,7 @@ export default function NewMeetingPage() {
       conferenceRoomKey: newConferenceRoomKey(),
       transcriptStatus: "none",
       description: form.description.trim() || undefined,
+      confidentialityLevel: form.confidentialityLevel,
       status: "prepare",
       displayFormat: 2,
       participants: [],
@@ -163,6 +165,18 @@ export default function NewMeetingPage() {
                     <span className="text-muted-foreground">— ผู้เข้าร่วมจะกดเปิดแอปจากหน้าประชุม</span>
                   )}
                 </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">ชั้นความลับ</label>
+                <select
+                  value={form.confidentialityLevel}
+                  onChange={e => update("confidentialityLevel", e.target.value as typeof form.confidentialityLevel)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="normal">ทั่วไป</option>
+                  <option value="restricted">ลับ — watermark เข้ม, แถบเตือนสีส้ม</option>
+                  <option value="top_secret">ลับมาก — watermark refresh 5 วิ, ปิด copy</option>
+                </select>
               </div>
               <div className="md:col-span-2">
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">รายละเอียดเพิ่มเติม</label>

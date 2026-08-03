@@ -18,11 +18,13 @@ export default function MyMeetingsPage() {
 
   // เอกสารเปิดอ่านในเว็บ — ไม่มีดาวน์โหลด
   const [viewingFile, setViewingFile] = useState<MeetingFile | null>(null);
+  const [viewingMeeting, setViewingMeeting] = useState<Meeting | null>(null);
   const [viewerPage, setViewerPage] = useState(1);
   const [viewerZoom, setViewerZoom] = useState(100);
 
-  const openPreview = (file: MeetingFile) => {
+  const openPreview = (file: MeetingFile, meeting: Meeting) => {
     setViewingFile(file);
+    setViewingMeeting(meeting);
     setViewerPage(1);
     setViewerZoom(100);
   };
@@ -166,7 +168,7 @@ export default function MyMeetingsPage() {
                           {visibleFiles.map((file) => (
                             <button
                               key={file.id}
-                              onClick={() => openPreview(file)}
+                              onClick={() => openPreview(file, m)}
                               className="text-left rounded-lg border p-3 hover:border-primary/50 transition-colors flex items-center gap-3 cursor-pointer"
                             >
                               {/* ภาพตัวอย่างย่อของเอกสาร */}
@@ -220,6 +222,7 @@ export default function MyMeetingsPage() {
           zoom={viewerZoom}
           setZoom={setViewerZoom}
           viewerName={currentUser.name}
+          confidentialityLevel={viewingMeeting?.confidentialityLevel ?? "normal"}
         />
       )}
     </div>

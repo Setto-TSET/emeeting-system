@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { MeetingFile } from "@/data";
 import { getFileObjectUrl } from "@/services/fileStorage";
+import { mdToHtml } from "@/components/meeting/MarkdownViewer";
 
 // ==========================================
 // Simulated Premium Document Page Viewer Component
@@ -347,19 +348,109 @@ function RealDocumentViewer({ file }: { file: MeetingFile }) {
 }
 
 // ==========================================
+// Markdown File Viewer — อ่านไฟล์ .md จาก IndexedDB แล้วแสดงเป็น HTML
+// ไม่มี anti-leak ตัวเอง เพราะ DocumentLightbox จัดการแล้ว (watermark z-10, overlay z-20)
+// ==========================================
+function MarkdownFileViewer({ file }: { file: MeetingFile }) {
+  const [content, setContent] = useState<string | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "notfound" | "error">(
+    () => (file.storageKey ? "loading" : "notfound")
+  );
+
+  useEffect(() => {
+    if (!file.storageKey) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    getFileObjectUrl(file.storageKey)
+      .then(async (url) => {
+        if (cancelled) { if (url) URL.revokeObjectURL(url); return; }
+        if (!url) { setStatus("notfound"); return; }
+        objectUrl = url;
+        const text = await fetch(url).then(r => r.text());
+        if (!cancelled) { setContent(text); setStatus("ready"); }
+      })
+      .catch(() => { if (!cancelled) setStatus("error"); })
+      .finally(() => { if (objectUrl) URL.revokeObjectURL(objectUrl); });
+
+    return () => { cancelled = true; };
+  }, [file.storageKey]);
+
+  if (status === "loading") {
+    return (
+      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+        <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
+        กำลังโหลดเอกสาร...
+      </div>
+    );
+  }
+  if (status === "notfound") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 p-8">
+        <span className="material-symbols-outlined text-[44px] text-muted-foreground">cloud_off</span>
+        <p className="text-sm font-medium">ไม่พบไฟล์ในเครื่องนี้</p>
+      </div>
+    );
+  }
+  if (status === "error" || !content) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-destructive text-sm">
+        โหลดเอกสารไม่สำเร็จ
+      </div>
+    );
+  }
+
+  const styles = `
+    .md-root { font-family:'Sarabun','TH SarabunPSK','Noto Sans Thai',sans-serif; font-size:14px; line-height:1.9; color:inherit; }
+    .md-h1 { font-size:1.4em; font-weight:700; border-bottom:2px solid currentColor; padding-bottom:4px; margin:12px 0 6px; }
+    .md-h2 { font-size:1.15em; font-weight:700; margin:16px 0 4px; }
+    .md-h3 { font-size:1.02em; font-weight:600; margin:12px 0 3px; }
+    .md-p  { margin:4px 0; }
+    .md-hr { border:none; border-top:1px solid #aaa; margin:12px 0; }
+    .md-table { width:100%; border-collapse:collapse; margin:8px 0; font-size:13px; }
+    .md-td { border:1px solid #888; padding:4px 6px; }
+    .md-ul { padding-left:1.4em; margin:4px 0; }
+    .md-blockquote { border-left:3px solid #f90; padding-left:10px; color:#888; font-size:0.86em; margin:10px 0; }
+  `;
+
+  return (
+    <div className="flex-1 overflow-auto bg-white rounded-lg">
+      <style>{styles}</style>
+      <div
+        className="md-root p-6"
+        dangerouslySetInnerHTML={{ __html: mdToHtml(content) }}
+      />
+    </div>
+  );
+}
+
+// ==========================================
 // Watermark — ทับหน้าเอกสารด้วยชื่อ+เวลา — screenshot จะติดลายน้ำไปด้วย
+// opacity /20 มองเห็นชัดพอที่จะติดกับ screenshot แต่ไม่บดบังเนื้อหา
+// timestamp อัปเดตทุก 30 วิ — ทำให้ภาพที่ถ่ายระบุเวลาได้แม่นขึ้น
 // เป็นเพียงตัวยับยั้ง ไม่ใช่การป้องกัน (ดูแผน anti-leak)
 // ==========================================
-function Watermark({ text }: { text: string }) {
+function Watermark({ viewerName, intervalMs = 30_000 }: { viewerName: string; intervalMs?: number }) {
+  const [ts, setTs] = useState(() =>
+    new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })
+  );
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTs(new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }));
+    }, intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+
+  const text = `${viewerName} · ${ts}`;
   const rows = 6;
   const cols = 4;
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden select-none">
+    <div className="pointer-events-none absolute inset-0 overflow-hidden select-none z-10">
       <div className="w-full h-full grid" style={{ gridTemplateRows: `repeat(${rows}, 1fr)`, gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
         {Array.from({ length: rows * cols }).map((_, i) => (
           <div key={i} className="flex items-center justify-center">
             <span
-              className="text-[11px] font-medium text-black/10 -rotate-30 whitespace-nowrap"
+              className="text-[11px] font-medium text-black/20 dark:text-white/20 whitespace-nowrap"
               style={{ transform: "rotate(-30deg)" }}
             >
               {text}
@@ -374,6 +465,8 @@ function Watermark({ text }: { text: string }) {
 // ==========================================
 // Lightbox wrapper — เปิดอ่านเอกสารเต็มจอ (อ่านอย่างเดียว + ชั้นยับยั้งการรั่วไหล)
 // ==========================================
+type ConfidentialityLevel = "normal" | "restricted" | "top_secret";
+
 type DocumentLightboxProps = {
   file: MeetingFile;
   onClose: () => void;
@@ -383,9 +476,17 @@ type DocumentLightboxProps = {
   setZoom: (z: number) => void;
   /** ชื่อผู้ดู — ใส่ในลายน้ำและป้ายท้ายบอก audit */
   viewerName?: string;
+  /** ระดับความลับของการประชุม — กำหนดพฤติกรรม watermark และ UI เตือน */
+  confidentialityLevel?: ConfidentialityLevel;
 };
 
-export function DocumentLightbox({ file, onClose, currentPage, setCurrentPage, zoom, setZoom, viewerName }: DocumentLightboxProps) {
+const confidentialityConfig: Record<ConfidentialityLevel, { label: string; color: string; watermarkInterval: number }> = {
+  normal:     { label: "",             color: "",                          watermarkInterval: 30_000 },
+  restricted: { label: "ลับ",         color: "bg-amber-500 text-white",   watermarkInterval: 15_000 },
+  top_secret: { label: "ลับมาก",      color: "bg-destructive text-white", watermarkInterval: 5_000  },
+};
+
+export function DocumentLightbox({ file, onClose, currentPage, setCurrentPage, zoom, setZoom, viewerName, confidentialityLevel = "normal" }: DocumentLightboxProps) {
   // เบลอเนื้อหาเมื่อสลับหน้าต่าง — กันคนถ่ายจอจากด้านหลัง / กด Alt+PrtSc ขณะไม่ได้จ้องอยู่
   const [windowActive, setWindowActive] = useState(true);
   useEffect(() => {
@@ -414,14 +515,25 @@ export function DocumentLightbox({ file, onClose, currentPage, setCurrentPage, z
   }, []);
 
   const hasRealFile = !!file.storageKey;
-  const watermarkText = `${viewerName ?? "ผู้ชม"} · ${new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`;
+  const isMarkdown = file.mimeType === "text/markdown" || file.name.endsWith(".md");
+  const cfg = confidentialityConfig[confidentialityLevel];
+  const isTopSecret = confidentialityLevel === "top_secret";
 
   return (
     <div
       className="fixed inset-0 z-[2000] bg-foreground/50 backdrop-blur-sm flex items-center justify-center p-4 md:p-8"
       onContextMenu={(e) => e.preventDefault()}
+      style={isTopSecret ? { userSelect: "none" } : undefined}
     >
       <div className="w-full max-w-4xl h-[85vh] bg-card border border-border rounded-3xl overflow-hidden flex flex-col shadow-2xl relative">
+        {/* แถบความลับ — แสดงเฉพาะ restricted / top_secret */}
+        {cfg.label && (
+          <div className={`shrink-0 h-7 ${cfg.color} flex items-center justify-center gap-2 text-xs font-bold`}>
+            <span className="material-symbols-outlined text-[14px]">lock</span>
+            ชั้นความลับ: {cfg.label} · ห้ามเผยแพร่หรือทำซ้ำ
+          </div>
+        )}
+
         {/* Lightbox header */}
         <div className="h-14 bg-muted px-6 border-b border-border flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 min-w-0">
@@ -447,7 +559,9 @@ export function DocumentLightbox({ file, onClose, currentPage, setCurrentPage, z
           <div
             className={`absolute inset-0 p-6 flex flex-col ${windowActive ? "" : "blur-lg"} transition-[filter] duration-150`}
           >
-            {hasRealFile ? (
+            {isMarkdown ? (
+              <MarkdownFileViewer file={file} />
+            ) : hasRealFile ? (
               <RealDocumentViewer file={file} />
             ) : (
               <div className="flex-1 overflow-y-auto flex flex-col justify-between">
@@ -461,11 +575,11 @@ export function DocumentLightbox({ file, onClose, currentPage, setCurrentPage, z
               </div>
             )}
           </div>
-          {/* Watermark ทับด้านบนสุด — screenshot จะติดลายน้ำนี้ไปด้วย */}
-          <Watermark text={watermarkText} />
-          {/* Overlay เมื่อหน้าต่างไม่ active — ซ่อนเนื้อหาจากการถ่ายจอด้านหลัง */}
+          {/* Watermark ทับด้านบนสุด (z-10) — screenshot จะติดลายน้ำนี้ไปด้วย */}
+          <Watermark viewerName={viewerName ?? "ผู้ชม"} intervalMs={cfg.watermarkInterval} />
+          {/* Overlay เมื่อหน้าต่างไม่ active (z-20) — ครอบทั้ง iframe + เนื้อหาทุกชนิด */}
           {!windowActive && (
-            <div className="absolute inset-0 bg-background/70 backdrop-blur-md flex items-center justify-center">
+            <div className="absolute inset-0 z-20 bg-background/90 backdrop-blur-md flex items-center justify-center">
               <div className="text-center">
                 <span className="material-symbols-outlined text-[36px] text-muted-foreground">visibility_off</span>
                 <p className="text-sm font-medium mt-2">หน้าต่างไม่ active — เนื้อหาถูกซ่อน</p>

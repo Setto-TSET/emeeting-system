@@ -15,6 +15,7 @@ import { ExternalConferenceStage } from "@/components/meeting/ExternalConference
 import { WebexEmbedStage } from "@/components/meeting/WebexEmbedStage";
 import { resolveConference } from "@/lib/conference";
 import { resolveVideoSurface } from "@/services/video";
+import { requestVideoCredential, type VideoCredential } from "@/services/credentials";
 import { can } from "@/lib/authz";
 import { MeetingParticipant, MeetingFile, canViewFile } from "@/data";
 
@@ -55,6 +56,18 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const [viewerPage, setViewerPage] = useState(1);
   const [viewerZoom, setViewerZoom] = useState(100);
   const [sharedFileId, setSharedFileId] = useState<string | null>(null); // For simulated presentation share
+
+  // Credential สำหรับ engine ฝัง (Webex) — null = ยังไม่มี backend → แสดง demo mode
+  const [videoCredential, setVideoCredential] = useState<VideoCredential | null>(null);
+
+  useEffect(() => {
+    if (!meeting) return;
+    const surface = resolveVideoSurface(meeting);
+    if (surface.kind !== "embed") return;
+    const roomKey = meeting.conferenceRoomKey ?? meeting.id;
+    requestVideoCredential(surface.engineId, roomKey).then(setVideoCredential);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meeting?.id]);
 
   // Webcam stream
   // เก็บใน ref ไม่ใช่ state — เพราะ effect cleanup อ่านจาก closure ตอน mount
@@ -398,6 +411,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
             <WebexEmbedStage
               meeting={meeting}
               isHost={isManager}
+              credential={videoCredential}
               onLeave={() => {
                 if (localParticipant) {
                   const updatedParticipants = meeting.participants.map((p) =>
@@ -877,6 +891,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
           zoom={viewerZoom}
           setZoom={setViewerZoom}
           viewerName={currentUser.name}
+          confidentialityLevel={meeting.confidentialityLevel ?? "normal"}
         />
       )}
     </div>

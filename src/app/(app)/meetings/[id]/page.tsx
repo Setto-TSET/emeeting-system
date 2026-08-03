@@ -23,6 +23,9 @@ import { putFile, formatBytes } from "@/services/fileStorage";
 import { can, canEditMeeting, denialReason } from "@/lib/authz";
 import { useCurrentUser } from "@/context/UserContext";
 import { useMeetings } from "@/context/MeetingContext";
+import { generateMockTranscript } from "@/services/transcription/mockProvider";
+import { mockSummarizer } from "@/services/summarize/mockSummarizer";
+import { buildReportMarkdown } from "@/services/summarize/reportBuilder";
 
 const iconSm = "material-symbols-outlined text-[16px]";
 
@@ -110,6 +113,55 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const [previewZoom, setPreviewZoom] = useState(100);
   const openFilePreview = (f: MeetingFile) => {
     setPreviewFile(f); setPreviewPage(1); setPreviewZoom(100);
+  };
+
+  // ─── Phase C-4: Transcript + Summary pipeline ───
+  const [transcriptBusy, setTranscriptBusy] = useState(false);
+  const [summaryBusy, setSummaryBusy]       = useState(false);
+
+  const requestTranscript = async () => {
+    setTranscriptBusy(true);
+    updateMeeting(meeting.id, { transcriptStatus: "processing" });
+    await new Promise(r => setTimeout(r, 2000));
+    updateMeeting(meeting.id, { transcriptStatus: "ready" });
+    setTranscriptBusy(false);
+    toast.success("ได้รับ Transcript แล้ว", { description: "สามารถสร้างร่างรายงานสรุปได้" });
+  };
+
+  const generateSummary = async () => {
+    setSummaryBusy(true);
+    try {
+      const transcript = generateMockTranscript(meeting);
+      const summary    = await mockSummarizer.summarizeByAgenda(transcript, []);
+      const mdContent  = buildReportMarkdown(meeting, summary);
+      const mdBlob     = new Blob([mdContent], { type: "text/markdown; charset=utf-8" });
+      const mdFile     = new File([mdBlob], "report_draft_summary.md", { type: "text/markdown" });
+      const stored     = await putFile(mdFile);
+
+      const draftFileId = `RF-${Date.now()}`;
+      const now         = new Date();
+      const uploadedAt  = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
+
+      addMeetingFile(meeting.id, {
+        id:          draftFileId,
+        name:        `ร่างรายงาน_${meeting.shortName || meeting.name}.md`,
+        description: "ร่างรายงานสรุปการประชุมโดย AI — ต้องผ่านการรับรองก่อนถือเป็นทางการ",
+        size:        formatBytes(stored.sizeBytes),
+        uploadedAt,
+        uploadedBy:  currentUser.name,
+        type:        "report_draft",
+        visibility:  "participants",
+        storageKey:  stored.storageKey,
+        mimeType:    stored.mimeType,
+        sizeBytes:   stored.sizeBytes,
+      });
+      updateMeeting(meeting.id, { summaryDraftId: draftFileId });
+      toast.success("สร้างร่างรายงานสรุปแล้ว", { description: "ดูได้ที่รายการเอกสารด้านบน" });
+    } catch {
+      toast.error("สร้างรายงานไม่สำเร็จ");
+    } finally {
+      setSummaryBusy(false);
+    }
   };
 
   const changeStatus = (s: MeetingStatus) => {
@@ -648,6 +700,79 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               )}
             </CardContent>
           </Card>
+          {/* ─── สรุปการประชุมอัตโนมัติ (แสดงเมื่อมีสิทธิ์แก้ไข) ─── */}
+          {canEdit && (
+            <Card className="card-shadow border-dashed">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary">smart_toy</span>
+                  <div>
+                    <CardTitle className="text-sm">สรุปการประชุมอัตโนมัติ</CardTitle>
+                    <CardDescription className="text-xs">
+                      สร้างร่างรายงานสรุปจาก transcript การประชุม — ต้องผ่านการตรวจสอบและรับรองก่อนถือเป็นทางการ
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Transcript status */}
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-muted-foreground">mic</span>
+                    <div>
+                      <p className="text-xs font-medium">Transcript การประชุม</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {meeting.transcriptStatus === "none"   || !meeting.transcriptStatus ? "ยังไม่มี transcript" :
+                         meeting.transcriptStatus === "processing" ? "กำลังประมวลผล..." :
+                         meeting.transcriptStatus === "ready"      ? "พร้อมใช้งาน" :
+                         "เกิดข้อผิดพลาด"}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={transcriptBusy || meeting.transcriptStatus === "ready" || meeting.transcriptStatus === "processing"}
+                    onClick={requestTranscript}
+                  >
+                    {transcriptBusy
+                      ? <><span className="material-symbols-outlined animate-spin text-[14px] mr-1">progress_activity</span>กำลังดึง...</>
+                      : meeting.transcriptStatus === "ready"
+                      ? <><span className="material-symbols-outlined text-[14px] mr-1 text-green-600">check_circle</span>ได้รับแล้ว</>
+                      : "ขอ Transcript"}
+                  </Button>
+                </div>
+
+                {/* Generate summary */}
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-muted-foreground">summarize</span>
+                    <div>
+                      <p className="text-xs font-medium">ร่างรายงานสรุป</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {meeting.summaryDraftId ? "สร้างแล้ว — ดูได้ที่รายการเอกสาร" : "รอ transcript ก่อน แล้วกดสร้าง"}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled={summaryBusy || meeting.transcriptStatus !== "ready"}
+                    onClick={generateSummary}
+                    title={meeting.transcriptStatus !== "ready" ? "ต้องได้รับ Transcript ก่อน" : undefined}
+                  >
+                    {summaryBusy
+                      ? <><span className="material-symbols-outlined animate-spin text-[14px] mr-1">progress_activity</span>กำลังสร้าง...</>
+                      : "สร้างร่างรายงาน"}
+                  </Button>
+                </div>
+
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[13px]">info</span>
+                  ร่างนี้สร้างโดย AI อัตโนมัติ — เลขานุการต้องตรวจสอบ แก้ไข และรับรองก่อนใช้งานจริง
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* PERMISSIONS */}
@@ -1362,6 +1487,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           zoom={previewZoom}
           setZoom={setPreviewZoom}
           viewerName={currentUser.name}
+          confidentialityLevel={meeting.confidentialityLevel ?? "normal"}
         />
       )}
     </div>

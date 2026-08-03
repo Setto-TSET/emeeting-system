@@ -338,6 +338,13 @@ export type Meeting = {
   activeAgendaId?: string | null;
   /** ข้อความแชทระหว่างการประชุมออนไลน์ */
   chatMessages?: MeetingChatMessage[];
+  /**
+   * ระดับความลับของการประชุม
+   * normal    = ทั่วไป (default)
+   * restricted = ลับ — watermark เข้ม, แถบแดงเตือน
+   * top_secret = ลับมาก — user-select: none, watermark refresh ทุก 5 วิ
+   */
+  confidentialityLevel?: "normal" | "restricted" | "top_secret";
 };
 
 export type MeetingChatMessage = {
