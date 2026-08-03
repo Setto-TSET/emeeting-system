@@ -118,16 +118,17 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   }, [meeting?.id, currentUser]);
 
   // Detect when meeting ends (organizer ended it) — show notification to guests
+  // Can't use isManager here because it's after early returns, so compute inline
+  const isHost = meeting ? can(currentUser, "meeting.host", meeting) : false;
   useEffect(() => {
     if (!meeting || !hasJoined) return;
-    if (meeting.status === "waiting_endorse" && isManager === false) {
-      // Guest detected meeting ended by organizer
+    if (meeting.status === "waiting_endorse" && !isHost) {
       toast.info("ผู้จัดประชุมได้ปิดห้องประชุมแล้ว", {
         description: "กรุณาออกจากห้องประชุม",
-        duration: 5000
+        duration: 5000,
       });
     }
-  }, [meeting?.status, hasJoined, isManager]);
+  }, [meeting?.status, hasJoined, isHost]);
 
   // Handle guest join submit
   const handleGuestJoinSubmit = (e: React.FormEvent) => {
