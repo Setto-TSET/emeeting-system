@@ -7,7 +7,7 @@
 // โดยไม่ต้องแก้หน้าจอ — แค่ใส่ลิงก์เข้ามา ระบบจะตรวจเองว่าเป็นเจ้าไหน
 // ═══════════════════════════════════════════
 
-export type ConferenceProvider = "mock" | "webex" | "teams" | "zoom" | "google_meet" | "other";
+export type ConferenceProvider = "mock" | "webex" | "teams" | "zoom" | "google_meet" | "zegocloud" | "other";
 
 /**
  * วิธีพาผู้ใช้เข้าห้องประชุม
@@ -94,6 +94,17 @@ export const conferenceProviders: Record<ConferenceProvider, ConferenceProviderS
     hostPatterns: ["meet.google.com"],
     joinHint: "ระบบจะเปิด Google Meet ให้อัตโนมัติ",
     canEmbed: false,
+  },
+  zegocloud: {
+    id: "zegocloud",
+    label: "ZegoCloud Video (ระบบประชุมในเว็บ)",
+    shortLabel: "ZegoCloud",
+    icon: "videocam",
+    brandClass: "bg-[#0055FF] hover:bg-[#0044CC]",
+    launchMode: "sdk",
+    hostPatterns: [],
+    joinHint: "เข้าห้องประชุมผ่าน ZegoCloud ภายในหน้านี้",
+    canEmbed: true,
   },
   other: {
     id: "other",

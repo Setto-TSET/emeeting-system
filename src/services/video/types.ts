@@ -15,7 +15,7 @@
 import type { ResolvedConference } from "@/lib/conference";
 
 /** id ของเครื่องยนต์ที่ฝังในเว็บได้ — ขยายรายการนี้เมื่อเพิ่ม engine ใหม่ */
-export type EmbeddedEngineId = "webex" | "jitsi" | "acs";
+export type EmbeddedEngineId = "webex" | "jitsi" | "acs" | "zegocloud";
 
 /**
  * พื้นผิววิดีโอของการประชุมหนึ่งๆ — มี 3 แบบที่ต่างกันคนละเรื่อง

@@ -148,13 +148,16 @@ export type Room = {
   amenities: string[];
   image?: string;
   status: "available" | "occupied" | "maintenance";
+  hasZoomRoom?: boolean;
+  zoomRoomDeviceId?: string;
+  hasIpad?: boolean;
 };
 
 export const meetingRooms: Room[] = [
   { id: "R-A101", name: "ห้องประชุม A-101", category: "small", categoryLabel: "ห้องประชุมเล็ก", capacity: 8, location: "อาคาร A", floor: "ชั้น 1", amenities: ["โปรเจกเตอร์", "TV 65\"", "Whiteboard"], status: "available" },
   { id: "R-A201", name: "ห้องประชุม A-201", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 16, location: "อาคาร A", floor: "ชั้น 2", amenities: ["โปรเจกเตอร์", "ระบบประชุมทางไกล", "ไมโครโฟน"], status: "available" },
-  { id: "R-A301", name: "ห้องประชุม A-301", category: "large", categoryLabel: "ห้องประชุมใหญ่", capacity: 40, location: "อาคาร A", floor: "ชั้น 3", amenities: ["โปรเจกเตอร์ 2 ตัว", "ระบบเสียง Wireless", "Video Conference", "เวที"], status: "available" },
-  { id: "R-B201", name: "ห้องประชุมบอร์ด B-201", category: "board", categoryLabel: "ห้องบอร์ดผู้บริหาร", capacity: 20, location: "อาคาร B", floor: "ชั้น 2", amenities: ["โต๊ะขนาดใหญ่", "TV ทัชสกรีน", "Video Conference"], status: "occupied" },
+  { id: "R-A301", name: "ห้องประชุม A-301", category: "large", categoryLabel: "ห้องประชุมใหญ่", capacity: 40, location: "อาคาร A", floor: "ชั้น 3", amenities: ["โปรเจกเตอร์ 2 ตัว", "ระบบเสียง Wireless", "Video Conference", "เวที"], status: "available", hasZoomRoom: true, zoomRoomDeviceId: "ZR-A301" },
+  { id: "R-B201", name: "ห้องประชุมบอร์ด B-201", category: "board", categoryLabel: "ห้องบอร์ดผู้บริหาร", capacity: 20, location: "อาคาร B", floor: "ชั้น 2", amenities: ["โต๊ะขนาดใหญ่", "TV ทัชสกรีน", "Video Conference"], status: "occupied", hasZoomRoom: true, zoomRoomDeviceId: "ZR-B201" },
   { id: "R-B301", name: "ห้องประชุมใหญ่ B-301", category: "conference", categoryLabel: "ห้องประชุมใหญ่", capacity: 120, location: "อาคาร B", floor: "ชั้น 3", amenities: ["โปรเจกเตอร์ 3 ตัว", "ระบบแปลภาษา", "Live Streaming", "ห้องแต่งตัว"], status: "available" },
   { id: "R-C102", name: "ห้องประชุม C-102", category: "small", categoryLabel: "ห้องประชุมเล็ก", capacity: 6, location: "อาคาร C", floor: "ชั้น 1", amenities: ["TV 55\"", "Whiteboard"], status: "available" },
   { id: "R-C202", name: "ห้องประชุม C-202", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคาร C", floor: "ชั้น 2", amenities: ["โปรเจกเตอร์", "ระบบเสียง"], status: "maintenance" },
@@ -286,6 +289,14 @@ export type MeetingAgendaItem = {
   comments: { by: string; text: string; time: string }[];
 };
 
+export type ZoomRoomDevice = {
+  id: string;
+  name: string;
+  roomId: string;
+  sipAddress?: string;
+  status: "invited" | "connected" | "disconnected";
+};
+
 export type Meeting = {
   id: string;
   name: string;
@@ -349,6 +360,10 @@ export type Meeting = {
   notifiedAt?: string;
   /** วันเวลาที่ส่ง reminder (1 วันก่อนประชุม) */
   reminderSentAt?: string;
+  /** อุปกรณ์ Zoom Room ที่เชิญเข้าประชุม (Phase D — ZegoCloud + Zoom Room integration) */
+  zoomRoomDevices?: ZoomRoomDevice[];
+  /** SIP URI ของห้อง ZegoCloud สำหรับ Zoom Room dial-in — backend สร้างให้ */
+  zegoSipUri?: string;
 };
 
 export type MeetingChatMessage = {
@@ -548,6 +563,46 @@ export const meetings: Meeting[] = [
     permissions: [],
     savedToDrive: true,
     createdAt: "2026-06-20",
+  },
+  {
+    id: "MT-2569-010",
+    name: "การประชุมออนไลน์ทดสอบ ZegoCloud ครั้งที่ 1/2569",
+    shortName: "ZegoCloud Test 1/69",
+    type: "การประชุมทดสอบ",
+    committeeId: "COM-03",
+    committee: "คณะทำงานพัฒนา e-Office",
+    organizerId: "U01",
+    organizer: "นาย สมชาย ใจดี",
+    organizerEmail: "somchai@e-office.cloud",
+    emailSenderName: "e-office",
+    date: "2026-08-05",
+    startTime: "10:00",
+    endTime: "11:30",
+    location: "ห้องประชุม A-301 + ออนไลน์",
+    conferenceProvider: "zegocloud",
+    conferenceRoomKey: "emeeting-zego-test-001",
+    status: "prepare",
+    displayFormat: 2,
+    participants: [
+      { id: "P-Z1", name: "นาย สมชาย ใจดี", position: "ประธาน", role: "Project Manager", department: "สำนักบริหาร", userId: "U01", email: "somchai@e-office.cloud", inSystem: true, present: true },
+      { id: "P-Z2", name: "นางสาว สมหญิง รักงาน", position: "กรรมการ", role: "เลขานุการ", department: "สำนักบริหาร", userId: "U02", email: "somying@e-office.cloud", inSystem: true, present: true },
+      { id: "P-Z3", name: "นาย ทดสอบ ระบบ", position: "กรรมการ", role: "Developer", department: "ฝ่าย IT", userId: "U03", email: "test@e-office.cloud", inSystem: true, present: false },
+    ],
+    files: [],
+    agenda: [
+      { id: "AZ-1", no: "1", title: "ทดสอบระบบ ZegoCloud", comments: [] },
+      { id: "AZ-2", no: "2", title: "ทดสอบการเชื่อมต่อ Zoom Room", comments: [] },
+    ],
+    secretGroups: [],
+    permissions: [
+      { userId: "U01", name: "นาย สมชาย ใจดี", type: "manager" },
+      { userId: "U02", name: "นางสาว สมหญิง รักงาน", type: "manager" },
+    ],
+    savedToDrive: false,
+    createdAt: "2026-08-01",
+    zoomRoomDevices: [
+      { id: "ZRD-1", name: "Zoom Room ห้อง A-301", roomId: "R-A301", status: "invited" },
+    ],
   },
 ];
 
