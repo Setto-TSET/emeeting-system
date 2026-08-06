@@ -10,7 +10,7 @@ type Props = {
   meeting: Meeting;
   isHost: boolean;
   onLeave: () => void;
-  credential?: { token: string; providerRoomId: string } | null;
+  credential?: { token: string; providerRoomId: string; appId: number; serverUrl: string } | null;
 };
 
 export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential }: Props) {
@@ -47,9 +47,51 @@ export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential }: Pr
 
   const zoomRoomDevices = meeting.zoomRoomDevices ?? [];
 
+  // Mount SDK จริงเมื่อมี credential — ถ้าไม่มี (demo mode) ใช้ mock UI แทน
+  const sdkMounted = useRef(false);
+  useEffect(() => {
+    if (!credential || !containerRef.current || sdkMounted.current) return;
+
+    const ctx: import("@/services/video/types").JoinContext = {
+      meetingId: meeting.id ?? "",
+      roomKey: credential.providerRoomId,
+      displayName: meeting.participants.find((p) => p.present)?.name ?? "User",
+      isHost,
+      credential: {
+        token: credential.token,
+        appId: credential.appId,
+        serverUrl: credential.serverUrl,
+        providerRoomId: credential.providerRoomId,
+      },
+    };
+
+    import("@/services/video/zego").then(({ zegoEngine }) => {
+      zegoEngine.mount(containerRef.current!, ctx).then((session) => {
+        sessionRef.current = session;
+        sdkMounted.current = true;
+        session.onLeft(() => onLeave());
+      });
+    });
+
+    return () => {
+      sessionRef.current?.dispose();
+      sessionRef.current = null;
+      sdkMounted.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [credential, meeting.id, isHost]);
+
   return (
     <div className="flex-1 min-h-[400px] rounded-2xl overflow-hidden border border-border bg-[#0a0f1e] text-white flex flex-col shadow-xl relative">
-      <div ref={containerRef} className="absolute inset-0 pointer-events-none" aria-hidden />
+      <div
+        ref={containerRef}
+        className={
+          credential
+            ? "flex-1 min-h-0 p-2 grid grid-cols-2 md:grid-cols-3 gap-3 auto-rows-fr"
+            : "absolute inset-0 pointer-events-none"
+        }
+        aria-hidden={!credential}
+      />
 
       {/* Header แบรนด์ ZegoCloud */}
       <div className="h-11 px-4 flex items-center justify-between border-b border-white/10 bg-[#0055FF]/10">
@@ -76,41 +118,43 @@ export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential }: Pr
         </div>
       </div>
 
-      {/* Video grid */}
-      <div className="flex-1 p-4 min-h-0">
-        {present.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-white/50 text-sm">
-            <span className="material-symbols-outlined text-[40px] mb-2">group_off</span>
-            <p>รอผู้เข้าร่วมประชุมคนแรก...</p>
-          </div>
-        ) : (
-          <div className="h-full grid grid-cols-2 md:grid-cols-3 gap-3 auto-rows-fr">
-            {present.slice(0, 6).map((p, i) => {
-              const isSpeaking = activeSpeakerIdx === i;
-              return (
-                <div
-                  key={p.id}
-                  className={`rounded-xl bg-[#141b30] flex flex-col items-center justify-center relative overflow-hidden border-2 transition-all ${
-                    isSpeaking ? "border-[#0055FF] shadow-lg shadow-[#0055FF]/20" : "border-transparent"
-                  }`}
-                >
-                  <div className="h-16 w-16 rounded-full bg-white/10 flex items-center justify-center text-2xl font-bold">
-                    {(p.name.split(" ")[1] ?? p.name).charAt(0)}
+      {/* Video grid — mock UI เมื่อไม่มี credential, SDK จริงจะ render ลง containerRef เมื่อมี credential */}
+      {!credential && (
+        <div className="flex-1 p-4 min-h-0">
+          {present.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-white/50 text-sm">
+              <span className="material-symbols-outlined text-[40px] mb-2">group_off</span>
+              <p>รอผู้เข้าร่วมประชุมคนแรก...</p>
+            </div>
+          ) : (
+            <div className="h-full grid grid-cols-2 md:grid-cols-3 gap-3 auto-rows-fr">
+              {present.slice(0, 6).map((p, i) => {
+                const isSpeaking = activeSpeakerIdx === i;
+                return (
+                  <div
+                    key={p.id}
+                    className={`rounded-xl bg-[#141b30] flex flex-col items-center justify-center relative overflow-hidden border-2 transition-all ${
+                      isSpeaking ? "border-[#0055FF] shadow-lg shadow-[#0055FF]/20" : "border-transparent"
+                    }`}
+                  >
+                    <div className="h-16 w-16 rounded-full bg-white/10 flex items-center justify-center text-2xl font-bold">
+                      {(p.name.split(" ")[1] ?? p.name).charAt(0)}
+                    </div>
+                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] bg-black/50 backdrop-blur px-2 py-0.5 rounded">
+                      <span className="truncate">{p.name}</span>
+                      {isSpeaking && (
+                        <span className="material-symbols-outlined text-[13px] text-[#0055FF] animate-pulse">
+                          graphic_eq
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] bg-black/50 backdrop-blur px-2 py-0.5 rounded">
-                    <span className="truncate">{p.name}</span>
-                    {isSpeaking && (
-                      <span className="material-symbols-outlined text-[13px] text-[#0055FF] animate-pulse">
-                        graphic_eq
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* แถบควบคุม */}
       <div className="h-16 px-4 flex items-center justify-center gap-3 border-t border-white/10 bg-[#0c1225]">
