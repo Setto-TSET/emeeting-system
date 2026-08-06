@@ -66,7 +66,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     const surface = resolveVideoSurface(meeting);
     if (surface.kind !== "embed") return;
     const roomKey = meeting.conferenceRoomKey ?? meeting.id;
-    requestVideoCredential(surface.engineId, roomKey).then(setVideoCredential);
+    requestVideoCredential(surface.engineId, roomKey, currentUser.id, currentUser.name).then(setVideoCredential);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meeting?.id]);
 
