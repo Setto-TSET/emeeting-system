@@ -9,7 +9,7 @@ import { resolveConference } from "@/lib/conference";
 import type { Meeting } from "@/data";
 import type { VideoSurface, EmbeddedEngineId, EmbeddedEngine } from "./types";
 import { webexMockEngine } from "./webexMock";
-import { zegoMockEngine } from "./zegoMock";
+import { zegoEngine } from "./zego";
 
 /**
  * Registry ของ engine ที่ระบบรู้จัก
@@ -21,7 +21,7 @@ export const embeddedEngines: Record<EmbeddedEngineId, EmbeddedEngine> = {
   // jitsi, acs — ยังไม่ implement
   jitsi: webexMockEngine, // placeholder เพื่อให้ type ครบ ยังไม่มีการประชุมไหนตั้งเป็น jitsi
   acs: webexMockEngine,   // placeholder
-  zegocloud: zegoMockEngine,
+  zegocloud: zegoEngine,
 };
 
 /** map provider ที่ฝังได้ → id ของ engine */

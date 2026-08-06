@@ -36,6 +36,15 @@ export type JoinContext = {
   displayName: string;
   /** เป็นโฮสต์ไหม — มาจาก can(user, "meeting.host", meeting) */
   isHost: boolean;
+  /** credential from backend — null means demo mode */
+  credential?: {
+    token: string;
+    appId: number;
+    serverUrl: string;
+    providerRoomId: string;
+  } | null;
+  /** user ID in our system */
+  userId?: string;
 };
 
 /**
