@@ -451,6 +451,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               meeting={meeting}
               isHost={isManager}
               credential={videoCredential}
+              userId={currentUser.id}
               onLeave={() => {
                 if (localParticipant) {
                   const updatedParticipants = meeting.participants.map((p) =>

@@ -53,7 +53,7 @@ Create `.env.local` at project root (already gitignored by `.env*.local` in `.gi
 
 ```env
 ZEGO_APP_ID=1698621897
-ZEGO_SERVER_SECRET=4d5c102c2ef7c4527a72d5c7f9ad94c8
+ZEGO_SERVER_SECRET=<your-32-char-secret-from-zegocloud-console>
 ZEGO_SERVER_URL=wss://webliveroom1698621897-api.coolzcloud.com/ws
 ```
 

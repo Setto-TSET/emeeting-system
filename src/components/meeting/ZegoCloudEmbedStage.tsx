@@ -11,9 +11,11 @@ type Props = {
   isHost: boolean;
   onLeave: () => void;
   credential?: { token: string; providerRoomId: string; appId: number; serverUrl: string } | null;
+  /** user ID ในระบบ — ใช้เป็น userID ของ ZegoCloud SDK */
+  userId?: string;
 };
 
-export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential }: Props) {
+export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential, userId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionRef   = useRef<EmbeddedSession | null>(null);
 
@@ -57,6 +59,7 @@ export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential }: Pr
       roomKey: credential.providerRoomId,
       displayName: meeting.participants.find((p) => p.present)?.name ?? "User",
       isHost,
+      userId,
       credential: {
         token: credential.token,
         appId: credential.appId,
