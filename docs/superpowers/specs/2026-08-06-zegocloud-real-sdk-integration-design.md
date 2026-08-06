@@ -50,20 +50,26 @@ Response: { token: string, appId: number, serverUrl: string, expiresAt: number }
 
 - Validate: `roomId`, `userId`, `userName` non-empty — 400 if missing
 - Validate: env vars `ZEGO_APP_ID`, `ZEGO_SERVER_SECRET` present — 500 if missing
-- Generate ZegoCloud UserToken using HMAC-SHA256 (Node.js `crypto`)
+- Generate ZegoCloud UserToken using official `generateToken04()` algorithm (AES-CBC, not HMAC)
 - Token expiry: 1800 seconds (30 minutes)
+- Generate **privilege token** (not identity-only) with room_id + login/publish privileges
 - Return `appId` and `serverUrl` so client can construct `ZegoExpressEngine`
 - Never return `ServerSecret`
 
 ### Token Algorithm
 
-ZegoCloud token v4 format:
-1. Build payload: `{ app_id, user_id, nonce, ctime, expire }`
-2. HMAC-SHA256 sign with ServerSecret
-3. Base64 encode
-4. Prefix with version tag
+ZegoCloud **token04** format (from official `zego_server_assistant` repo):
+1. Build tokenInfo: `{ app_id, user_id, nonce, ctime, expire, payload }`
+2. payload = JSON `{ room_id, privilege: { 1: 1, 2: 1 }, stream_id_list: null }`
+   - privilege key 1 = loginRoom (1=allow)
+   - privilege key 2 = publishStream (1=allow)
+3. **AES-256-CBC encrypt** tokenInfo with ServerSecret (32-char hex = 32 bytes = AES-256)
+4. Pack: [expire(8B)] + [iv_len(2B)] + [iv] + [encrypted_len(2B)] + [encrypted]
+5. Base64 encode + prefix `"04"`
 
-Use ZegoCloud's official server-side token generation algorithm from their docs.
+Implementation: copy `generateToken04()` from
+`github.com/ZEGOCLOUD/zego_server_assistant/token/nodejs/server/zegoServerAssistant.js`
+into `src/lib/zegoToken.ts` (rewrite as ESM + TypeScript). Uses only Node.js `crypto` — no extra deps.
 
 ## 3. Credentials Service
 
@@ -171,6 +177,7 @@ Single package. Token generation uses Node.js built-in `crypto`.
 | File | Action |
 |------|--------|
 | `.env.local` | New |
+| `src/lib/zegoToken.ts` | New — token04 generator (TypeScript port) |
 | `src/app/api/video/token/route.ts` | New |
 | `src/services/credentials.ts` | Edit |
 | `src/services/video/zego.ts` | Edit |
