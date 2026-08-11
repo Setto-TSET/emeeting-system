@@ -393,7 +393,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                 <label className="text-xs font-semibold text-muted-foreground block">ชื่อ-นามสกุล ของท่าน</label>
                 <Input
                   required
-                  placeholder="เช่น นาย สมศักดิ์ รักดี (บุคคลภายนอก)"
+                  placeholder="เช่น นาย สมศักดิ์ รักดี (บุคคลภายนอก)…"
                   value={guestName}
                   onChange={(e) => setGuestName(e.target.value)}
                   className="bg-card border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:border-primary"
@@ -559,7 +559,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               <span>{meeting.location}</span>
               <span>•</span>
               <span className="flex items-center text-red-500 font-semibold gap-1">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-600 animate-ping"></span>
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-600 animate-ping motion-reduce:animate-none"></span>
                 LIVE {meeting.participants.filter(p => p.present).length} คนในสาย
               </span>
             </div>
@@ -845,11 +845,20 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                     return (
                       <div
                         key={file.id}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => {
                           setViewingFile(file);
                           setLightboxPage(1);
                         }}
-                        className={`rounded-xl border bg-muted p-3 hover:border-border cursor-pointer transition-colors ${
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setViewingFile(file);
+                            setLightboxPage(1);
+                          }
+                        }}
+                        className={`rounded-xl border bg-muted p-3 hover:border-border cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none ${
                           viewingFile?.id === file.id ? "border-primary/50" : "border-border"
                         }`}
                       >
@@ -946,7 +955,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                 <Input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="พิมพ์ข้อความที่นี่..."
+                  placeholder="พิมพ์ข้อความที่นี่…"
                   className="bg-muted border-border text-xs text-foreground"
                 />
                 <Button type="submit" size="sm" className="bg-primary hover:bg-primary/90 text-white shrink-0">

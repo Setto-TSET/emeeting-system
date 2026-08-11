@@ -285,7 +285,8 @@ function ControlButton({
       type="button"
       onClick={onClick}
       title={title}
-      className={`h-11 w-11 rounded-full flex items-center justify-center transition-colors ${
+      aria-label={title}
+      className={`h-11 w-11 rounded-full flex items-center justify-center transition-colors focus-visible:ring-2 focus-visible:ring-[#0055FF] focus-visible:outline-none ${
         danger
           ? "bg-red-600/80 hover:bg-red-600 text-white"
           : active
@@ -293,7 +294,7 @@ function ControlButton({
           : "bg-white/5 hover:bg-white/10 text-white/60"
       }`}
     >
-      <span className="material-symbols-outlined text-[20px]">{icon}</span>
+      <span className="material-symbols-outlined text-[20px]" aria-hidden="true">{icon}</span>
     </button>
   );
 }
