@@ -115,8 +115,8 @@ export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential, user
             </span>
           )}
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-            กำลังบันทึกและถอดเสียง · {mm}:{ss}
+            <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse motion-reduce:animate-none" />
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>กำลังบันทึกและถอดเสียง · {mm}:{ss}</span>
           </span>
         </div>
       </div>
@@ -143,8 +143,8 @@ export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential, user
                     <div className="h-16 w-16 rounded-full bg-white/10 flex items-center justify-center text-2xl font-bold">
                       {(p.name.split(" ")[1] ?? p.name).charAt(0)}
                     </div>
-                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] bg-black/50 backdrop-blur px-2 py-0.5 rounded">
-                      <span className="truncate">{p.name}</span>
+                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] bg-black/50 backdrop-blur px-2 py-0.5 rounded min-w-0">
+                      <span className="truncate min-w-0">{p.name}</span>
                       {isSpeaking && (
                         <span className="material-symbols-outlined text-[13px] text-[#0055FF] animate-pulse">
                           graphic_eq
@@ -220,7 +220,8 @@ function ControlButton({
       type="button"
       onClick={onClick}
       title={title}
-      className={`h-11 w-11 rounded-full flex items-center justify-center transition-colors ${
+      aria-label={title}
+      className={`h-11 w-11 rounded-full flex items-center justify-center transition-colors focus-visible:ring-2 focus-visible:ring-[#0055FF] focus-visible:outline-none ${
         danger
           ? "bg-red-600/80 hover:bg-red-600 text-white"
           : active
@@ -228,7 +229,7 @@ function ControlButton({
           : "bg-white/5 hover:bg-white/10 text-white/60"
       }`}
     >
-      <span className="material-symbols-outlined text-[20px]">{icon}</span>
+      <span className="material-symbols-outlined text-[20px]" aria-hidden="true">{icon}</span>
     </button>
   );
 }
