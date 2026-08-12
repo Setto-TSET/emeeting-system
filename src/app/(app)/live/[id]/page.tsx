@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
+import { RoomSignalingProvider } from "@/context/RoomSignalingContext";
 import { SimulatedDocumentViewer, DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { ExternalConferenceStage } from "@/components/meeting/ExternalConferenceStage";
 import { WebexEmbedStage } from "@/components/meeting/WebexEmbedStage";
@@ -361,6 +362,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   };
 
   return (
+    <RoomSignalingProvider meetingId={meeting.id}>
     <div className="fixed inset-0 bg-background text-foreground flex flex-col font-sans overflow-hidden z-[1000]">
       {/* Top Header */}
       <header className="h-14 bg-card border-b border-border px-4 flex items-center justify-between shrink-0">
@@ -951,5 +953,6 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
         />
       )}
     </div>
+    </RoomSignalingProvider>
   );
 }
