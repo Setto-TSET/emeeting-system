@@ -17,6 +17,7 @@ import { ExternalConferenceStage } from "@/components/meeting/ExternalConference
 import { WebexEmbedStage } from "@/components/meeting/WebexEmbedStage";
 import { ZegoCloudEmbedStage } from "@/components/meeting/ZegoCloudEmbedStage";
 import { SubtitleBar } from "@/components/meeting/SubtitleBar";
+import { VotePanel } from "@/components/meeting/VotePanel";
 import { resolveConference } from "@/lib/conference";
 import { resolveVideoSurface } from "@/services/video";
 import { requestVideoCredential, type VideoCredential } from "@/services/credentials";
@@ -52,6 +53,8 @@ function HandRaiseSync({
   broadcastRef,
   setRaisedHands,
   setLatestSubtitle,
+  setSharedFileId,
+  setViewerPage,
 }: {
   currentUserId: string;
   meetingId: string;
@@ -59,6 +62,8 @@ function HandRaiseSync({
   broadcastRef: React.MutableRefObject<Broadcast | null>;
   setRaisedHands: React.Dispatch<React.SetStateAction<Map<string, RaisedHand>>>;
   setLatestSubtitle: React.Dispatch<React.SetStateAction<RoomSignal<"subtitle_text"> | null>>;
+  setSharedFileId: React.Dispatch<React.SetStateAction<string | null>>;
+  setViewerPage: React.Dispatch<React.SetStateAction<number>>;
 }) {
   const { broadcast, useSignal } = useRoomSignaling();
 
@@ -105,6 +110,24 @@ function HandRaiseSync({
         text: signal.payload.text,
       });
     }
+  });
+
+  useSignal("doc_share", (signal) => {
+    if (signal.senderId === currentUserId) return; // ไม่ต้อง apply สัญญาณของตัวเองซ้ำ
+    setSharedFileId(signal.payload.fileId);
+    setViewerPage(1);
+    toast.info(`${signal.senderName} กำลังแชร์เอกสาร: ${signal.payload.fileName}`);
+  });
+
+  useSignal("doc_share_page", (signal) => {
+    if (signal.senderId === currentUserId) return;
+    setViewerPage(signal.payload.page);
+  });
+
+  useSignal("doc_share_stop", (signal) => {
+    if (signal.senderId === currentUserId) return;
+    setSharedFileId(null);
+    toast.info(`${signal.senderName} หยุดแชร์เอกสารแล้ว`);
   });
 
   return null;
@@ -471,6 +494,29 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     }
   };
 
+  // แชร์เอกสารให้ผู้เข้าร่วมทั้งหมดในห้อง — broadcast แล้วให้ผู้เข้าร่วมคนอื่นตามหน้าจอโฮสต์อัตโนมัติ
+  const handleShareFile = (file: MeetingFile) => {
+    const isShared = sharedFileId === file.id;
+    if (isShared) {
+      setSharedFileId(null);
+      toast.success("หยุดแชร์เอกสารแล้ว");
+      broadcastRef.current?.({ type: "doc_share_stop", payload: {} });
+      return;
+    }
+    setSharedFileId(file.id);
+    setViewerPage(1);
+    toast.success(`กำลังแชร์: ${file.name}`);
+    broadcastRef.current?.({ type: "doc_share", payload: { fileId: file.id, fileName: file.name } });
+  };
+
+  // เปลี่ยนหน้าเอกสารที่กำลังแชร์อยู่ — broadcast ให้ผู้เข้าร่วมคนอื่นเลื่อนตาม (เฉพาะตอนกำลังแชร์)
+  const handleSharedPageChange = (page: number) => {
+    setViewerPage(page);
+    if (sharedFileId) {
+      broadcastRef.current?.({ type: "doc_share_page", payload: { fileId: sharedFileId, page } });
+    }
+  };
+
   const handleToggleSubtitle = () => {
     if (subtitleOn) {
       webSpeechProvider.stop();
@@ -504,6 +550,8 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       broadcastRef={broadcastRef}
       setRaisedHands={setRaisedHands}
       setLatestSubtitle={setLatestSubtitle}
+      setSharedFileId={setSharedFileId}
+      setViewerPage={setViewerPage}
     />
     <div className="fixed inset-0 bg-background text-foreground flex flex-col font-sans overflow-hidden z-[1000]">
       {/* Top Header */}
@@ -658,7 +706,15 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                   {isManager ? "คุณกำลังแชร์เอกสารนี้ให้ผู้เข้าร่วมทั้งหมด" : `${meeting.organizer} กำลังแชร์หน้าจอเอกสาร`}
                 </span>
                 {isManager && (
-                  <Button size="xs" variant="ghost" className="h-6 text-destructive hover:text-red-300 hover:bg-secondary" onClick={() => setSharedFileId(null)}>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    className="h-6 text-destructive hover:text-red-300 hover:bg-secondary"
+                    onClick={() => {
+                      setSharedFileId(null);
+                      broadcastRef.current?.({ type: "doc_share_stop", payload: {} });
+                    }}
+                  >
                     หยุดการแชร์เอกสาร
                   </Button>
                 )}
@@ -668,7 +724,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                 <SimulatedDocumentViewer
                   file={sharedFile}
                   currentPage={viewerPage}
-                  setCurrentPage={setViewerPage}
+                  setCurrentPage={isManager ? handleSharedPageChange : setViewerPage}
                   zoom={viewerZoom}
                   setZoom={setViewerZoom}
                 />
@@ -867,6 +923,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                 <TabsTrigger value="people" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">
                   ผู้ร่วม
                 </TabsTrigger>
+                <TabsTrigger value="vote" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">
+                  โหวต
+                </TabsTrigger>
               </TabsList>
             </div>
 
@@ -974,8 +1033,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                             <Button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSharedFileId(isShared ? null : file.id);
-                                toast.success(isShared ? "หยุดแชร์เอกสารแล้ว" : `กำลังแชร์: ${file.name}`);
+                                handleShareFile(file);
                               }}
                               size="xs"
                               variant="ghost"
@@ -1124,6 +1182,10 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                     );
                   })}
               </div>
+            </TabsContent>
+
+            <TabsContent value="vote" className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 mt-0">
+              <VotePanel meetingId={meeting.id} canManage={can(currentUser, "meeting.manageVoting", meeting)} />
             </TabsContent>
           </Tabs>
         </div>

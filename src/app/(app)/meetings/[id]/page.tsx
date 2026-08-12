@@ -19,6 +19,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { today } from "@/lib/clock";
 import { ComingSoon, ComingSoonBadge } from "@/components/ui/ComingSoon";
 import { DocumentLightbox } from "@/components/meeting/DocumentPreview";
+import { TranscriptTimeline } from "@/components/meeting/TranscriptTimeline";
+import { ZoomRoomStatus } from "@/components/meeting/ZoomRoomStatus";
 import { putFile, formatBytes } from "@/services/fileStorage";
 import { can, canEditMeeting, denialReason } from "@/lib/authz";
 import { useCurrentUser } from "@/context/UserContext";
@@ -828,6 +830,23 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               )}
             </CardContent>
           </Card>
+          {/* ─── ถอดคำพูด (จากซับไตเติลที่บันทึกในเบราว์เซอร์นี้) ─── */}
+          <Card className="card-shadow border-dashed">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">subtitles</span>
+                <div>
+                  <CardTitle className="text-sm">ถอดคำพูด</CardTitle>
+                  <CardDescription className="text-xs">
+                    บทถอดคำพูดจากซับไตเติลที่บันทึกไว้ในเบราว์เซอร์นี้ระหว่างการประชุม
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <TranscriptTimeline meetingId={meeting.id} />
+            </CardContent>
+          </Card>
           {/* ─── สรุปการประชุมอัตโนมัติ (แสดงเมื่อมีสิทธิ์แก้ไข) ─── */}
           {canEdit && (
             <Card className="card-shadow border-dashed">
@@ -1179,6 +1198,18 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               </div>
             </CardContent>
           </Card>
+
+          {(meeting.zoomRoomDevices ?? []).length > 0 && (
+            <Card className="card-shadow">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">อุปกรณ์ห้อง</CardTitle>
+                <CardDescription className="text-xs">สถานะการเชื่อมต่อ Zoom Room ของห้องประชุมนี้</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ZoomRoomStatus devices={meeting.zoomRoomDevices ?? []} />
+              </CardContent>
+            </Card>
+          )}
 
         </TabsContent>
       </Tabs>
