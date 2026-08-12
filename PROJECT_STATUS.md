@@ -1,29 +1,30 @@
 # e-Meeting System — Project Status Report
 
-**Project:** ระบบประชุมออนไลน์พร้อมความลับ + สรุปประชุมอัตโนมัติ + Webex Integration  
-**Status:** Phase C (Frontend Complete) + Phase Guest Join (Planned)  
-**Last Updated:** 2026-08-03  
+**Project:** ระบบประชุมออนไลน์พร้อมความลับ + สรุปประชุมอัตโนมัติ + ZegoCloud Integration  
+**Status:** Phase 0–C Complete + Guest Join Complete + ZegoCloud Real SDK Integrated + Phase E (Voting/Hand Raise/Subtitle/Zoom Room) Spec Only  
+**Last Updated:** 2026-08-12  
 **Repository:** https://github.com/Setto-TSET/emeeting-system
 
 ---
 
 ## 📊 Executive Summary
 
-### ✅ ที่ทำเสร็จแล้ว (Phases 0–C)
-ระบบประชุมเว็บตัวอย่าง **พร้อมใช้งานสาธิตแล้ว** ทั้งหมดเป็น frontend mock ไม่ต้องติดตั้ง backend:
+### ✅ ที่ทำเสร็จแล้ว
+ระบบประชุมเว็บ **พร้อมใช้งานสาธิตแล้ว พร้อมวิดีโอจริง**:
 - ✅ ผู้ใช้ 5 บทบาท (Admin, Secretary, Executive, Staff, External Guest)
 - ✅ การจองห้องประชุม / คณะทำงาน / การตรวจสอบสิทธิ์
-- ✅ เข้าห้องประชุมเสมือนจริง (Webex seam พร้อม, ตัวมือถือเลี่ยวหลบลงไปได้)
+- ✅ วิดีโอจริงผ่าน **ZegoCloud SDK** (token04 generator + API route + engine + component ใช้แทน Webex mock แล้ว)
 - ✅ ความลับระดับการประชุม (watermark + blur-on-blur + right-click block)
-- ✅ สรุปประชุมอัตโนมัติจาก AI (pipeline mock สำเร็จ)
+- ✅ สรุปประชุมอัตโนมัติจาก AI (pipeline mock สำเร็จ) + notification flow + .ics calendar
 - ✅ อัปโหลดเอกสารจริง (IndexedDB) + preview ด้วย PDF/Markdown viewer
 - ✅ การจำหน่ายเอกสารตามสิทธิ์ (4 ระดับการมองเห็น)
+- ✅ Guest Join — Magic Link flow (เชิญบุคคลภายนอกเข้าประชุมโดยไม่ต้องสร้างบัญชี, ใช้งานได้จริงแล้ว ไม่ใช่แค่ plan)
 
 ### ⏳ ยังเลื่อน
-- ❌ Backend + API + Database (specification ทำสำเร็จ, รอ Webex license ของจริง)
-- ❌ Production Webex SDK (placeholder เอาไว้, ต้องมี OAuth + credentials)
+- ❌ Backend + API + Database (specification ทำสำเร็จ, ยังไม่ deploy จริง)
 - ❌ Email service จริง (template พร้อม, รอเลือก Sendgrid/AWS SES)
-- ❌ Guest Join Feature — Implementation (plan สำเร็จแล้ว, ยังไม่เขียนโค้ด)
+- ❌ Phase E ฟีเจอร์ใหม่ — Voting, Hand Raise, Subtitle, Zoom Room (design spec เสร็จแล้ว `docs/superpowers/specs/2026-08-11-meeting-system-features-design.md`, **ยังไม่เขียนโค้ด**)
+- ❌ Server-side audit logging + signed URLs (Phase 2 security, ยังไม่ทำ)
 
 ---
 
@@ -128,26 +129,48 @@ Section "สรุปการประชุมอัตโนมัติ":
 
 ---
 
-### Phase D: Guest Join + Calendar Integration 🆕 PLANNED (Not Started)
+### Phase D: Guest Join + Calendar Integration ✅ COMPLETE
 | Component | Status | File |
 |---|---|---|
 | Complete flow documentation | ✅ | `GUEST_JOIN_CALENDAR_PLAN.md` |
-| Frontend UI (invite-guests tab) | ⏳ | Not yet implemented |
-| Backend APIs (batch invite, list) | ⏳ | Not yet implemented |
-| Email templates (.ics attachment) | ✅ | Plan includes HTML + RFC 5545 format |
-| Calendar file generation | ✅ | Plan includes `.generateCalendarFile()` |
-| Database schema | ✅ | Plan includes `guest_invites` table |
+| Magic Link flow (invite guest, no account) | ✅ | commit `4bc89a6` |
+| End meeting + enable transcript request | ✅ | commit `854d2dc` |
+| Guest notification when meeting ends | ✅ | commit `4a585be`, `707574e` |
+| Notification flow + .ics calendar + transcript/summary pipeline | ✅ | commit `c199989` |
+| Backend APIs (batch invite, list) | ⏳ | Client-side only, no real backend yet |
 
-**Timeline:** 6 days (2 frontend + 2 backend + 1 email + 1 testing)
-
-**Key Features:**
+**Key Features (working in demo):**
 - Organizer adds guests + sends batch invitations
-- Guest receives email with:
-  - Magic link (click to join, 24h valid)
-  - .ics file (download to add calendar)
-  - Meeting details + NDA notice
-- Guest auto-adds to Google/Outlook/Apple Calendar
-- Calendar shows meeting with link + notification
+- Guest receives magic link (click to join, no account needed)
+- .ics calendar file generation (RFC 5545)
+- Guest notified when meeting ends + transcript flow
+
+---
+
+### ZegoCloud Real SDK Integration ✅ COMPLETE
+| Component | Status | File |
+|---|---|---|
+| Design spec + implementation plan | ✅ | `docs/superpowers/specs/2026-08-06-zegocloud-real-sdk-integration-design.md`, `docs/superpowers/plans/2026-08-06-zegocloud-real-sdk-integration.md` |
+| Token04 generator + API route | ✅ | `src/lib/zegoToken.ts` |
+| Mock engine (Phase D-1, kept as fallback) | ✅ | `src/services/video/zegoMock.ts` |
+| Real engine wired + userId plumbed | ✅ | `src/services/video/zego.ts` |
+| Video room component mounted | ✅ | `src/components/meeting/ZegoCloudEmbedStage.tsx` |
+| ServerSecret scrubbed from docs | ✅ | fixed in commit `c6b92ad` |
+
+Replaces the earlier Webex mock as the primary video engine seam.
+
+---
+
+### Phase E: Voting / Hand Raise / Subtitle / Zoom Room 📋 SPEC ONLY (Not Started)
+| Component | Status | File |
+|---|---|---|
+| Design spec (signaling layer, voting, hand raise, subtitle, Zoom Room placeholder) | ✅ | `docs/superpowers/specs/2026-08-11-meeting-system-features-design.md` |
+| Realtime signaling layer | ⏳ | Not implemented |
+| Voting system | ⏳ | Not implemented |
+| Realtime hand raise | ⏳ | Not implemented |
+| Web Speech API subtitles | ⏳ | Not implemented |
+| Transcript capture + document sharing sync | ⏳ | Not implemented |
+| Zoom Room placeholder (needs enterprise plan for SIP bridge) | ⏳ | Not implemented, blocked on licensing |
 
 ---
 
@@ -494,6 +517,6 @@ npm run dev
 
 ---
 
-**Last Reviewed:** 2026-08-03  
+**Last Reviewed:** 2026-08-12  
 **Prepared by:** Claude Code  
-**Next Review:** When Phase D backend implementation starts
+**Next Review:** When Phase E (voting/hand raise/subtitle/Zoom Room) implementation starts
