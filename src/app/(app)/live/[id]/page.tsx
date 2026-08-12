@@ -10,7 +10,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
-import { RoomSignalingProvider } from "@/context/RoomSignalingContext";
+import { RoomSignalingProvider, useRoomSignaling } from "@/context/RoomSignalingContext";
+import { HandRaiseList, type RaisedHand } from "@/components/meeting/HandRaiseList";
 import { SimulatedDocumentViewer, DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { ExternalConferenceStage } from "@/components/meeting/ExternalConferenceStage";
 import { WebexEmbedStage } from "@/components/meeting/WebexEmbedStage";
@@ -28,6 +29,60 @@ function mutedByDefault(participantId: string): boolean {
     hash = (hash * 31 + participantId.charCodeAt(i)) | 0;
   }
   return Math.abs(hash) % 10 < 6;
+}
+
+type Broadcast = ReturnType<typeof useRoomSignaling>["broadcast"];
+
+/**
+ * ต้องเป็นคอมโพเนนต์ลูกที่ render อยู่ใต้ RoomSignalingProvider เพราะ useRoomSignaling()
+ * ใช้ไม่ได้ในตัว LiveMeetingRoomPage เอง (มันเป็นคนสร้าง Provider ขึ้นมา ไม่ได้อยู่ใต้ Provider)
+ * — ส่ง broadcast กลับขึ้นไปให้ parent ผ่าน ref แทนการยกทั้งหน้าเข้าไปอยู่ใต้ Provider
+ */
+function HandRaiseSync({
+  currentUserId,
+  broadcastRef,
+  setRaisedHands,
+}: {
+  currentUserId: string;
+  broadcastRef: React.MutableRefObject<Broadcast | null>;
+  setRaisedHands: React.Dispatch<React.SetStateAction<Map<string, RaisedHand>>>;
+}) {
+  const { broadcast, useSignal } = useRoomSignaling();
+
+  useEffect(() => {
+    broadcastRef.current = broadcast;
+  }, [broadcast, broadcastRef]);
+
+  useSignal("hand_raise", (signal) => {
+    setRaisedHands((prev) => {
+      const copy = new Map(prev);
+      if (signal.payload.raised) {
+        copy.set(signal.senderId, { userId: signal.senderId, userName: signal.senderName, raisedAt: signal.timestamp });
+      } else {
+        copy.delete(signal.senderId);
+      }
+      return copy;
+    });
+  });
+
+  useSignal("hand_lower", (signal) => {
+    if (signal.payload.targetUserId === currentUserId) {
+      setRaisedHands((prev) => {
+        const copy = new Map(prev);
+        copy.delete(currentUserId);
+        return copy;
+      });
+      toast.info("โฮสต์ลดมือให้คุณแล้ว");
+    } else {
+      setRaisedHands((prev) => {
+        const copy = new Map(prev);
+        copy.delete(signal.payload.targetUserId);
+        return copy;
+      });
+    }
+  });
+
+  return null;
 }
 
 export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: string }> }) {
@@ -48,7 +103,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   // UI Control states
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(false);
-  const [handRaised, setHandRaised] = useState(false);
+  const [raisedHands, setRaisedHands] = useState<Map<string, RaisedHand>>(new Map());
+  const handRaised = raisedHands.has(currentUser.id);
+  const broadcastRef = useRef<Broadcast | null>(null);
   const [screenSharing, setScreenSharing] = useState(false);
   const [activeTab, setActiveTab] = useState("agenda");
   const [chatInput, setChatInput] = useState("");
@@ -350,7 +407,25 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
 
   const handleMicToggle = () => setMicOn(!micOn);
   const handleCameraToggle = () => setCameraOn(!cameraOn);
-  const handleHandRaise = () => setHandRaised(!handRaised);
+  const handleHandRaise = () => {
+    const next = !handRaised;
+    broadcastRef.current?.({ type: "hand_raise", payload: { raised: next } });
+    setRaisedHands((prev) => {
+      const copy = new Map(prev);
+      if (next) copy.set(currentUser.id, { userId: currentUser.id, userName: currentUser.name, raisedAt: Date.now() });
+      else copy.delete(currentUser.id);
+      return copy;
+    });
+  };
+
+  const handleLowerHand = (userId: string) => {
+    broadcastRef.current?.({ type: "hand_lower", payload: { targetUserId: userId } });
+    setRaisedHands((prev) => {
+      const copy = new Map(prev);
+      copy.delete(userId);
+      return copy;
+    });
+  };
   const handleShareScreen = () => {
     if (!screenSharing) {
       setScreenSharing(true);
@@ -363,6 +438,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
 
   return (
     <RoomSignalingProvider meetingId={meeting.id}>
+    <HandRaiseSync currentUserId={currentUser.id} broadcastRef={broadcastRef} setRaisedHands={setRaisedHands} />
     <div className="fixed inset-0 bg-background text-foreground flex flex-col font-sans overflow-hidden z-[1000]">
       {/* Top Header */}
       <header className="h-14 bg-card border-b border-border px-4 flex items-center justify-between shrink-0">
@@ -594,6 +670,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                         <span>{p.name}</span>
                         <div className="flex items-center gap-1">
                           {isMuted && <span className="material-symbols-outlined text-red-500 text-[14px]">mic_off</span>}
+                          {p.userId && raisedHands.has(p.userId) && (
+                            <span className="material-symbols-outlined text-amber-500 text-[14px] animate-bounce">pan_tool</span>
+                          )}
                           {!isPresent && <Badge className="bg-secondary text-muted-foreground border-none text-[8px] py-0">OFFLINE</Badge>}
                         </div>
                       </div>
@@ -882,6 +961,8 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                 </Badge>
               </div>
 
+              <HandRaiseList raised={[...raisedHands.values()]} isHost={isManager} onLower={handleLowerHand} />
+
               <div className="space-y-2">
                 {/* Local user */}
                 <div className="rounded-xl border border-border bg-muted p-2.5 flex items-center justify-between">
@@ -897,6 +978,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    {handRaised && <span className="material-symbols-outlined text-amber-500 text-[14px] animate-bounce">pan_tool</span>}
                     <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse"></span>
                     <span className="text-[9px] text-muted-foreground">เข้าชม</span>
                   </div>
@@ -907,6 +989,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                   .filter((p) => p.id !== localParticipant?.id)
                   .map((p) => {
                     const isPresent = p.present;
+                    const raised = p.userId ? raisedHands.has(p.userId) : false;
                     return (
                       <div
                         key={p.id}
@@ -927,6 +1010,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                         </div>
 
                         <div className="flex items-center gap-1.5">
+                          {raised && <span className="material-symbols-outlined text-amber-500 text-[14px] animate-bounce">pan_tool</span>}
                           <span className={`h-1.5 w-1.5 rounded-full ${isPresent ? "bg-green-500" : "bg-muted-foreground/40"}`}></span>
                           <span className="text-[9px] text-muted-foreground">{isPresent ? "เข้าชม" : "ออฟไลน์"}</span>
                         </div>
