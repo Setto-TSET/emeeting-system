@@ -499,6 +499,15 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
             variant="destructive"
             size="sm"
             onClick={() => {
+              // Lower own raised hand for everyone else before leaving
+              if (raisedHands.has(currentUser.id)) {
+                broadcastRef.current?.({ type: "hand_raise", payload: { raised: false } });
+                setRaisedHands((prev) => {
+                  const copy = new Map(prev);
+                  copy.delete(currentUser.id);
+                  return copy;
+                });
+              }
               // Set present false in context on leave
               if (localParticipant) {
                 const updatedParticipants = meeting.participants.map((p) =>
@@ -531,6 +540,14 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               credential={videoCredential}
               userId={currentUser.id}
               onLeave={() => {
+                if (raisedHands.has(currentUser.id)) {
+                  broadcastRef.current?.({ type: "hand_raise", payload: { raised: false } });
+                  setRaisedHands((prev) => {
+                    const copy = new Map(prev);
+                    copy.delete(currentUser.id);
+                    return copy;
+                  });
+                }
                 if (localParticipant) {
                   const updatedParticipants = meeting.participants.map((p) =>
                     p.id === localParticipant.id ? { ...p, present: false } : p
@@ -547,6 +564,14 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               isHost={isManager}
               credential={videoCredential}
               onLeave={() => {
+                if (raisedHands.has(currentUser.id)) {
+                  broadcastRef.current?.({ type: "hand_raise", payload: { raised: false } });
+                  setRaisedHands((prev) => {
+                    const copy = new Map(prev);
+                    copy.delete(currentUser.id);
+                    return copy;
+                  });
+                }
                 if (localParticipant) {
                   const updatedParticipants = meeting.participants.map((p) =>
                     p.id === localParticipant.id ? { ...p, present: false } : p
