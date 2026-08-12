@@ -16,9 +16,13 @@ import { SimulatedDocumentViewer, DocumentLightbox } from "@/components/meeting/
 import { ExternalConferenceStage } from "@/components/meeting/ExternalConferenceStage";
 import { WebexEmbedStage } from "@/components/meeting/WebexEmbedStage";
 import { ZegoCloudEmbedStage } from "@/components/meeting/ZegoCloudEmbedStage";
+import { SubtitleBar } from "@/components/meeting/SubtitleBar";
 import { resolveConference } from "@/lib/conference";
 import { resolveVideoSurface } from "@/services/video";
 import { requestVideoCredential, type VideoCredential } from "@/services/credentials";
+import { webSpeechProvider } from "@/services/speech/webSpeechProvider";
+import { appendSegment } from "@/services/transcript/store";
+import type { RoomSignal } from "@/services/signaling/types";
 import { can } from "@/lib/authz";
 import { MeetingParticipant, MeetingFile, canViewFile } from "@/data";
 
@@ -37,15 +41,24 @@ type Broadcast = ReturnType<typeof useRoomSignaling>["broadcast"];
  * ต้องเป็นคอมโพเนนต์ลูกที่ render อยู่ใต้ RoomSignalingProvider เพราะ useRoomSignaling()
  * ใช้ไม่ได้ในตัว LiveMeetingRoomPage เอง (มันเป็นคนสร้าง Provider ขึ้นมา ไม่ได้อยู่ใต้ Provider)
  * — ส่ง broadcast กลับขึ้นไปให้ parent ผ่าน ref แทนการยกทั้งหน้าเข้าไปอยู่ใต้ Provider
+ *
+ * ดูแลทั้งสัญญาณ hand_raise/hand_lower และ subtitle_text (คำบรรยายที่ผู้พูดคนอื่นส่งมา)
+ * — บันทึกท่อน final ที่รับมาลง transcript store ของเครื่องนี้เอง (ดูข้อจำกัดที่ store.ts)
  */
 function HandRaiseSync({
   currentUserId,
+  meetingId,
+  meetingStartRef,
   broadcastRef,
   setRaisedHands,
+  setLatestSubtitle,
 }: {
   currentUserId: string;
+  meetingId: string;
+  meetingStartRef: React.MutableRefObject<number>;
   broadcastRef: React.MutableRefObject<Broadcast | null>;
   setRaisedHands: React.Dispatch<React.SetStateAction<Map<string, RaisedHand>>>;
+  setLatestSubtitle: React.Dispatch<React.SetStateAction<RoomSignal<"subtitle_text"> | null>>;
 }) {
   const { broadcast, useSignal } = useRoomSignaling();
 
@@ -82,6 +95,18 @@ function HandRaiseSync({
     }
   });
 
+  useSignal("subtitle_text", (signal) => {
+    setLatestSubtitle(signal);
+    if (signal.payload.isFinal) {
+      appendSegment(meetingId, {
+        speakerId: signal.senderId,
+        speakerName: signal.senderName,
+        startSec: (signal.timestamp - meetingStartRef.current) / 1000,
+        text: signal.payload.text,
+      });
+    }
+  });
+
   return null;
 }
 
@@ -106,6 +131,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const [raisedHands, setRaisedHands] = useState<Map<string, RaisedHand>>(new Map());
   const handRaised = raisedHands.has(currentUser.id);
   const broadcastRef = useRef<Broadcast | null>(null);
+  const [subtitleOn, setSubtitleOn] = useState(false);
+  const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
+  const meetingStartRef = useRef(Date.now());
   const [screenSharing, setScreenSharing] = useState(false);
   const [activeTab, setActiveTab] = useState("agenda");
   const [chatInput, setChatInput] = useState("");
@@ -238,6 +266,13 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     stopStream();
     return stopStream;
   }, [cameraOn, hasJoined]);
+
+  // หยุดจดจำเสียงเมื่อออกจากคอมโพเนนต์ — กันไมค์ค้างฟังหลัง unmount
+  useEffect(() => {
+    return () => {
+      webSpeechProvider.stop();
+    };
+  }, []);
 
   // Random Speaker Highlight Simulation
   // อ่านค่า meeting/localParticipant ผ่าน ref เพื่อไม่ให้ interval รีเซ็ตทุก context write
@@ -436,9 +471,40 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     }
   };
 
+  const handleToggleSubtitle = () => {
+    if (subtitleOn) {
+      webSpeechProvider.stop();
+      setSubtitleOn(false);
+      return;
+    }
+    if (!webSpeechProvider.isSupported()) {
+      toast.error("เบราว์เซอร์ไม่รองรับ กรุณาใช้ Chrome");
+      return;
+    }
+    webSpeechProvider.start("th-TH", (result) => {
+      broadcastRef.current?.({ type: "subtitle_text", payload: { text: result.text, isFinal: result.isFinal, lang: result.lang } });
+      if (result.isFinal) {
+        appendSegment(meeting.id, {
+          speakerId: currentUser.id,
+          speakerName: currentUser.name,
+          startSec: (Date.now() - meetingStartRef.current) / 1000,
+          text: result.text,
+        });
+      }
+    });
+    setSubtitleOn(true);
+  };
+
   return (
     <RoomSignalingProvider meetingId={meeting.id}>
-    <HandRaiseSync currentUserId={currentUser.id} broadcastRef={broadcastRef} setRaisedHands={setRaisedHands} />
+    <HandRaiseSync
+      currentUserId={currentUser.id}
+      meetingId={meeting.id}
+      meetingStartRef={meetingStartRef}
+      broadcastRef={broadcastRef}
+      setRaisedHands={setRaisedHands}
+      setLatestSubtitle={setLatestSubtitle}
+    />
     <div className="fixed inset-0 bg-background text-foreground flex flex-col font-sans overflow-hidden z-[1000]">
       {/* Top Header */}
       <header className="h-14 bg-card border-b border-border px-4 flex items-center justify-between shrink-0">
@@ -530,7 +596,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       <div className="flex-1 flex overflow-hidden min-h-0 relative">
         
         {/* Left Side: Video Grid & Shared Presentation */}
-        <div className="flex-1 flex flex-col p-4 space-y-4 overflow-y-auto">
+        <div className="flex-1 flex flex-col p-4 space-y-4 overflow-y-auto relative">
           
           {/* Main content pane: เอกสารที่แชร์ > engine ฝัง > เวทีประชุมภายนอก > ห้องจำลองในเว็บ */}
           {isEmbedConference && !sharedFile && videoSurface.kind === "embed" && videoSurface.engineId === "zegocloud" ? (
@@ -766,7 +832,22 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                 <span className="material-symbols-outlined text-[20px]">present_to_all</span>
               </Button>
             )}
+
+            <Button
+              onClick={handleToggleSubtitle}
+              size="icon"
+              className={`rounded-xl h-10 w-10 border transition-all ${
+                subtitleOn
+                  ? "bg-primary/10 border-primary/40 text-primary hover:bg-primary/20"
+                  : "bg-secondary border-border text-foreground hover:bg-secondary/80"
+              }`}
+              title="คำบรรยายสด (Subtitle)"
+            >
+              <span className="material-symbols-outlined text-[20px]">closed_caption</span>
+            </Button>
           </div>
+
+          <SubtitleBar latest={latestSubtitle} />
         </div>
 
         {/* Right Side: Tab Drawers for Agenda, Files, Chat, and Participants */}
