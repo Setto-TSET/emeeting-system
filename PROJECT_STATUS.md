@@ -1,8 +1,8 @@
 # e-Meeting System — Project Status Report
 
 **Project:** ระบบประชุมออนไลน์พร้อมความลับ + สรุปประชุมอัตโนมัติ + ZegoCloud Integration  
-**Status:** Phase 0–C Complete + Guest Join Complete + ZegoCloud Real SDK Integrated + Phase E (Voting/Hand Raise/Subtitle/Zoom Room) Spec Only  
-**Last Updated:** 2026-08-12  
+**Status:** Phase 0–C Complete + Guest Join Complete + ZegoCloud Real SDK Integrated + Phase E (Voting/Hand Raise/Subtitle/Doc-Share Sync) Complete — Zoom Room SIP bridge still blocked on licensing  
+**Last Updated:** 2026-08-13  
 **Repository:** https://github.com/Setto-TSET/emeeting-system
 
 ---
@@ -19,11 +19,12 @@
 - ✅ อัปโหลดเอกสารจริง (IndexedDB) + preview ด้วย PDF/Markdown viewer
 - ✅ การจำหน่ายเอกสารตามสิทธิ์ (4 ระดับการมองเห็น)
 - ✅ Guest Join — Magic Link flow (เชิญบุคคลภายนอกเข้าประชุมโดยไม่ต้องสร้างบัญชี, ใช้งานได้จริงแล้ว ไม่ใช่แค่ plan)
+- ✅ โหวตแบบ realtime, ยกมือแบบ realtime, ซับไตเติลสด (Web Speech API), ถอดคำพูด + แชร์เอกสารซิงค์ข้ามผู้เข้าร่วม (ผ่าน BroadcastChannel signaling layer)
 
 ### ⏳ ยังเลื่อน
 - ❌ Backend + API + Database (specification ทำสำเร็จ, ยังไม่ deploy จริง)
 - ❌ Email service จริง (template พร้อม, รอเลือก Sendgrid/AWS SES)
-- ❌ Phase E ฟีเจอร์ใหม่ — Voting, Hand Raise, Subtitle, Zoom Room (design spec เสร็จแล้ว `docs/superpowers/specs/2026-08-11-meeting-system-features-design.md`, **ยังไม่เขียนโค้ด**)
+- ❌ Zoom Room enterprise SIP bridge (Phase E placeholder UI ทำแล้ว, ตัว SIP bridge จริงรอ ZegoCloud Enterprise Plan)
 - ❌ Server-side audit logging + signed URLs (Phase 2 security, ยังไม่ทำ)
 
 ---
@@ -161,16 +162,18 @@ Replaces the earlier Webex mock as the primary video engine seam.
 
 ---
 
-### Phase E: Voting / Hand Raise / Subtitle / Zoom Room 📋 SPEC ONLY (Not Started)
+### Phase E: Voting / Hand Raise / Subtitle / Zoom Room ✅ COMPLETE (UI/demo layer)
 | Component | Status | File |
 |---|---|---|
 | Design spec (signaling layer, voting, hand raise, subtitle, Zoom Room placeholder) | ✅ | `docs/superpowers/specs/2026-08-11-meeting-system-features-design.md` |
-| Realtime signaling layer | ⏳ | Not implemented |
-| Voting system | ⏳ | Not implemented |
-| Realtime hand raise | ⏳ | Not implemented |
-| Web Speech API subtitles | ⏳ | Not implemented |
-| Transcript capture + document sharing sync | ⏳ | Not implemented |
-| Zoom Room placeholder (needs enterprise plan for SIP bridge) | ⏳ | Not implemented, blocked on licensing |
+| Implementation plan | ✅ | `docs/superpowers/plans/2026-08-12-meeting-system-features.md` |
+| Realtime signaling layer (BroadcastChannel) | ✅ | `src/services/signaling/`, `src/context/RoomSignalingContext.tsx` |
+| Voting system | ✅ | `src/services/voting/`, `src/components/meeting/Vote*.tsx` |
+| Realtime hand raise | ✅ | `src/components/meeting/HandRaiseList.tsx` + live room wiring |
+| Web Speech API subtitles | ✅ | `src/services/speech/webSpeechProvider.ts`, `src/components/meeting/SubtitleBar.tsx` |
+| Transcript capture + viewer | ✅ | `src/services/transcript/store.ts`, `src/components/meeting/TranscriptTimeline.tsx` |
+| Document sharing sync | ✅ | live room `doc_share`/`doc_share_page`/`doc_share_stop` wiring |
+| Zoom Room placeholder (needs enterprise plan for SIP bridge) | ⏳ | `src/components/meeting/ZoomRoomStatus.tsx` shows UI; SIP bridge not implemented, blocked on licensing |
 
 ---
 
@@ -517,6 +520,6 @@ npm run dev
 
 ---
 
-**Last Reviewed:** 2026-08-12  
+**Last Reviewed:** 2026-08-13  
 **Prepared by:** Claude Code  
-**Next Review:** When Phase E (voting/hand raise/subtitle/Zoom Room) implementation starts
+**Next Review:** When Zoom Room enterprise SIP bridge (ZegoCloud Enterprise Plan) becomes available
