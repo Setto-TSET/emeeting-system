@@ -2,44 +2,37 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { VoteCreateDialog } from "./VoteCreateDialog";
 import { VoteTopicCard } from "./VoteTopicCard";
 import { VoteResultsDialog } from "./VoteResultsDialog";
 import { useRoomSignaling } from "@/context/RoomSignalingContext";
 import { useCurrentUser } from "@/context/UserContext";
-import { listTopics, saveTopic, getTopic, castVote, closeTopic } from "@/services/voting/store";
+import { listTopics, saveTopic, castVote, closeTopic } from "@/services/voting/store";
 import type { VoteTopic } from "@/services/voting/types";
 
-export function VotePanel({ meetingId, canManage }: { meetingId: string; canManage: boolean }) {
+// `voteRefreshToken` เป็นตัวนับที่ RoomSignalBridge (mounted เสมอ ไม่ว่าจะเปิดแท็บโหวตอยู่หรือไม่)
+// เพิ่มค่าทุกครั้งที่ได้รับสัญญาณ vote_create/vote_cast/vote_close — VotePanel แค่ฟังการเปลี่ยนแปลง
+// ของค่านี้แล้วอ่าน topics ใหม่จาก IndexedDB เอง (ตัว toast และการฟังสัญญาณจริงย้ายไปอยู่ที่ RoomSignalBridge แล้ว
+// เพื่อให้ทำงานได้ไม่ว่าผู้ใช้จะเปิดแท็บไหนอยู่ — ดู Fix 2 ในรายงานรีวิว)
+export function VotePanel({
+  meetingId,
+  canManage,
+  voteRefreshToken,
+}: {
+  meetingId: string;
+  canManage: boolean;
+  voteRefreshToken: number;
+}) {
   const { currentUser } = useCurrentUser();
-  const { broadcast, useSignal } = useRoomSignaling();
+  const { broadcast } = useRoomSignaling();
   const [topics, setTopics] = useState<VoteTopic[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [resultsTopic, setResultsTopic] = useState<VoteTopic | null>(null);
 
   useEffect(() => {
     listTopics(meetingId).then(setTopics);
-  }, [meetingId]);
-
-  useSignal("vote_create", async (signal) => {
-    const topic = await getTopic(meetingId, signal.payload.topicId);
-    if (topic) {
-      setTopics((prev) => (prev.some((t) => t.id === topic.id) ? prev : [...prev, topic]));
-      toast.info(`${signal.senderName} สร้างโหวตใหม่: ${topic.title}`);
-    }
-  });
-
-  useSignal("vote_cast", async (signal) => {
-    const topic = await getTopic(meetingId, signal.payload.topicId);
-    if (topic) setTopics((prev) => prev.map((t) => (t.id === topic.id ? topic : t)));
-  });
-
-  useSignal("vote_close", async (signal) => {
-    const topic = await getTopic(meetingId, signal.payload.topicId);
-    if (topic) setTopics((prev) => prev.map((t) => (t.id === topic.id ? topic : t)));
-  });
+  }, [meetingId, voteRefreshToken]);
 
   const handleCreate = async (draft: Pick<VoteTopic, "title" | "description" | "options">) => {
     const topic: VoteTopic = {
