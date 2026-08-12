@@ -25,7 +25,8 @@ export type MeetingAction =
   | "meeting.changeStatus"      // เปิด/ปิดประชุม
   | "meeting.endorse"           // รับรองรายงาน (ย้อนกลับไม่ได้)
   | "meeting.host"              // คุมห้องประชุมออนไลน์ (แชร์จอ/กำหนดวาระ)
-  | "meeting.join";             // เข้าห้องประชุมออนไลน์
+  | "meeting.join"              // เข้าห้องประชุมออนไลน์
+  | "meeting.manageVoting";     // สร้าง/ปิดโหวตในห้องประชุม
 
 // ───────── ความสัมพันธ์ระหว่างคนกับประชุม (คำนวณจาก id เท่านั้น) ─────────
 
@@ -122,6 +123,9 @@ export function can(user: AppUser, action: MeetingAction, meeting: Meeting): boo
 
     case "meeting.join":
       return isManager || isParticipantOf(user, meeting) || isExecutiveOfCommittee(user, meeting);
+
+    case "meeting.manageVoting":
+      return can(user, "meeting.host", meeting);
 
     default:
       return false;
