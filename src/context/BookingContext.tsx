@@ -13,8 +13,9 @@ type BookingContextType = {
 /**
  * ขึ้นเลขเวอร์ชันท้ายคีย์เมื่อโครงสร้างข้อมูลเปลี่ยน
  * v2 — เพิ่ม bookedById (เดิมจับคู่เจ้าของการจองด้วยชื่อ ซึ่งพังเมื่อชื่อไม่ตรงกันเป๊ะ)
+ * v3 — ตัดการจองห้องจำลองออกหมด (อ้างอิงห้องเก่า A-101 ฯลฯ ที่ไม่มีแล้ว) เหลือ array ว่าง
  */
-const STORAGE_KEY = "meeting_system_bookings_v2";
+const STORAGE_KEY = "meeting_system_bookings_v3";
 
 const BookingContext = createContext<BookingContextType | null>(null);
 

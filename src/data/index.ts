@@ -153,14 +153,11 @@ export type Room = {
   hasIpad?: boolean;
 };
 
+// ห้องประชุมจริงขององค์กร — ตัดห้องจำลอง (A-101 ฯลฯ) ออกหมดแล้ว เหลือ 3 ห้องที่ใช้งานจริง
 export const meetingRooms: Room[] = [
-  { id: "R-A101", name: "ห้องประชุม A-101", category: "small", categoryLabel: "ห้องประชุมเล็ก", capacity: 8, location: "อาคาร A", floor: "ชั้น 1", amenities: ["โปรเจกเตอร์", "TV 65\"", "Whiteboard"], status: "available" },
-  { id: "R-A201", name: "ห้องประชุม A-201", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 16, location: "อาคาร A", floor: "ชั้น 2", amenities: ["โปรเจกเตอร์", "ระบบประชุมทางไกล", "ไมโครโฟน"], status: "available" },
-  { id: "R-A301", name: "ห้องประชุม A-301", category: "large", categoryLabel: "ห้องประชุมใหญ่", capacity: 40, location: "อาคาร A", floor: "ชั้น 3", amenities: ["โปรเจกเตอร์ 2 ตัว", "ระบบเสียง Wireless", "Video Conference", "เวที"], status: "available", hasZoomRoom: true, zoomRoomDeviceId: "ZR-A301" },
-  { id: "R-B201", name: "ห้องประชุมบอร์ด B-201", category: "board", categoryLabel: "ห้องบอร์ดผู้บริหาร", capacity: 20, location: "อาคาร B", floor: "ชั้น 2", amenities: ["โต๊ะขนาดใหญ่", "TV ทัชสกรีน", "Video Conference"], status: "occupied", hasZoomRoom: true, zoomRoomDeviceId: "ZR-B201" },
-  { id: "R-B301", name: "ห้องประชุมใหญ่ B-301", category: "conference", categoryLabel: "ห้องประชุมใหญ่", capacity: 120, location: "อาคาร B", floor: "ชั้น 3", amenities: ["โปรเจกเตอร์ 3 ตัว", "ระบบแปลภาษา", "Live Streaming", "ห้องแต่งตัว"], status: "available" },
-  { id: "R-C102", name: "ห้องประชุม C-102", category: "small", categoryLabel: "ห้องประชุมเล็ก", capacity: 6, location: "อาคาร C", floor: "ชั้น 1", amenities: ["TV 55\"", "Whiteboard"], status: "available" },
-  { id: "R-C202", name: "ห้องประชุม C-202", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคาร C", floor: "ชั้น 2", amenities: ["โปรเจกเตอร์", "ระบบเสียง"], status: "maintenance" },
+  { id: "R-801", name: "ห้องประชุม 801", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคารสำนักงาน", floor: "ชั้น 8", amenities: ["โปรเจกเตอร์", "ระบบเสียง", "Video Conference"], status: "available" },
+  { id: "R-808", name: "ห้องประชุม 808", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคารสำนักงาน", floor: "ชั้น 8", amenities: ["โปรเจกเตอร์", "ระบบเสียง", "Video Conference"], status: "available" },
+  { id: "R-901", name: "ห้องประชุม 901", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคารสำนักงาน", floor: "ชั้น 9", amenities: ["โปรเจกเตอร์", "ระบบเสียง", "Video Conference"], status: "available" },
 ];
 
 // ===== Room Bookings =====
@@ -182,14 +179,8 @@ export type Booking = {
   extraRooms?: string[];
 };
 
-export const bookings: Booking[] = [
-  { id: "BK-2569-001", roomId: "R-A101", roomName: "ห้องประชุม A-101", title: "ประชุมทีมพัฒนาผลิตภัณฑ์", bookedById: "U-001", bookedBy: "นาย สมชาย ใจดี", department: "สำนักบริหาร", date: "2026-07-15", startTime: "09:00", endTime: "12:00", attendees: 6, purpose: "ประชุมประจำสัปดาห์", status: "confirmed" },
-  { id: "BK-2569-002", roomId: "R-A301", roomName: "ห้องประชุม A-301", title: "ประชุมคณะกรรมการบริหาร ครั้งที่ 7/2569", bookedById: "U-003", bookedBy: "นางสาว มาลี รักษาสัตย์", department: "สำนักผู้บริหาร", date: "2026-07-15", startTime: "13:00", endTime: "16:30", attendees: 35, purpose: "ประชุมประจำเดือน", status: "confirmed" },
-  { id: "BK-2569-003", roomId: "R-B201", roomName: "ห้องประชุมบอร์ด B-201", title: "ประชุมพิจารณางบประมาณ", bookedById: "U-001", bookedBy: "นาย สมชาย ใจดี", department: "สำนักบริหาร", date: "2026-07-16", startTime: "10:00", endTime: "12:00", attendees: 12, purpose: "อนุมัติงบประมาณ Q3", status: "confirmed" },
-  { id: "BK-2569-004", roomId: "R-A201", roomName: "ห้องประชุม A-201", title: "อบรมภายใน — Excel Advanced", bookedById: "U-004", bookedBy: "นางสาว วิภา สุขใจ", department: "ฝ่ายทรัพยากรบุคคล", date: "2026-07-17", startTime: "09:00", endTime: "16:00", attendees: 15, purpose: "อบรมพัฒนาบุคลากร", status: "pending" },
-  { id: "BK-2569-005", roomId: "R-B301", roomName: "ห้องประชุมใหญ่ B-301", title: "ประชุมใหญ่สามัญประจำปี", bookedById: "U-002", bookedBy: "นาย ประเสริฐ มั่นคง", department: "สำนักผู้บริหาร", date: "2026-07-20", startTime: "09:00", endTime: "17:00", attendees: 100, purpose: "AGM 2569", status: "confirmed" },
-  { id: "BK-2569-006", roomId: "R-A101", roomName: "ห้องประชุม A-101", title: "สัมภาษณ์งาน", bookedById: "U-004", bookedBy: "นางสาว วิภา สุขใจ", department: "ฝ่ายทรัพยากรบุคคล", date: "2026-07-14", startTime: "14:00", endTime: "16:00", attendees: 4, purpose: "สัมภาษณ์ตำแหน่ง Developer", status: "confirmed" },
-];
+// ยังไม่มีการจองจริง — ตัดข้อมูลจองห้องจำลองที่อ้างอิงห้องเก่า (A-101 ฯลฯ) ออกหมดแล้ว
+export const bookings: Booking[] = [];
 
 // ===== Meetings (e-Meeting) =====
 export type MeetingStatus =
@@ -374,196 +365,9 @@ export type MeetingChatMessage = {
 };
 
 export const meetings: Meeting[] = [
-  {
-    id: "MT-2569-007",
-    name: "การประชุมคณะกรรมการบริหาร ครั้งที่ 7/2569",
-    shortName: "กก.บริหาร 7/69",
-    type: "การประชุมคณะกรรมการ",
-    committeeId: "COM-01",
-    committee: "คณะกรรมการบริหาร",
-    organizerId: "U-003",
-    organizer: "นางสาว มาลี รักษาสัตย์",
-    organizerEmail: "malee.r@e-office.cloud",
-    emailSenderName: "สำนักผู้บริหาร",
-    date: "2026-07-15",
-    startTime: "13:00",
-    endTime: "16:30",
-    location: "ห้องประชุม A-301",
-    // ตัวอย่างการประชุมผ่าน Microsoft Teams — ระบบตรวจผู้ให้บริการจากลิงก์เอง
-    conferenceLink: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_exec072569%40thread.v2/0",
-    status: "notified",
-    displayFormat: 2,
-    participants: [
-      { id: "P-01", name: "นาย ประเสริฐ มั่นคง", position: "ประธาน", role: "ผู้อำนวยการ", department: "สำนักผู้บริหาร", userId: "U-002", email: "prasert@e-office.cloud", attendance: "attend", inSystem: true },
-      { id: "P-02", name: "นางสาว มาลี รักษาสัตย์", position: "เลขานุการ", role: "หัวหน้าฝ่ายเลขา", department: "สำนักผู้บริหาร", userId: "U-003", email: "malee.r@e-office.cloud", attendance: "attend", inSystem: true },
-      { id: "P-03", name: "นาย สมชาย ใจดี", position: "กรรมการ", role: "เจ้าหน้าที่บริหารงานทั่วไป", department: "สำนักบริหาร", userId: "U-001", email: "somchai.j@e-office.cloud", attendance: "attend", inSystem: true },
-      { id: "P-04", name: "นาง วิภา สุขใจ", position: "กรรมการ", role: "หัวหน้าฝ่ายบุคคล", department: "ฝ่ายทรัพยากรบุคคล", userId: "U-004", email: "wipha.s@e-office.cloud", attendance: "representative", inSystem: true },
-      { id: "P-05", name: "นาย ที่ปรึกษา ผู้ทรงคุณวุฒิ", position: "ที่ปรึกษา", role: "ผู้ทรงคุณวุฒิภายนอก", department: "-", userId: null, email: "-", inSystem: false, attendance: "pending" },
-    ],
-    files: [
-      { id: "F-01", name: "ระเบียบวาระการประชุม 7/2569.pdf", description: "ระเบียบวาระประชุมฉบับสมบูรณ์", size: "845 KB", uploadedAt: "2026-07-10", uploadedBy: "นางสาว มาลี รักษาสัตย์", type: "regulation", visibility: "participants" },
-      { id: "F-02", name: "งบการเงินไตรมาส 2.xlsx", description: "รายละเอียดงบการเงิน (เฉพาะประธาน/เลขา)", size: "212 KB", uploadedAt: "2026-07-11", uploadedBy: "นาง วิภา สุขใจ", type: "attachment", visibility: "restricted", allowedPositions: ["ประธาน", "เลขานุการ"] },
-      { id: "F-03", name: "ประกาศแจ้งเวียน — วาระการประชุมประจำเดือน.pdf", description: "ประกาศทั่วไปสำหรับพนักงานทุกท่าน", size: "95 KB", uploadedAt: "2026-07-08", uploadedBy: "นางสาว มาลี รักษาสัตย์", type: "attachment", visibility: "public" },
-      { id: "F-04", name: "โครงสร้างองค์กรใหม่ (ลับ).pdf", description: "ร่างโครงสร้างองค์กร — ห้ามเผยแพร่", size: "1.4 MB", uploadedAt: "2026-07-12", uploadedBy: "นาย ประเสริฐ มั่นคง", type: "attachment", visibility: "restricted", allowedUserIds: ["U-002", "U-003"] },
-    ],
-    agenda: [
-      { id: "A-1", no: "1", title: "เรื่องประธานแจ้งให้ที่ประชุมทราบ", detail: "รายงานสถานการณ์องค์กรและทิศทางการดำเนินงานในไตรมาสหน้า", comments: [] },
-      { id: "A-2", no: "2", title: "รับรองรายงานการประชุมครั้งที่แล้ว", detail: "รับรองรายงานการประชุมครั้งที่ 6/2569", comments: [] },
-      { id: "A-3", no: "3", title: "เรื่องเพื่อพิจารณา", comments: [] },
-      { id: "A-3-1", no: "3.1", title: "พิจารณาอนุมัติงบประมาณ Q3", detail: "งบประมาณสำหรับไตรมาส 3 ปีงบประมาณ 2569 จำนวน 12,500,000 บาท", comments: [{ by: "นาย สมชาย ใจดี", text: "เสนอปรับลดงบสำรอง 5%", time: "14:22" }] },
-      { id: "A-3-2", no: "3.2", title: "พิจารณาปรับผังองค์กร", detail: "ข้อเสนอปรับโครงสร้างองค์กรใหม่", secretGroupId: "SG-01", comments: [] },
-      { id: "A-4", no: "4", title: "เรื่องอื่นๆ", comments: [] },
-    ],
-    secretGroups: [
-      { id: "SG-01", name: "กลุ่มลับ — เรื่องบุคคล", participantIds: ["P-01", "P-02"] },
-    ],
-    permissions: [
-      { userId: "U-003", name: "นางสาว มาลี รักษาสัตย์", type: "manager" },
-      { userId: "U-002", name: "นาย ประเสริฐ มั่นคง", type: "manager" },
-      { userId: "U-001", name: "นาย สมชาย ใจดี", type: "reader" },
-      { userId: "U-004", name: "นาง วิภา สุขใจ", type: "reader" },
-    ],
-    extraTextBoxes: [
-      { id: "TB-1", name: "มติที่ประชุม" },
-      { id: "TB-2", name: "ข้อสั่งการ" },
-    ],
-    savedToDrive: true,
-    createdAt: "2026-07-08",
-  },
-  {
-    id: "MT-2569-008",
-    name: "การประชุมทีมพัฒนาผลิตภัณฑ์",
-    shortName: "ทีมพัฒนา 8/69",
-    type: "การประชุมภายในทีม",
-    committeeId: "COM-02",
-    committee: "ทีมพัฒนาผลิตภัณฑ์",
-    organizerId: "U-001",
-    organizer: "นาย สมชาย ใจดี",
-    organizerEmail: "somchai.j@e-office.cloud",
-    emailSenderName: "e-office",
-    date: "2026-07-15",
-    startTime: "09:00",
-    endTime: "12:00",
-    location: "ห้องประชุม A-101",
-    // ตัวอย่างประชุมที่ประชุมในเว็บผ่าน ZegoCloud + AI สรุปให้
-    conferenceProvider: "zegocloud",
-    conferenceRoomKey: "emeeting-demo-zego-mt008",
-    transcriptStatus: "none",
-    allowGuestJoin: true,
-    status: "in_progress",
-    displayFormat: 1,
-    participants: [
-      { id: "P-11", name: "นาย สมชาย ใจดี", position: "ประธาน", role: "PM", department: "สำนักบริหาร", userId: "U-001", email: "somchai.j@e-office.cloud", attendance: "attend", present: true, inSystem: true },
-      { id: "P-12", name: "นาย เดชา เก่งจริง", position: "กรรมการ", role: "Tech Lead", department: "ฝ่ายเทคโนโลยี", userId: "U-005", email: "decha@e-office.cloud", attendance: "attend", present: true, inSystem: true },
-      { id: "P-13", name: "นางสาว ณิชา งามพร้อม", position: "กรรมการ", role: "UX Designer", department: "ฝ่ายออกแบบ", userId: null, email: "nicha@e-office.cloud", attendance: "attend", present: false, inSystem: true },
-      { id: "P-14", name: "นาย ภูมิ อาสา", position: "เลขานุการ", role: "Business Analyst", department: "สำนักบริหาร", userId: null, email: "phum@e-office.cloud", attendance: "attend", present: true, inSystem: true },
-    ],
-    files: [
-      { id: "F-08-1", name: "Sprint Review Notes.pdf", description: "สรุปการทบทวน Sprint ที่แล้ว", size: "142 KB", uploadedAt: "2026-07-14", uploadedBy: "นาย สมชาย ใจดี", type: "attachment", visibility: "committee" },
-    ],
-    agenda: [
-      { id: "B-1", no: "1", title: "รายงานความคืบหน้า Sprint ที่แล้ว", comments: [] },
-      { id: "B-2", no: "2", title: "วางแผน Sprint ถัดไป", comments: [] },
-      { id: "B-3", no: "3", title: "เรื่องอื่นๆ", comments: [] },
-    ],
-    secretGroups: [],
-    permissions: [
-      { userId: "U-001", name: "นาย สมชาย ใจดี", type: "manager" },
-    ],
-    savedToDrive: false,
-    createdAt: "2026-07-10",
-  },
-  {
-    id: "MT-2569-006",
-    name: "การประชุมคณะกรรมการบริหาร ครั้งที่ 6/2569",
-    shortName: "กก.บริหาร 6/69",
-    type: "การประชุมคณะกรรมการ",
-    committeeId: "COM-01",
-    committee: "คณะกรรมการบริหาร",
-    organizerId: "U-003",
-    organizer: "นางสาว มาลี รักษาสัตย์",
-    organizerEmail: "malee.r@e-office.cloud",
-    emailSenderName: "สำนักผู้บริหาร",
-    date: "2026-06-15",
-    startTime: "13:00",
-    endTime: "16:30",
-    location: "ห้องประชุม A-301",
-    status: "endorsed",
-    displayFormat: 2,
-    participants: [
-      { id: "P-01", name: "นาย ประเสริฐ มั่นคง", position: "ประธาน", role: "ผู้อำนวยการ", department: "สำนักผู้บริหาร", userId: "U-002", email: "prasert@e-office.cloud", attendance: "attend", present: true, inSystem: true },
-      { id: "P-02", name: "นางสาว มาลี รักษาสัตย์", position: "เลขานุการ", role: "หัวหน้าฝ่ายเลขา", department: "สำนักผู้บริหาร", userId: "U-003", email: "malee.r@e-office.cloud", attendance: "attend", present: true, inSystem: true },
-    ],
-    files: [
-      { id: "FR-1", name: "รายงานการประชุม 6-2569.docx", description: "รายงานการประชุมฉบับสมบูรณ์", size: "1.2 MB", uploadedAt: "2026-06-20", uploadedBy: "นางสาว มาลี รักษาสัตย์", type: "report_final", visibility: "committee" },
-      { id: "FR-2", name: "สรุปมติที่ประชุม 6-2569.pdf", description: "สรุปมติเพื่อเผยแพร่ทั่วไป", size: "180 KB", uploadedAt: "2026-06-21", uploadedBy: "นางสาว มาลี รักษาสัตย์", type: "report_final", visibility: "public" },
-    ],
-    agenda: [],
-    secretGroups: [],
-    permissions: [],
-    savedToDrive: true,
-    createdAt: "2026-06-08",
-  },
-  {
-    id: "MT-2569-009",
-    name: "ประชุมคณะทำงาน — พัฒนาระบบ e-Office",
-    shortName: "คณะทำงาน e-Office",
-    type: "การประชุมคณะทำงาน",
-    committeeId: "COM-03",
-    committee: "คณะทำงานพัฒนา e-Office",
-    organizerId: "U-005",
-    organizer: "นาย เดชา เก่งจริง",
-    organizerEmail: "decha@e-office.cloud",
-    emailSenderName: "ฝ่ายเทคโนโลยี",
-    date: "2026-07-22",
-    startTime: "10:00",
-    endTime: "12:00",
-    location: "ห้องประชุม A-201",
-    // ตัวอย่างการประชุมผ่าน Zoom — ระบบดึงรหัสห้อง/รหัสผ่านจากลิงก์มาแสดงให้ผู้เข้าร่วม
-    conferenceLink: "https://us02web.zoom.us/j/84123456789?pwd=eOffice2569",
-    status: "prepare",
-    displayFormat: 1,
-    // ยังไม่มีองค์ประชุม — ระบบจะบังคับให้จัดการรายชื่อก่อนเมื่อเข้ากล่องประชุมครั้งแรก
-    participants: [],
-    files: [],
-    agenda: [
-      { id: "C-1", no: "1", title: "ทบทวนขอบเขตงานเฟส 2", comments: [] },
-    ],
-    secretGroups: [],
-    permissions: [{ userId: "U-005", name: "นาย เดชา เก่งจริง", type: "manager" }],
-    savedToDrive: false,
-    createdAt: "2026-07-12",
-  },
-  {
-    id: "MT-2569-005",
-    name: "การประชุมคณะทำงาน — ความปลอดภัยข้อมูล ครั้งที่ 3/2569",
-    shortName: "Security 3/69",
-    type: "การประชุมคณะทำงาน",
-    committeeId: "COM-04",
-    committee: "คณะทำงานความปลอดภัยข้อมูล",
-    organizerId: null,
-    organizer: "นาย ภูมิ อาสา",
-    organizerEmail: "phum@e-office.cloud",
-    emailSenderName: "e-office",
-    date: "2026-06-30",
-    startTime: "14:00",
-    endTime: "16:00",
-    location: "ห้องประชุม B-201",
-    status: "waiting_endorse",
-    displayFormat: 3,
-    participants: [
-      { id: "P-14", name: "นาย ภูมิ อาสา", position: "ประธาน", role: "Business Analyst", department: "สำนักบริหาร", userId: null, email: "phum@e-office.cloud", inSystem: true, present: true },
-    ],
-    files: [
-      { id: "FD-1", name: "ร่างรายงาน Security 3-2569.docx", description: "ร่างรายงานการประชุมจากระบบ (ยังไม่รับรอง)", size: "540 KB", uploadedAt: "2026-07-01", uploadedBy: "ระบบอัตโนมัติ", type: "report_draft", visibility: "committee" },
-      { id: "FD-2", name: "รายการช่องโหว่ที่พบ.xlsx", description: "รายการช่องโหว่ (ลับ)", size: "88 KB", uploadedAt: "2026-06-30", uploadedBy: "นาย ภูมิ อาสา", type: "attachment", visibility: "restricted", allowedPositions: ["ประธาน"] },
-    ],
-    agenda: [],
-    secretGroups: [],
-    permissions: [],
-    savedToDrive: true,
-    createdAt: "2026-06-20",
-  },
+  // ตัดข้อมูลประชุมจำลองออกหมดแล้ว (MT-2569-005..009 + ห้องจำลอง A-101 ฯลฯ)
+  // เหลือไว้แค่ห้องทดสอบ ZegoCloud นี้ เพื่อใช้ตรวจสอบวิดีโอจริงก่อน deploy —
+  // อัปเดตให้ใช้ห้องประชุม 801 จริงแทนห้องจำลอง A-301 เดิม
   {
     id: "MT-2569-010",
     name: "การประชุมออนไลน์ทดสอบ ZegoCloud ครั้งที่ 1/2569",
@@ -573,12 +377,12 @@ export const meetings: Meeting[] = [
     committee: "คณะทำงานพัฒนา e-Office",
     organizerId: "U-001",
     organizer: "นาย สมชาย ใจดี",
-    organizerEmail: "somchai@e-office.cloud",
+    organizerEmail: "somchai.j@e-office.cloud",
     emailSenderName: "e-office",
-    date: "2026-08-05",
+    date: "2026-08-13",
     startTime: "10:00",
     endTime: "11:30",
-    location: "ห้องประชุม A-301 + ออนไลน์",
+    location: "ห้องประชุม 801 + ออนไลน์",
     conferenceProvider: "zegocloud",
     conferenceRoomKey: "emeeting-zego-test-001",
     status: "in_progress",
@@ -608,18 +412,19 @@ export const meetings: Meeting[] = [
     savedToDrive: false,
     createdAt: "2026-08-01",
     zoomRoomDevices: [
-      { id: "ZRD-1", name: "Zoom Room ห้อง A-301", roomId: "R-A301", status: "invited" },
+      { id: "ZRD-1", name: "Zoom Room ห้อง 801", roomId: "R-801", status: "invited" },
     ],
   },
 ];
 
 // ===== Committees =====
+// meetingsCount/members นับจากข้อมูลจริงในระบบ (users[].committeeIds + meetings[]) ไม่ใช่ตัวเลขมั่วแล้ว
 export const committees = [
-  { id: "COM-01", name: "คณะกรรมการบริหาร", meetingsCount: 7, members: 12 },
-  { id: "COM-02", name: "ทีมพัฒนาผลิตภัณฑ์", meetingsCount: 12, members: 6 },
-  { id: "COM-03", name: "คณะทำงานพัฒนา e-Office", meetingsCount: 4, members: 8 },
-  { id: "COM-04", name: "คณะทำงานความปลอดภัยข้อมูล", meetingsCount: 3, members: 5 },
-  { id: "COM-05", name: "คณะกรรมการตรวจสอบภายใน", meetingsCount: 5, members: 7 },
+  { id: "COM-01", name: "คณะกรรมการบริหาร", meetingsCount: 0, members: 5 },
+  { id: "COM-02", name: "ทีมพัฒนาผลิตภัณฑ์", meetingsCount: 0, members: 2 },
+  { id: "COM-03", name: "คณะทำงานพัฒนา e-Office", meetingsCount: 1, members: 1 },
+  { id: "COM-04", name: "คณะทำงานความปลอดภัยข้อมูล", meetingsCount: 0, members: 0 },
+  { id: "COM-05", name: "คณะกรรมการตรวจสอบภายใน", meetingsCount: 0, members: 1 },
 ];
 
 // ===== Display Formats =====

@@ -24,8 +24,10 @@ type MeetingContextType = {
  * v6 — ห้องทดสอบ ZegoCloud (MT-2569-010) ใช้ผู้ใช้จริงครบทุกบทบาท + เปิด allowGuestJoin
  * v7 — ตัด Cisco Webex ออกทั้งระบบ ประชุมในเว็บเหลือ ZegoCloud เจ้าเดียว
  * v8 — รวมงานสอง session (mock-data fix + merge conflict resolution)
+ * v9 — ตัด mockup ห้องประชุม/การประชุมเก่าออกหมด เหลือห้องจริง 801/808/901 +
+ *      ประชุมทดสอบ ZegoCloud รายการเดียว (เตรียม deploy)
  */
-const STORAGE_KEY = "meeting_system_meetings_v8";
+const STORAGE_KEY = "meeting_system_meetings_v9";
 
 const MeetingContext = createContext<MeetingContextType | null>(null);
 
