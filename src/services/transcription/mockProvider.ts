@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════
 // Mock Transcription Provider
 // สร้าง transcript จำลองภาษาไทยจาก meeting data ที่มีอยู่
-// วันมี Webex Transcript API หรือ Azure STT — สร้าง webex.ts / azure.ts แทนไฟล์นี้
-// เปลี่ยน import ใน UI จาก mockTranscriptionProvider → webexProvider/azureProvider
+// วันมี STT จริง (AssemblyAI / Azure) — สร้าง assemblyai.ts / azure.ts แทนไฟล์นี้
+// เปลี่ยน import ใน UI จาก mockTranscriptionProvider → provider ตัวจริง
 // ═══════════════════════════════════════════
 
 import type { TranscriptionProvider, MeetingTranscript, TranscriptSegment } from "./types";

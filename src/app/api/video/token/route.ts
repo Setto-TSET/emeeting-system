@@ -13,11 +13,25 @@ export async function POST(request: NextRequest) {
   try {
     const appId = Number(process.env.ZEGO_APP_ID);
     const secret = process.env.ZEGO_SERVER_SECRET;
-    const serverUrl = process.env.ZEGO_SERVER_URL;
+    // ZEGO_SERVER_URL เป็นตัวเลือก — ถ้าไม่ได้ตั้ง ให้ประกอบจาก App ID ตามรูปแบบมาตรฐานของ ZegoCloud
+    // เดิมบังคับต้องมี ทำให้ทั้งระบบตกเป็น demo mode เงียบๆ เมื่อลืมใส่ค่านี้
+    const serverUrl =
+      process.env.ZEGO_SERVER_URL?.trim() ||
+      `wss://webliveroom${appId}-api.coolzcloud.com/ws`;
 
-    if (!appId || !secret || !serverUrl) {
+    if (!appId || !secret) {
       return NextResponse.json(
-        { error: "ZegoCloud credentials not configured on server" },
+        {
+          error:
+            "ยังไม่ได้ตั้งค่า ZEGO_APP_ID / ZEGO_SERVER_SECRET ใน .env.local — ระบบประชุมจะทำงานในโหมดสาธิตเท่านั้น",
+        },
+        { status: 500 }
+      );
+    }
+
+    if (secret.length !== 32) {
+      return NextResponse.json(
+        { error: "ZEGO_SERVER_SECRET ต้องยาว 32 ตัวอักษร (ค่าปัจจุบันยาว " + secret.length + ")" },
         { status: 500 }
       );
     }
@@ -53,8 +67,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ token, appId, serverUrl, expiresAt });
   } catch (error) {
     console.error("[/api/video/token] Token generation failed:", error);
+    const detail =
+      error instanceof Error
+        ? error.message
+        : typeof error === "object" && error !== null && "errorMessage" in error
+        ? String((error as { errorMessage: unknown }).errorMessage)
+        : "unknown error";
     return NextResponse.json(
-      { error: "Token generation failed" },
+      { error: `สร้าง token ไม่สำเร็จ: ${detail}` },
       { status: 500 }
     );
   }

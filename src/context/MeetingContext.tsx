@@ -20,9 +20,11 @@ type MeetingContextType = {
  * v2 — เพิ่ม conferenceProvider + ลิงก์ตัวอย่าง Teams/Zoom
  * v3 — เพิ่ม userId/committeeId/organizerId (เปลี่ยนการจับคู่จากอีเมล/ชื่อ มาเป็น id)
  * v4 — เพิ่ม conferenceRoomKey/transcriptStatus (เตรียม seam ระบบประชุมในเว็บ + ถอดเสียง)
- * v5 — ตัวอย่าง MT-2569-008 เปลี่ยนเป็น provider webex เพื่อโชว์ engine ฝัง (mock)
+ * v5 — ตัวอย่าง MT-2569-008 เปลี่ยนเป็น engine ที่ฝังในเว็บ
+ * v6 — ห้องทดสอบ ZegoCloud (MT-2569-010) ใช้ผู้ใช้จริงครบทุกบทบาท + เปิด allowGuestJoin
+ * v7 — ถอด Cisco Webex ออกทั้งระบบ ประชุมในเว็บเหลือ ZegoCloud เจ้าเดียว
  */
-const STORAGE_KEY = "meeting_system_meetings_v5";
+const STORAGE_KEY = "meeting_system_meetings_v7";
 
 const MeetingContext = createContext<MeetingContextType | null>(null);
 

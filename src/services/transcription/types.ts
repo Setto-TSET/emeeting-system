@@ -1,9 +1,9 @@
 // ═══════════════════════════════════════════
 // Transcription Service — สัญญาของ "ตัวถอดเสียงเป็นข้อความ"
 //
-// จะมี implementation 2 ทางในอนาคต (ตัดสินหลังทดสอบภาษาไทย - Phase A):
-//   - webex.ts     : ดึง transcript ที่ Webex ถอดให้ ผ่าน Transcript API
+// implementation ในอนาคต (ตัดสินหลังทดสอบภาษาไทย - Phase A):
 //   - assemblyai.ts: ส่งไฟล์เสียงเข้า STT ที่ไทยดีสุด แล้วถอดเอง
+//   - azure.ts     : Azure Speech-to-Text
 //
 // ⚠️ ไฟล์นี้เป็นสัญญาล้วน ยังไม่มี implementation — รอผลทดสอบไทยและ backend
 // ═══════════════════════════════════════════
@@ -30,10 +30,10 @@ export type MeetingTranscript = {
 };
 
 /**
- * สัญญากลาง — หน้าจอ/ท่อสรุปเรียกผ่านนี้ ไม่ต้องรู้ว่าเสียงมาจาก Webex หรือ STT ของเรา
+ * สัญญากลาง — หน้าจอ/ท่อสรุปเรียกผ่านนี้ ไม่ต้องรู้ว่าใครเป็นคนถอดเสียง
  */
 export type TranscriptionProvider = {
-  id: "webex" | "assemblyai" | "azure" | "mock";
+  id: "assemblyai" | "azure" | "mock";
   /** ดึง/สร้าง transcript ของการประชุม (หลังประชุมจบ) */
   getTranscript(meetingId: string): Promise<MeetingTranscript>;
 };

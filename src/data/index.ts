@@ -336,7 +336,7 @@ export type Meeting = {
    */
   allowGuestJoin?: boolean;
   /**
-   * กุญแจห้องประชุมที่เดาไม่ได้ — สำหรับเครื่องยนต์ที่ฝังในเว็บ (Webex/Jitsi)
+   * กุญแจห้องประชุมที่เดาไม่ได้ — สำหรับเครื่องยนต์ที่ฝังในเว็บ (ZegoCloud)
    * ห้ามใช้ meeting.id เป็นชื่อห้องตรงๆ ไม่งั้นใครเดา id ได้ก็เข้าห้องลับได้
    * backend แลกกุญแจนี้เป็นห้องจริงของผู้ให้บริการ
    */
@@ -445,9 +445,9 @@ export const meetings: Meeting[] = [
     startTime: "09:00",
     endTime: "12:00",
     location: "ห้องประชุม A-101",
-    // ตัวอย่างประชุมที่ใช้ Webex ฝังในเว็บ + AI สรุปให้ (mock — ยังไม่มี license จริง)
-    conferenceProvider: "webex",
-    conferenceRoomKey: "emeeting-demo-webex-mt008",
+    // ตัวอย่างประชุมที่ประชุมในเว็บผ่าน ZegoCloud + AI สรุปให้
+    conferenceProvider: "zegocloud",
+    conferenceRoomKey: "emeeting-demo-zego-mt008",
     transcriptStatus: "none",
     allowGuestJoin: true,
     status: "in_progress",
@@ -571,7 +571,7 @@ export const meetings: Meeting[] = [
     type: "การประชุมทดสอบ",
     committeeId: "COM-03",
     committee: "คณะทำงานพัฒนา e-Office",
-    organizerId: "U01",
+    organizerId: "U-001",
     organizer: "นาย สมชาย ใจดี",
     organizerEmail: "somchai@e-office.cloud",
     emailSenderName: "e-office",
@@ -581,13 +581,20 @@ export const meetings: Meeting[] = [
     location: "ห้องประชุม A-301 + ออนไลน์",
     conferenceProvider: "zegocloud",
     conferenceRoomKey: "emeeting-zego-test-001",
-    status: "prepare",
+    status: "in_progress",
     displayFormat: 2,
+    // องค์ประชุมทดสอบ — ครบทุกบทบาทในระบบ เพื่อสลับผู้ใช้แล้วเข้าห้องเดียวกันจากหลายแท็บ
+    // ชื่อ/อีเมลต้องตรงกับ users ด้านบนทุกช่อง เดิมตั้งชื่อมั่วทำให้จับคู่ผู้ใช้ไม่ได้
+    // present เป็น false หมด — สถานะ "อยู่ในสาย" ต้องมาจากการเข้าห้องจริงเท่านั้น
     participants: [
-      { id: "P-Z1", name: "นาย สมชาย ใจดี", position: "ประธาน", role: "Project Manager", department: "สำนักบริหาร", userId: "U01", email: "somchai@e-office.cloud", inSystem: true, present: true },
-      { id: "P-Z2", name: "นางสาว สมหญิง รักงาน", position: "กรรมการ", role: "เลขานุการ", department: "สำนักบริหาร", userId: "U02", email: "somying@e-office.cloud", inSystem: true, present: true },
-      { id: "P-Z3", name: "นาย ทดสอบ ระบบ", position: "กรรมการ", role: "Developer", department: "ฝ่าย IT", userId: "U03", email: "test@e-office.cloud", inSystem: true, present: false },
+      { id: "P-Z1", name: "นาย สมชาย ใจดี", position: "ประธาน", role: "เจ้าหน้าที่บริหารงานทั่วไป", department: "สำนักบริหาร", userId: "U-001", email: "somchai.j@e-office.cloud", inSystem: true, present: false, attendance: "attend" },
+      { id: "P-Z2", name: "นาย ประเสริฐ มั่นคง", position: "ผู้บริหาร", role: "ผู้อำนวยการ", department: "สำนักผู้บริหาร", userId: "U-002", email: "prasert@e-office.cloud", inSystem: true, present: false, attendance: "attend" },
+      { id: "P-Z3", name: "นางสาว มาลี รักษาสัตย์", position: "เลขานุการ", role: "หัวหน้าฝ่ายเลขา", department: "สำนักผู้บริหาร", userId: "U-003", email: "malee.r@e-office.cloud", inSystem: true, present: false, attendance: "attend" },
+      { id: "P-Z4", name: "นาย เดชา เก่งจริง", position: "กรรมการ", role: "Tech Lead", department: "ฝ่ายเทคโนโลยี", userId: "U-005", email: "decha@e-office.cloud", inSystem: true, present: false, attendance: "attend" },
+      { id: "P-Z5", name: "นาย ที่ปรึกษา ผู้ทรงคุณวุฒิ", position: "ผู้ทรงคุณวุฒิภายนอก", role: "ผู้ทรงคุณวุฒิภายนอก", department: "-", userId: "U-EXT-01", email: "expert@external.org", inSystem: true, present: false, attendance: "attend" },
     ],
+    // เปิดให้คนนอกที่มีลิงก์เข้าเองได้ — ใช้ทดสอบหลายเครื่อง/หลายหน้าต่างพร้อมกัน
+    allowGuestJoin: true,
     files: [],
     agenda: [
       { id: "AZ-1", no: "1", title: "ทดสอบระบบ ZegoCloud", comments: [] },
@@ -595,8 +602,8 @@ export const meetings: Meeting[] = [
     ],
     secretGroups: [],
     permissions: [
-      { userId: "U01", name: "นาย สมชาย ใจดี", type: "manager" },
-      { userId: "U02", name: "นางสาว สมหญิง รักงาน", type: "manager" },
+      { userId: "U-001", name: "นาย สมชาย ใจดี", type: "manager" },
+      { userId: "U-003", name: "นางสาว มาลี รักษาสัตย์", type: "manager" },
     ],
     savedToDrive: false,
     createdAt: "2026-08-01",

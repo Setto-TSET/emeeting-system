@@ -12,7 +12,6 @@ import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
 import { SimulatedDocumentViewer, DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { ExternalConferenceStage } from "@/components/meeting/ExternalConferenceStage";
-import { WebexEmbedStage } from "@/components/meeting/WebexEmbedStage";
 import { ZegoCloudEmbedStage } from "@/components/meeting/ZegoCloudEmbedStage";
 import { resolveConference } from "@/lib/conference";
 import { resolveVideoSurface } from "@/services/video";
@@ -58,17 +57,37 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const [viewerZoom, setViewerZoom] = useState(100);
   const [sharedFileId, setSharedFileId] = useState<string | null>(null); // For simulated presentation share
 
-  // Credential สำหรับ engine ฝัง (Webex) — null = ยังไม่มี backend → แสดง demo mode
+  // Credential สำหรับ engine ฝัง — null = เข้าห้องจริงไม่ได้ พร้อมเหตุผลใน credentialError
   const [videoCredential, setVideoCredential] = useState<VideoCredential | null>(null);
+  const [credentialError, setCredentialError] = useState<string | null>(null);
+
+  // ตัวตนในห้องประชุมของผู้ให้บริการ — ต้องเป็นค่าเดียวกันทั้งตอนขอ token และตอน login
+  // เพราะ token ของ ZegoCloud ผูกกับ user_id ถ้าไม่ตรงจะ login ไม่ผ่าน
+  // แขกภายนอกไม่มีบัญชี จึงใช้ id ของ session ตัวเอง ไม่งั้นแขกทุกคนชนกันแล้วเตะกันออก
+  const roomIdentityId = localParticipant?.userId ?? localParticipant?.id ?? currentUser.id;
+  const roomIdentityName = localParticipant?.name ?? currentUser.name;
 
   useEffect(() => {
     if (!meeting) return;
     const surface = resolveVideoSurface(meeting);
     if (surface.kind !== "embed") return;
     const roomKey = meeting.conferenceRoomKey ?? meeting.id;
-    requestVideoCredential(surface.engineId, roomKey, currentUser.id, currentUser.name).then(setVideoCredential);
+    let cancelled = false;
+    requestVideoCredential(surface.engineId, roomKey, roomIdentityId, roomIdentityName).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setVideoCredential(result.credential);
+        setCredentialError(null);
+      } else {
+        setVideoCredential(null);
+        setCredentialError(result.reason);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meeting?.id]);
+  }, [meeting?.id, roomIdentityId]);
 
   // Webcam stream
   // เก็บใน ref ไม่ใช่ state — เพราะ effect cleanup อ่านจาก closure ตอน mount
@@ -451,7 +470,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               meeting={meeting}
               isHost={isManager}
               credential={videoCredential}
-              userId={currentUser.id}
+              credentialError={credentialError}
+              userId={roomIdentityId}
+              displayName={roomIdentityName}
               onLeave={() => {
                 if (localParticipant) {
                   const updatedParticipants = meeting.participants.map((p) =>
@@ -460,22 +481,6 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                   updateMeeting(meeting.id, { participants: updatedParticipants });
                 }
                 toast.info("คุณได้ออกจากห้องประชุม ZegoCloud เรียบร้อย");
-                router.push("/portal");
-              }}
-            />
-          ) : isEmbedConference && !sharedFile ? (
-            <WebexEmbedStage
-              meeting={meeting}
-              isHost={isManager}
-              credential={videoCredential}
-              onLeave={() => {
-                if (localParticipant) {
-                  const updatedParticipants = meeting.participants.map((p) =>
-                    p.id === localParticipant.id ? { ...p, present: false } : p
-                  );
-                  updateMeeting(meeting.id, { participants: updatedParticipants });
-                }
-                toast.info("คุณได้ออกจากห้องประชุม Webex เรียบร้อย");
                 router.push("/portal");
               }}
             />

@@ -7,7 +7,7 @@
 // โดยไม่ต้องแก้หน้าจอ — แค่ใส่ลิงก์เข้ามา ระบบจะตรวจเองว่าเป็นเจ้าไหน
 // ═══════════════════════════════════════════
 
-export type ConferenceProvider = "mock" | "webex" | "teams" | "zoom" | "google_meet" | "zegocloud" | "other";
+export type ConferenceProvider = "mock" | "teams" | "zoom" | "google_meet" | "zegocloud" | "other";
 
 /**
  * วิธีพาผู้ใช้เข้าห้องประชุม
@@ -48,18 +48,6 @@ export const conferenceProviders: Record<ConferenceProvider, ConferenceProviderS
     launchMode: "simulated",
     hostPatterns: ["meet.e-office.cloud"],
     joinHint: "เข้าห้องประชุมจำลองภายในเว็บนี้",
-    canEmbed: true,
-  },
-  webex: {
-    id: "webex",
-    label: "Cisco Webex",
-    shortLabel: "Webex",
-    icon: "videocam",
-    brandClass: "bg-[#00bceb] hover:bg-[#00a5d1]",
-    // ฝังในเว็บได้ผ่าน Browser SDK — แต่ยังใช้จริงไม่ได้จนกว่าจะมี license + backend
-    launchMode: "sdk",
-    hostPatterns: ["webex.com", "webex.com.cn"],
-    joinHint: "เข้าห้องประชุม Webex ภายในหน้านี้",
     canEmbed: true,
   },
   teams: {

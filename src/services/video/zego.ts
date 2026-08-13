@@ -1,41 +1,98 @@
 // ═══════════════════════════════════════════
-// ZegoCloud Engine — real SDK integration
+// ZegoCloud Engine — เชื่อม SDK จริง (zego-express-engine-webrtc)
 //
-// mount() สร้าง ZegoExpressEngine จริง แล้ว loginRoom + publish stream
-// ถ้า mount ล้มเหลว → คืน noopSession ให้ fallback เป็น demo mode
+// หลักการ: engine ไม่ยุ่งกับ DOM เลย — มันเก็บ MediaStream แล้วส่งรายการช่อง
+// (VideoTile) ออกทาง onTiles ให้ React เป็นคนวาด
+// เดิม engine append <video> ใส่ container เอง ทำให้ทุกช่องซ้อนทับกัน
+// และ React ไม่รู้ว่ามีใครอยู่ในห้องบ้าง
 //
-// credential ส่งผ่าน JoinContext.credential (เพิ่มใน types.ts)
+// เสียง: จับไมค์ตั้งแต่ mount เสมอ แล้วใช้ mutePublishStreamAudio ปิด/เปิด
+// (เร็วกว่าและไม่ต้องขอสิทธิ์ใหม่ทุกครั้งเหมือนการปิดอุปกรณ์จริง)
 // ═══════════════════════════════════════════
 
-import type { EmbeddedEngine, EmbeddedSession, JoinContext } from "./types";
+import type {
+  EmbeddedEngine,
+  EmbeddedSession,
+  JoinContext,
+  VideoTile,
+} from "./types";
 
 const noopSession: EmbeddedSession = {
   dispose() {},
   onLeft() {},
 };
 
+/** แปลง error ของ SDK/เบราว์เซอร์ เป็นข้อความที่ผู้ใช้อ่านรู้เรื่อง */
+function describeMediaError(error: unknown): string {
+  const name =
+    typeof error === "object" && error !== null && "name" in error
+      ? String((error as { name: unknown }).name)
+      : "";
+  const msg =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" && error !== null && "msg" in error
+      ? String((error as { msg: unknown }).msg)
+      : String(error);
+
+  if (name === "NotAllowedError" || /permission|denied/i.test(msg)) {
+    return "เบราว์เซอร์ไม่อนุญาตให้ใช้ไมค์/กล้อง — กดไอคอนกุญแจข้าง URL แล้วอนุญาต จากนั้นรีเฟรชหน้า";
+  }
+  if (name === "NotFoundError" || /not\s*found|no device/i.test(msg)) {
+    return "ไม่พบไมค์หรือกล้องในเครื่องนี้";
+  }
+  if (name === "NotReadableError" || /in use|busy/i.test(msg)) {
+    return "ไมค์/กล้องถูกโปรแกรมอื่นใช้อยู่ — ปิดโปรแกรมนั้นแล้วลองใหม่";
+  }
+  return msg || "เชื่อมต่อห้องประชุมไม่สำเร็จ";
+}
+
 export const zegoEngine: EmbeddedEngine = {
   id: "zegocloud",
   requiresBackend: true,
 
-  async mount(container: HTMLElement, ctx: JoinContext): Promise<EmbeddedSession> {
-    // credential ต้องมี — ถ้าไม่มีแปลว่า caller ไม่ควรเรียก mount
+  async mount(_container: HTMLElement, ctx: JoinContext): Promise<EmbeddedSession> {
+    void _container; // engine ไม่แตะ DOM — React เป็นคนวาดจาก onTiles
+
     if (!ctx.credential) {
-      console.warn("[zegoEngine] No credential provided — returning noop session");
+      console.warn("[zegoEngine] ไม่มี credential — คืน session เปล่า");
       return noopSession;
     }
 
     const { token, appId, serverUrl, providerRoomId } = ctx.credential;
 
+    // callback ที่หน้าจอลงทะเบียนไว้ — เก็บเป็นตัวแปรเพราะอาจถูกตั้งหลัง mount เสร็จ
+    let onTilesCb: ((tiles: VideoTile[]) => void) | null = null;
+    let onLevelsCb: ((levels: Record<string, number>) => void) | null = null;
+    let onErrorCb: ((message: string) => void) | null = null;
+    let onLeftCb: (() => void) | null = null;
+
+    const tiles = new Map<string, VideoTile>();
+    const emitTiles = () => onTilesCb?.([...tiles.values()]);
+    const emitError = (message: string) => {
+      console.warn("[zegoEngine]", message);
+      onErrorCb?.(message);
+    };
+
     try {
-      // Dynamic import — SDK เป็น client-only, ไม่ควร bundle ตอน SSR
+      // SDK เป็น client-only — import แบบ dynamic เพื่อไม่ให้ bundle ตอน SSR
       const { ZegoExpressEngine } = await import("zego-express-engine-webrtc");
 
       const zg = new ZegoExpressEngine(appId, serverUrl);
       const userID = ctx.userId ?? ctx.displayName;
       const streamID = `stream_${providerRoomId}_${userID}_${Date.now()}`;
 
-      // Login room
+      const support = await zg.checkSystemRequirements("webRTC");
+      if (support.webRTC === false) {
+        zg.destroyEngine();
+        return {
+          ...noopSession,
+          onError(cb) {
+            cb("เบราว์เซอร์นี้ไม่รองรับ WebRTC — ใช้ Chrome หรือ Edge เวอร์ชันล่าสุด");
+          },
+        };
+      }
+
       await zg.loginRoom(
         providerRoomId,
         token,
@@ -43,61 +100,125 @@ export const zegoEngine: EmbeddedEngine = {
         { userUpdate: true }
       );
 
-      // Create and publish local stream
-      const localStream = await zg.createStream({
-        camera: { video: true, audio: true },
-      });
+      // ── จับไมค์ + กล้อง ──
+      // ถ้ากล้องไม่ผ่าน (ไม่มีกล้อง/ไม่อนุญาต) ให้ถอยไปเอาแค่ไมค์ ประชุมด้วยเสียงยังได้
+      let localStream: MediaStream;
+      let hasCamera = true;
+      try {
+        localStream = await zg.createStream({ camera: { video: true, audio: true } });
+      } catch (cameraError) {
+        console.warn("[zegoEngine] เปิดกล้องไม่ได้ ใช้เสียงอย่างเดียว:", cameraError);
+        hasCamera = false;
+        localStream = await zg.createStream({ camera: { video: false, audio: true } });
+      }
 
-      // Attach local video to container
-      const localVideo = document.createElement("video");
-      localVideo.id = "zego-local-video";
-      localVideo.autoplay = true;
-      localVideo.playsInline = true;
-      localVideo.muted = true;
-      localVideo.srcObject = localStream;
-      localVideo.style.cssText = "width:100%;height:100%;object-fit:cover;";
-      container.appendChild(localVideo);
+      // สถานะเริ่มต้น: ไมค์เปิด กล้องปิด — ใช้ mute ไม่ใช่ปิดอุปกรณ์ เพื่อสลับได้ทันที
+      zg.mutePublishStreamAudio(localStream, false);
+      if (hasCamera) zg.mutePublishStreamVideo(localStream, true);
 
       await zg.startPublishingStream(streamID, localStream);
 
-      // Handle remote streams
-      zg.on("roomStreamUpdate", async (roomID, updateType, streamList) => {
+      tiles.set(streamID, {
+        id: streamID,
+        userId: userID,
+        userName: ctx.displayName,
+        stream: localStream,
+        isLocal: true,
+        micOn: true,
+        cameraOn: false,
+      });
+      emitTiles();
+
+      // ── คนอื่นในห้อง ──
+      zg.on("roomStreamUpdate", async (_roomID, updateType, streamList) => {
         if (updateType === "ADD") {
-          for (const stream of streamList) {
-            const remoteStream = await zg.startPlayingStream(stream.streamID);
-            const remoteVideo = document.createElement("video");
-            remoteVideo.id = `zego-remote-${stream.streamID}`;
-            remoteVideo.autoplay = true;
-            remoteVideo.playsInline = true;
-            remoteVideo.srcObject = remoteStream;
-            remoteVideo.style.cssText = "width:100%;height:100%;object-fit:cover;";
-            container.appendChild(remoteVideo);
+          for (const s of streamList) {
+            if (tiles.has(s.streamID)) continue;
+            try {
+              const remoteStream = await zg.startPlayingStream(s.streamID);
+              tiles.set(s.streamID, {
+                id: s.streamID,
+                userId: s.user.userID,
+                userName: s.user.userName || s.user.userID,
+                stream: remoteStream,
+                isLocal: false,
+                micOn: true,
+                cameraOn: true,
+              });
+              emitTiles();
+            } catch (playError) {
+              emitError(`ดึงภาพของ ${s.user.userName || s.user.userID} ไม่สำเร็จ`);
+              console.warn("[zegoEngine] startPlayingStream ล้มเหลว:", playError);
+            }
           }
         } else if (updateType === "DELETE") {
-          for (const stream of streamList) {
-            const el = document.getElementById(`zego-remote-${stream.streamID}`);
-            el?.remove();
-            zg.stopPlayingStream(stream.streamID);
+          for (const s of streamList) {
+            zg.stopPlayingStream(s.streamID);
+            tiles.delete(s.streamID);
           }
+          emitTiles();
         }
       });
 
-      // Log connection state changes
-      zg.on("roomStateChanged", (roomID, reason, errorCode) => {
-        console.log(`[zegoEngine] Room state: ${reason} (code: ${errorCode})`);
+      // สถานะไมค์/กล้องของคนอื่น — ของจริง ไม่ใช่ค่าสุ่มเหมือนห้องจำลอง
+      zg.on("remoteMicStatusUpdate", (remoteStreamID, status) => {
+        const tile = tiles.get(remoteStreamID);
+        if (!tile) return;
+        tiles.set(remoteStreamID, { ...tile, micOn: status === "OPEN" });
+        emitTiles();
+      });
+      zg.on("remoteCameraStatusUpdate", (remoteStreamID, status) => {
+        const tile = tiles.get(remoteStreamID);
+        if (!tile) return;
+        tiles.set(remoteStreamID, { ...tile, cameraOn: status === "OPEN" });
+        emitTiles();
       });
 
-      // Leave callback
-      let onLeftCallback: (() => void) | null = null;
-      zg.on("roomStateChanged", (_roomID, reason) => {
-        if (reason === "KICKOUT" || reason === "LOGOUT") {
-          onLeftCallback?.();
+      // ── ระดับเสียง → ไฮไลต์คนที่กำลังพูด ──
+      // เก็บสะสมไว้ก้อนเดียว — soundLevelUpdate (คนอื่น) กับ capturedSoundLevelUpdate (เราเอง)
+      // มาคนละ event ถ้าส่งแยกกันหน้าจอจะเห็นทีละฝั่งแล้วกระพริบ
+      const soundLevels: Record<string, number> = {};
+      zg.setSoundLevelDelegate(true, 500);
+      zg.on("soundLevelUpdate", (soundLevelList) => {
+        for (const info of soundLevelList) {
+          soundLevels[info.streamID] = info.soundLevel;
+        }
+        onLevelsCb?.({ ...soundLevels });
+      });
+      zg.on("capturedSoundLevelUpdate", (soundLevel) => {
+        soundLevels[streamID] = soundLevel;
+        onLevelsCb?.({ ...soundLevels });
+      });
+
+      zg.on("roomStateChanged", (_roomID, reason, errorCode) => {
+        console.log(`[zegoEngine] สถานะห้อง: ${reason} (code ${errorCode})`);
+        if (reason === "KICKOUT") {
+          emitError("ถูกนำออกจากห้องประชุม — บัญชีนี้เข้าห้องเดียวกันจากอีกแท็บ/อีกเครื่อง");
+          onLeftCb?.();
+        } else if (reason === "LOGIN_FAILED") {
+          emitError("เข้าห้องประชุมไม่สำเร็จ — token หมดอายุหรือไม่ตรงกับผู้ใช้ ลองรีเฟรชหน้า");
+        } else if (reason === "RECONNECT_FAILED") {
+          emitError("การเชื่อมต่อหลุดและต่อกลับไม่ได้");
+          onLeftCb?.();
         }
       });
 
-      const session: EmbeddedSession = {
+      zg.on("publisherStateUpdate", (state) => {
+        if (state.state === "NO_PUBLISH" && state.errorCode !== 0) {
+          emitError(`ส่งสัญญาณไม่สำเร็จ (code ${state.errorCode})`);
+        }
+      });
+
+      let disposed = false;
+
+      return {
         dispose() {
+          if (disposed) return;
+          disposed = true;
           try {
+            for (const tile of tiles.values()) {
+              if (!tile.isLocal) zg.stopPlayingStream(tile.id);
+            }
             zg.stopPublishingStream(streamID);
             zg.destroyStream(localStream);
             zg.logoutRoom(providerRoomId);
@@ -105,20 +226,55 @@ export const zegoEngine: EmbeddedEngine = {
           } catch (err) {
             console.warn("[zegoEngine] dispose error:", err);
           }
-          // Clean up DOM
-          while (container.firstChild) {
-            container.removeChild(container.firstChild);
-          }
+          tiles.clear();
         },
-        onLeft(cb: () => void) {
-          onLeftCallback = cb;
+        onLeft(cb) {
+          onLeftCb = cb;
+        },
+        onTiles(cb) {
+          onTilesCb = cb;
+          cb([...tiles.values()]);
+        },
+        onSoundLevels(cb) {
+          onLevelsCb = cb;
+        },
+        onError(cb) {
+          onErrorCb = cb;
+        },
+        setMicEnabled(on) {
+          const ok = zg.mutePublishStreamAudio(localStream, !on);
+          if (!ok) return false;
+          const local = tiles.get(streamID);
+          if (local) {
+            tiles.set(streamID, { ...local, micOn: on });
+            emitTiles();
+          }
+          return true;
+        },
+        setCameraEnabled(on) {
+          if (!hasCamera) {
+            emitError("เครื่องนี้ไม่มีกล้องที่ใช้ได้ — เข้าประชุมด้วยเสียงอย่างเดียว");
+            return false;
+          }
+          const ok = zg.mutePublishStreamVideo(localStream, !on);
+          if (!ok) return false;
+          const local = tiles.get(streamID);
+          if (local) {
+            tiles.set(streamID, { ...local, cameraOn: on });
+            emitTiles();
+          }
+          return true;
         },
       };
-
-      return session;
     } catch (error) {
-      console.error("[zegoEngine] mount failed:", error);
-      return noopSession;
+      const message = describeMediaError(error);
+      console.error("[zegoEngine] mount ล้มเหลว:", error);
+      return {
+        ...noopSession,
+        onError(cb) {
+          cb(message);
+        },
+      };
     }
   },
 };

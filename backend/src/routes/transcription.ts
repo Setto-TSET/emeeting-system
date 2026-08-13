@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════
-// Routes — Transcription (Webex Transcript API)
+// Routes — Transcription (STT provider)
 // ═══════════════════════════════════════════
 
 import { Router, Request, Response } from 'express';
@@ -20,9 +20,9 @@ router.post('/request', asyncHandler(async (req: Request, res: Response) => {
   }
 
   try {
-    // TODO: implement requestWebexTranscript
+    // TODO: implement requestTranscript
     // 1. หา recording ID จาก meeting
-    // 2. สั่ง Webex ถอดเสียง
+    // 2. ส่งไฟล์เสียงเข้า STT
     // 3. เก็บ status = processing ใน DB
 
     await query(
@@ -79,14 +79,14 @@ router.get('/result', asyncHandler(async (req: Request, res: Response) => {
 
 /**
  * POST /api/transcription/poll
- * Worker/Cron job: poll Webex untuk status transcription
+ * Worker/Cron job: poll สถานะการถอดเสียง
  * (ต้องเรียก periodically ทุก 30 วิจาก backend worker)
  */
 router.post('/poll', asyncHandler(async (req: Request, res: Response) => {
   try {
-    // TODO: implement pollWebexTranscripts
+    // TODO: implement pollTranscripts
     // 1. หาประชุมที่ status = processing
-    // 2. เรียก Webex ถามว่าเสร็จหรือยัง
+    // 2. เรียก STT ถามว่าเสร็จหรือยัง
     // 3. ถ้าเสร็จ update segments ใน DB
 
     res.json({ message: 'Polling completed', updated: 0 });
