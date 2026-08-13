@@ -11,11 +11,13 @@ type Props = {
   isHost: boolean;
   onLeave: () => void;
   credential?: { token: string; providerRoomId: string; appId: number; serverUrl: string } | null;
+  /** loading = กำลังขอ token, error = ขอไม่สำเร็จ (ไม่มี mock UI ให้ fallback แล้ว), ready = credential พร้อมใช้ */
+  status: "loading" | "ready" | "error";
   /** user ID ในระบบ — ใช้เป็น userID ของ ZegoCloud SDK */
   userId?: string;
 };
 
-export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential, userId }: Props) {
+export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential, status, userId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionRef   = useRef<EmbeddedSession | null>(null);
 
@@ -28,17 +30,7 @@ export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential, user
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(false);
   const [screenSharing, setScreenSharing] = useState(false);
-  const [activeSpeakerIdx, setActiveSpeakerIdx] = useState<number | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
-
-  const present = meeting.participants.filter((p) => p.present);
-  useEffect(() => {
-    if (present.length === 0) return;
-    const interval = setInterval(() => {
-      setActiveSpeakerIdx(Math.random() < 0.75 ? Math.floor(Math.random() * present.length) : null);
-    }, 6000);
-    return () => clearInterval(interval);
-  }, [present.length]);
 
   useEffect(() => {
     const t = setInterval(() => setElapsedSec((s) => s + 1), 1000);
@@ -49,7 +41,7 @@ export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential, user
 
   const zoomRoomDevices = meeting.zoomRoomDevices ?? [];
 
-  // Mount SDK จริงเมื่อมี credential — ถ้าไม่มี (demo mode) ใช้ mock UI แทน
+  // Mount SDK จริงเมื่อมี credential — ถ้าไม่มี แสดงสถานะ loading/error แทน (ไม่มี mock UI แล้ว)
   const sdkMounted = useRef(false);
   useEffect(() => {
     if (!credential || !containerRef.current || sdkMounted.current) return;
@@ -95,6 +87,8 @@ export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential, user
         }
         aria-hidden={!credential}
       />
+      {/* วิดีโอจริงจะ mount ลง containerRef ด้านบนเมื่อ credential พร้อม
+          — ระหว่างนั้น (หรือถ้าเชื่อมต่อไม่สำเร็จ) แสดงสถานะจริง ไม่มี mock UI ให้ fallback อีก */}
 
       {/* Header แบรนด์ ZegoCloud */}
       <div className="h-11 px-4 flex items-center justify-between border-b border-white/10 bg-[#0055FF]/10">
@@ -103,8 +97,16 @@ export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential, user
             <span className="material-symbols-outlined text-white text-[16px]">videocam</span>
           </div>
           <span className="text-sm font-semibold">ZegoCloud Video</span>
-          <Badge className="bg-white/10 text-white/80 border-white/20 text-[10px]">
-            {credential ? "connected" : "demo mode"}
+          <Badge
+            className={
+              status === "ready"
+                ? "bg-white/10 text-white/80 border-white/20 text-[10px]"
+                : status === "error"
+                ? "bg-red-500/20 text-red-200 border-red-400/40 text-[10px]"
+                : "bg-amber-500/20 text-amber-200 border-amber-400/40 text-[10px]"
+            }
+          >
+            {status === "ready" ? "connected" : status === "error" ? "เชื่อมต่อไม่สำเร็จ" : "กำลังเชื่อมต่อ..."}
           </Badge>
         </div>
         <div className="flex items-center gap-3 text-[11px] text-white/70">
@@ -121,41 +123,18 @@ export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential, user
         </div>
       </div>
 
-      {/* Video grid — mock UI เมื่อไม่มี credential, SDK จริงจะ render ลง containerRef เมื่อมี credential */}
-      {!credential && (
-        <div className="flex-1 p-4 min-h-0">
-          {present.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-white/50 text-sm">
-              <span className="material-symbols-outlined text-[40px] mb-2">group_off</span>
-              <p>รอผู้เข้าร่วมประชุมคนแรก...</p>
-            </div>
-          ) : (
-            <div className="h-full grid grid-cols-2 md:grid-cols-3 gap-3 auto-rows-fr">
-              {present.slice(0, 6).map((p, i) => {
-                const isSpeaking = activeSpeakerIdx === i;
-                return (
-                  <div
-                    key={p.id}
-                    className={`rounded-xl bg-[#141b30] flex flex-col items-center justify-center relative overflow-hidden border-2 transition-all ${
-                      isSpeaking ? "border-[#0055FF] shadow-lg shadow-[#0055FF]/20" : "border-transparent"
-                    }`}
-                  >
-                    <div className="h-16 w-16 rounded-full bg-white/10 flex items-center justify-center text-2xl font-bold">
-                      {(p.name.split(" ")[1] ?? p.name).charAt(0)}
-                    </div>
-                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] bg-black/50 backdrop-blur px-2 py-0.5 rounded">
-                      <span className="truncate">{p.name}</span>
-                      {isSpeaking && (
-                        <span className="material-symbols-outlined text-[13px] text-[#0055FF] animate-pulse">
-                          graphic_eq
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+      {/* ไม่มี credential — ไม่แสดงวิดีโอปลอมอีกต่อไป บอกสถานะจริงเท่านั้น */}
+      {status === "loading" && (
+        <div className="flex-1 p-4 min-h-0 flex flex-col items-center justify-center text-white/60 text-sm gap-2">
+          <span className="material-symbols-outlined text-[40px] animate-spin">progress_activity</span>
+          <p>กำลังเชื่อมต่อ ZegoCloud...</p>
+        </div>
+      )}
+      {status === "error" && (
+        <div className="flex-1 p-4 min-h-0 flex flex-col items-center justify-center text-red-300 text-sm gap-2 text-center">
+          <span className="material-symbols-outlined text-[40px]">error</span>
+          <p>เชื่อมต่อ ZegoCloud ไม่สำเร็จ</p>
+          <p className="text-white/40 text-xs">ตรวจสอบ ZEGO_APP_ID / ZEGO_SERVER_SECRET / ZEGO_SERVER_URL บนเซิร์ฟเวอร์ หรือลองเข้าห้องใหม่อีกครั้ง</p>
         </div>
       )}
 

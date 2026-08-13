@@ -28,15 +28,6 @@ import type { RoomSignal } from "@/services/signaling/types";
 import { can } from "@/lib/authz";
 import { MeetingParticipant, MeetingFile, canViewFile } from "@/data";
 
-/** สถานะไมค์จำลองที่คงที่ต่อคน — hash จาก id แทนการสุ่มใหม่ทุก render */
-function mutedByDefault(participantId: string): boolean {
-  let hash = 0;
-  for (let i = 0; i < participantId.length; i++) {
-    hash = (hash * 31 + participantId.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash) % 10 < 6;
-}
-
 type Broadcast = ReturnType<typeof useRoomSignaling>["broadcast"];
 
 /**
@@ -175,15 +166,12 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const [localParticipant, setLocalParticipant] = useState<MeetingParticipant | null>(null);
 
   // UI Control states
-  const [micOn, setMicOn] = useState(true);
-  const [cameraOn, setCameraOn] = useState(false);
   const [raisedHands, setRaisedHands] = useState<Map<string, RaisedHand>>(new Map());
   const handRaised = raisedHands.has(currentUser.id);
   const broadcastRef = useRef<Broadcast | null>(null);
   const [subtitleOn, setSubtitleOn] = useState(false);
   const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
   const meetingStartRef = useRef(Date.now());
-  const [screenSharing, setScreenSharing] = useState(false);
   const [activeTab, setActiveTab] = useState("agenda");
   const [chatInput, setChatInput] = useState("");
   
@@ -200,26 +188,24 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   // จาก IndexedDB แม้ผู้ใช้จะไม่ได้เปิดแท็บโหวตอยู่ตอนที่สัญญาณมาถึง (ดู Fix 2)
   const [voteRefreshToken, setVoteRefreshToken] = useState(0);
 
-  // Credential สำหรับ engine ฝัง (Webex) — null = ยังไม่มี backend → แสดง demo mode
+  // Credential สำหรับ engine ฝัง — null ระหว่างรอ (loading) หรือถ้า fetch ล้มเหลว (error)
+  // แยกสองสถานะนี้ด้วย videoCredentialStatus เพราะห้องประชุมไม่มี mock UI ให้ fallback แล้ว
+  // ต้องบอกผู้ใช้ตรงๆ ว่ากำลังเชื่อมต่อ หรือเชื่อมต่อไม่สำเร็จ
   const [videoCredential, setVideoCredential] = useState<VideoCredential | null>(null);
+  const [videoCredentialStatus, setVideoCredentialStatus] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     if (!meeting) return;
     const surface = resolveVideoSurface(meeting);
     if (surface.kind !== "embed") return;
     const roomKey = meeting.conferenceRoomKey ?? meeting.id;
-    requestVideoCredential(surface.engineId, roomKey, currentUser.id, currentUser.name).then(setVideoCredential);
+    setVideoCredentialStatus("loading");
+    requestVideoCredential(surface.engineId, roomKey, currentUser.id, currentUser.name).then((cred) => {
+      setVideoCredential(cred);
+      setVideoCredentialStatus(cred ? "ready" : "error");
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meeting?.id]);
-
-  // Webcam stream
-  // เก็บใน ref ไม่ใช่ state — เพราะ effect cleanup อ่านจาก closure ตอน mount
-  // ถ้าใช้ state ค่าที่ cleanup เห็นจะเป็น null เสมอ กล้องจึงไม่ถูกปิดตอนออกจากห้อง
-  const streamRef = useRef<MediaStream | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  // Speaker Simulator
-  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
 
   // Initialize presence
   useEffect(() => {
@@ -288,68 +274,12 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     toast.success("เข้าร่วมประชุมสำเร็จ", { description: "คุณได้เข้าร่วมในฐานะบุคคลภายนอก" });
   };
 
-  // Webcam hook — ปิดกล้องอย่างสนิทตอนออกจากห้อง / navigate
-  useEffect(() => {
-    const stopStream = () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-    };
-
-    if (cameraOn && hasJoined) {
-      let cancelled = false;
-      navigator.mediaDevices
-        .getUserMedia({ video: true, audio: false })
-        .then((s) => {
-          if (cancelled) {
-            // ถ้า effect cleanup วิ่งก่อน getUserMedia จะ resolve — ปิด track ทันที
-            s.getTracks().forEach((t) => t.stop());
-            return;
-          }
-          streamRef.current = s;
-          if (videoRef.current) videoRef.current.srcObject = s;
-        })
-        .catch((err) => {
-          console.warn("Could not access webcam, using simulated visual feed.", err);
-        });
-      return () => {
-        cancelled = true;
-        stopStream();
-      };
-    }
-
-    stopStream();
-    return stopStream;
-  }, [cameraOn, hasJoined]);
-
   // หยุดจดจำเสียงเมื่อออกจากคอมโพเนนต์ — กันไมค์ค้างฟังหลัง unmount
   useEffect(() => {
     return () => {
       webSpeechProvider.stop();
     };
   }, []);
-
-  // Random Speaker Highlight Simulation
-  // อ่านค่า meeting/localParticipant ผ่าน ref เพื่อไม่ให้ interval รีเซ็ตทุก context write
-  // (ทุกครั้งที่แชท/สลับวาระ meeting.participants จะเป็น array ใหม่ interval เดิมจะถูกล้าง)
-  const speakerCtxRef = useRef({ meeting, localParticipant });
-  useEffect(() => {
-    speakerCtxRef.current = { meeting, localParticipant };
-  });
-  useEffect(() => {
-    if (!hasJoined) return;
-    const interval = setInterval(() => {
-      const { meeting: m, localParticipant: lp } = speakerCtxRef.current;
-      if (!m || m.status !== "in_progress") return;
-      const presentParticipants = m.participants.filter((p) => p.present || p.id === lp?.id);
-      if (presentParticipants.length === 0) return;
-      const randIdx = Math.floor(Math.random() * presentParticipants.length);
-      setActiveSpeakerId(Math.random() < 0.7 ? presentParticipants[randIdx].id : null);
-    }, 6000);
-
-    return () => clearInterval(interval);
-  }, [hasJoined]);
 
   if (!meeting) {
     return (
@@ -496,8 +426,6 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     setChatInput("");
   };
 
-  const handleMicToggle = () => setMicOn(!micOn);
-  const handleCameraToggle = () => setCameraOn(!cameraOn);
   const handleHandRaise = () => {
     const next = !handRaised;
     broadcastRef.current?.({ type: "hand_raise", payload: { raised: next } });
@@ -516,15 +444,6 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       copy.delete(userId);
       return copy;
     });
-  };
-  const handleShareScreen = () => {
-    if (!screenSharing) {
-      setScreenSharing(true);
-      toast.success("กำลังเริ่มแชร์หน้าจอ (จำลอง)");
-    } else {
-      setScreenSharing(false);
-      toast.info("ยกเลิกการแชร์หน้าจอ");
-    }
   };
 
   // แชร์เอกสารให้ผู้เข้าร่วมทั้งหมดในห้อง — broadcast แล้วให้ผู้เข้าร่วมคนอื่นตามหน้าจอโฮสต์อัตโนมัติ
@@ -703,12 +622,14 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
         {/* Left Side: Video Grid & Shared Presentation */}
         <div className="flex-1 flex flex-col p-4 space-y-4 overflow-y-auto relative">
           
-          {/* Main content pane: เอกสารที่แชร์ > engine ฝัง > เวทีประชุมภายนอก > ห้องจำลองในเว็บ */}
+          {/* Main content pane: เอกสารที่แชร์ > engine ฝัง (ZegoCloud/Webex) > เวทีประชุมภายนอก
+              ไม่มีห้องจำลอง (mockup) ให้ fallback แล้ว — ทุก meeting ต้องผ่าน engine จริงหรือลิงก์จริง */}
           {isEmbedConference && !sharedFile && videoSurface.kind === "embed" && videoSurface.engineId === "zegocloud" ? (
             <ZegoCloudEmbedStage
               meeting={meeting}
               isHost={isManager}
               credential={videoCredential}
+              status={videoCredentialStatus}
               userId={currentUser.id}
               onLeave={() => {
                 if (raisedHands.has(currentUser.id)) {
@@ -788,136 +709,18 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               </div>
             </div>
           ) : (
-            /* Standard Grid Layout */
-            <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-4 auto-rows-fr">
-              {/* Local Participant (Me) */}
-              <div className={`rounded-2xl bg-card border overflow-hidden flex flex-col items-center justify-center p-4 relative transition-all ${
-                activeSpeakerId === localParticipant?.id ? "border-green-500 ring-2 ring-green-500/20" : "border-border"
-              }`}>
-                {cameraOn ? (
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="absolute inset-0 w-full h-full object-cover rounded-2xl mirror scale-x-[-1]"
-                  />
-                ) : (
-                  <div className="h-20 w-20 rounded-full bg-primary/10 text-primary flex items-center justify-center text-3xl font-bold border border-primary/40 shadow-inner">
-                    {localParticipant?.name.split(" ")[1]?.charAt(0) || "U"}
-                  </div>
-                )}
-                
-                {/* Visual Speaking Overlays */}
-                {activeSpeakerId === localParticipant?.id && (
-                  <div className="absolute top-3 left-3 bg-green-600 px-2 py-0.5 rounded text-[9px] font-bold text-white flex items-center gap-1 shadow">
-                    <span className="material-symbols-outlined text-[10px] animate-pulse">volume_up</span> กำลังพูด
-                  </div>
-                )}
-
-                <div className="absolute bottom-3 left-3 bg-card/90 backdrop-blur px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-2 border border-border text-foreground">
-                  <span>{localParticipant?.name} (คุณ)</span>
-                  <div className="flex items-center gap-1">
-                    {!micOn && <span className="material-symbols-outlined text-red-500 text-[14px]">mic_off</span>}
-                    {handRaised && <span className="material-symbols-outlined text-amber-500 text-[14px] animate-bounce">pan_tool</span>}
-                  </div>
-                </div>
-              </div>
-
-              {/* Other Participants */}
-              {meeting.participants
-                .filter((p) => p.id !== localParticipant?.id)
-                .map((p) => {
-                  const isPresent = p.present;
-                  const isSpeaking = activeSpeakerId === p.id;
-                  // สถานะไมค์จำลอง — อิงจาก id ให้คงที่ ไม่ใช่ Math.random() ที่กระพริบทุก render
-                  const isMuted = !isPresent || (!isSpeaking && mutedByDefault(p.id));
-
-                  return (
-                    <div
-                      key={p.id}
-                      className={`rounded-2xl overflow-hidden flex flex-col items-center justify-center p-4 relative transition-all bg-card border ${
-                        !isPresent
-                          ? "border-border opacity-40"
-                          : isSpeaking
-                          ? "border-green-500 ring-2 ring-green-500/20"
-                          : "border-border"
-                      }`}
-                    >
-                      {/* Simulated video background */}
-                      {isPresent && (
-                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(30,41,59,0.3)_0%,rgba(15,23,42,0.8)_100%)] z-0" />
-                      )}
-
-                      <div className="relative z-10 flex flex-col items-center">
-                        <div className={`h-16 w-16 rounded-full flex items-center justify-center text-xl font-bold border shadow-inner ${
-                          isPresent
-                            ? "bg-secondary text-foreground border-border"
-                            : "bg-muted text-muted-foreground border-border"
-                        }`}>
-                          {p.name.split(" ")[1]?.charAt(0) || p.name.charAt(0)}
-                        </div>
-                        {!isPresent && (
-                          <span className="text-[10px] text-muted-foreground mt-2 font-medium bg-muted px-2 py-0.5 rounded border border-border">
-                            ยังไม่เข้าห้องประชุม
-                          </span>
-                        )}
-                      </div>
-
-                      {isPresent && isSpeaking && (
-                        <div className="absolute top-3 left-3 bg-green-600 px-2 py-0.5 rounded text-[9px] font-bold text-white flex items-center gap-1 shadow z-20">
-                          <span className="material-symbols-outlined text-[10px] animate-pulse">volume_up</span> กำลังพูด
-                        </div>
-                      )}
-
-                      <div className="absolute bottom-3 left-3 bg-card/90 backdrop-blur px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-2 border border-border text-foreground z-20">
-                        <span>{p.name}</span>
-                        <div className="flex items-center gap-1">
-                          {isMuted && <span className="material-symbols-outlined text-red-500 text-[14px]">mic_off</span>}
-                          {p.userId && raisedHands.has(p.userId) && (
-                            <span className="material-symbols-outlined text-amber-500 text-[14px] animate-bounce">pan_tool</span>
-                          )}
-                          {!isPresent && <Badge className="bg-secondary text-muted-foreground border-none text-[8px] py-0">OFFLINE</Badge>}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+            /* ไม่มีห้องประชุมจำลองให้ fallback อีกต่อไป — ทุก meeting ต้องแก้ปัญหาผ่าน engine จริง
+               (ZegoCloud/Webex) หรือลิงก์ภายนอก ถ้าตกมาถึง branch นี้แปลว่า resolveVideoSurface
+               คืนค่าที่ไม่รู้จัก ให้บอกตรงๆ แทนการแสดงวิดีโอปลอม */
+            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground text-sm gap-2 border border-dashed border-border rounded-2xl">
+              <span className="material-symbols-outlined text-4xl">videocam_off</span>
+              <p>ไม่สามารถระบุช่องทางวิดีโอของการประชุมนี้ได้</p>
             </div>
           )}
 
-          {/* Grid Toolbar Controls — ซ่อนเมื่อประชุมผ่านแพลตฟอร์มภายนอก เพราะไมค์/กล้องคุมจากแอปนั้น */}
-          <div
-            className={`h-16 bg-card border border-border rounded-2xl items-center justify-center gap-2 sm:gap-4 px-4 shrink-0 shadow-lg ${
-              (isExternalConference || isEmbedConference) ? "hidden" : "flex"
-            }`}
-          >
-            <Button
-              onClick={handleMicToggle}
-              size="icon"
-              className={`rounded-xl h-10 w-10 border transition-all ${
-                micOn
-                  ? "bg-secondary border-border text-foreground hover:bg-secondary/80"
-                  : "bg-destructive/10 border-destructive/40 text-destructive hover:bg-destructive/20"
-              }`}
-              title={micOn ? "Mute Microphone" : "Unmute Microphone"}
-            >
-              <span className="material-symbols-outlined text-[20px]">{micOn ? "mic" : "mic_off"}</span>
-            </Button>
-
-            <Button
-              onClick={handleCameraToggle}
-              size="icon"
-              className={`rounded-xl h-10 w-10 border transition-all ${
-                cameraOn
-                  ? "bg-secondary border-border text-foreground hover:bg-secondary/80"
-                  : "bg-destructive/10 border-destructive/40 text-destructive hover:bg-destructive/20"
-              }`}
-              title={cameraOn ? "Turn Camera Off" : "Turn Camera On"}
-            >
-              <span className="material-symbols-outlined text-[20px]">{cameraOn ? "videocam" : "videocam_off"}</span>
-            </Button>
-
+          {/* แถบควบคุมฟีเจอร์ห้องประชุม — ยกมือ/ซับไตเติล ใช้ได้ทุกโหมด ไม่ผูกกับ engine วิดีโอ
+              (ไมค์/กล้องคุมผ่าน UI ของ engine เอง เช่น ZegoCloudEmbedStage — ไม่ซ้ำปุ่มที่นี่) */}
+          <div className="h-16 bg-card border border-border rounded-2xl items-center justify-center gap-2 sm:gap-4 px-4 shrink-0 shadow-lg flex">
             <Button
               onClick={handleHandRaise}
               size="icon"
@@ -930,21 +733,6 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
             >
               <span className="material-symbols-outlined text-[20px]">{handRaised ? "pan_tool" : "pan_tool_alt"}</span>
             </Button>
-
-            {isManager && (
-              <Button
-                onClick={handleShareScreen}
-                size="icon"
-                className={`rounded-xl h-10 w-10 border transition-all ${
-                  screenSharing
-                    ? "bg-indigo-50 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
-                    : "bg-secondary border-border text-foreground hover:bg-secondary/80"
-                }`}
-                title="Share Screen"
-              >
-                <span className="material-symbols-outlined text-[20px]">present_to_all</span>
-              </Button>
-            )}
 
             <Button
               onClick={handleToggleSubtitle}

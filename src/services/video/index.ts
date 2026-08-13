@@ -40,8 +40,10 @@ export function resolveVideoSurface(meeting: Meeting): VideoSurface {
   const conference = resolveConference(meeting);
   const { launchMode, id } = conference.spec;
 
+  // ห้องจำลอง (mockup) ถูกตัดออกแล้ว — การประชุมที่ไม่ได้ระบุ provider
+  // จะเข้า ZegoCloud จริงเสมอ ไม่มี fallback เป็นห้องปลอม
   if (launchMode === "simulated") {
-    return { kind: "simulated" };
+    return { kind: "embed", engineId: "zegocloud" };
   }
 
   if (launchMode === "embed" || launchMode === "sdk") {

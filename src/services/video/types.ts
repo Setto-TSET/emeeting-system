@@ -18,13 +18,15 @@ import type { ResolvedConference } from "@/lib/conference";
 export type EmbeddedEngineId = "webex" | "jitsi" | "acs" | "zegocloud";
 
 /**
- * พื้นผิววิดีโอของการประชุมหนึ่งๆ — มี 3 แบบที่ต่างกันคนละเรื่อง
+ * พื้นผิววิดีโอของการประชุมหนึ่งๆ — มี 2 แบบที่ต่างกันคนละเรื่อง
  * แยกเป็น discriminated union เพื่อให้หน้าจอ switch ได้ครบทุกกรณี
+ *
+ * ห้องจำลอง (mockup) ถูกตัดออกแล้ว — meeting ที่ไม่ได้ระบุ provider จะ resolve เป็น
+ * embed/zegocloud เสมอ ไม่มีค่า "simulated" ให้คืนอีกต่อไป
  */
 export type VideoSurface =
-  | { kind: "simulated" }                                  // ห้องจำลองในเว็บ (ของปัจจุบัน)
   | { kind: "external"; conference: ResolvedConference }   // เปิดแอปภายนอก (Teams/Zoom/Meet)
-  | { kind: "embed"; engineId: EmbeddedEngineId };         // ฝังในเว็บ (Webex/Jitsi/ACS)
+  | { kind: "embed"; engineId: EmbeddedEngineId };         // ฝังในเว็บ (ZegoCloud/Webex/Jitsi/ACS)
 
 /** ข้อมูลที่ engine ต้องใช้ตอนพาผู้ใช้เข้าห้อง */
 export type JoinContext = {
@@ -36,7 +38,7 @@ export type JoinContext = {
   displayName: string;
   /** เป็นโฮสต์ไหม — มาจาก can(user, "meeting.host", meeting) */
   isHost: boolean;
-  /** credential from backend — null means demo mode */
+  /** credential from backend — null means the token request failed (no mock fallback) */
   credential?: {
     token: string;
     appId: number;

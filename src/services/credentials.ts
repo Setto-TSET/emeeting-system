@@ -5,7 +5,7 @@
 // secret ห้ามอยู่ฝั่งเบราว์เซอร์เด็ดขาด — ใครเปิด DevTools ก็ขโมยได้
 //
 // fetch จาก /api/video/token → คืน credential พร้อม appId, serverUrl
-// fetch ล้มเหลว → คืน null → UI fallback demo mode
+// fetch ล้มเหลว → คืน null → UI แสดง error state จริง (ไม่มี mock ให้ fallback แล้ว)
 // ═══════════════════════════════════════════
 
 import type { EmbeddedEngineId } from "./video/types";
@@ -28,7 +28,7 @@ export type VideoCredential = {
  * ขอ credential สำหรับเข้าห้องประชุม
  *
  * @returns null เมื่อ backend ไม่พร้อมหรือ fetch ล้มเหลว
- *          — เป็นสัญญาณให้หน้าจอแสดง demo mode
+ *          — เป็นสัญญาณให้หน้าจอแสดง error state (ไม่มี mock ให้ fallback แล้ว)
  */
 export async function requestVideoCredential(
   engineId: EmbeddedEngineId,
