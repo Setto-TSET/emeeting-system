@@ -497,7 +497,7 @@ CREATE TABLE guest_calendar_events (
 
 ชื่อประชุม:     การประชุมคณะกรรมการบริหาร ครั้งที่ 5/2569
 วันที่ / เวลา:   25 สิงหาคม 2569 เวลา 14:00 - 16:30 น.
-สถานที่:         ห้องประชุม A-101 / Webex
+สถานที่:         ห้องประชุม A-101 / ZegoCloud
 ผู้เชิญ:         นาย สมชาย ใจดี
 
 ────────────────────────────────────────
@@ -549,9 +549,9 @@ DTSTAMP:20260825T140000Z
 DTSTART:20260825T070000Z
 DTEND:20260825T093000Z
 SUMMARY:การประชุมคณะกรรมการบริหาร ครั้งที่ 5/2569
-DESCRIPTION:สถานที่: ห้องประชุม A-101 / Webex\n
+DESCRIPTION:สถานที่: ห้องประชุม A-101 / ZegoCloud\n
   เข้าร่วม: https://emeeting.local/live/MT-2569-001?token=xyz
-LOCATION:ห้องประชุม A-101 / Webex
+LOCATION:ห้องประชุม A-101 / ZegoCloud
 STATUS:CONFIRMED
 SEQUENCE:0
 END:VEVENT

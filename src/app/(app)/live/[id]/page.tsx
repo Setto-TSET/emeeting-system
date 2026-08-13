@@ -14,7 +14,6 @@ import { RoomSignalingProvider, useRoomSignaling } from "@/context/RoomSignaling
 import { HandRaiseList, type RaisedHand } from "@/components/meeting/HandRaiseList";
 import { SimulatedDocumentViewer, DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { ExternalConferenceStage } from "@/components/meeting/ExternalConferenceStage";
-import { WebexEmbedStage } from "@/components/meeting/WebexEmbedStage";
 import { ZegoCloudEmbedStage } from "@/components/meeting/ZegoCloudEmbedStage";
 import { SubtitleBar } from "@/components/meeting/SubtitleBar";
 import { VotePanel } from "@/components/meeting/VotePanel";
@@ -622,9 +621,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
         {/* Left Side: Video Grid & Shared Presentation */}
         <div className="flex-1 flex flex-col p-4 space-y-4 overflow-y-auto relative">
           
-          {/* Main content pane: เอกสารที่แชร์ > engine ฝัง (ZegoCloud/Webex) > เวทีประชุมภายนอก
+          {/* Main content pane: เอกสารที่แชร์ > engine ฝัง (ZegoCloud) > เวทีประชุมภายนอก
               ไม่มีห้องจำลอง (mockup) ให้ fallback แล้ว — ทุก meeting ต้องผ่าน engine จริงหรือลิงก์จริง */}
-          {isEmbedConference && !sharedFile && videoSurface.kind === "embed" && videoSurface.engineId === "zegocloud" ? (
+          {isEmbedConference && !sharedFile ? (
             <ZegoCloudEmbedStage
               meeting={meeting}
               isHost={isManager}
@@ -647,30 +646,6 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                   updateMeeting(meeting.id, { participants: updatedParticipants });
                 }
                 toast.info("คุณได้ออกจากห้องประชุม ZegoCloud เรียบร้อย");
-                router.push("/portal");
-              }}
-            />
-          ) : isEmbedConference && !sharedFile ? (
-            <WebexEmbedStage
-              meeting={meeting}
-              isHost={isManager}
-              credential={videoCredential}
-              onLeave={() => {
-                if (raisedHands.has(currentUser.id)) {
-                  broadcastRef.current?.({ type: "hand_raise", payload: { raised: false } });
-                  setRaisedHands((prev) => {
-                    const copy = new Map(prev);
-                    copy.delete(currentUser.id);
-                    return copy;
-                  });
-                }
-                if (localParticipant) {
-                  const updatedParticipants = meeting.participants.map((p) =>
-                    p.id === localParticipant.id ? { ...p, present: false } : p
-                  );
-                  updateMeeting(meeting.id, { participants: updatedParticipants });
-                }
-                toast.info("คุณได้ออกจากห้องประชุม Webex เรียบร้อย");
                 router.push("/portal");
               }}
             />
@@ -710,7 +685,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
             </div>
           ) : (
             /* ไม่มีห้องประชุมจำลองให้ fallback อีกต่อไป — ทุก meeting ต้องแก้ปัญหาผ่าน engine จริง
-               (ZegoCloud/Webex) หรือลิงก์ภายนอก ถ้าตกมาถึง branch นี้แปลว่า resolveVideoSurface
+               (ZegoCloud) หรือลิงก์ภายนอก ถ้าตกมาถึง branch นี้แปลว่า resolveVideoSurface
                คืนค่าที่ไม่รู้จัก ให้บอกตรงๆ แทนการแสดงวิดีโอปลอม */
             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground text-sm gap-2 border border-dashed border-border rounded-2xl">
               <span className="material-symbols-outlined text-4xl">videocam_off</span>

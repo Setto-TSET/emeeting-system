@@ -1,4 +1,9 @@
-# Backend Architecture — e-Meeting System
+> ⚠️ **DEPRECATED (2026-08-13):** ไดอะแกรมนี้เขียนไว้ตอนแผนใช้ Webex — ระบบตัด Webex ออกแล้ว ใช้
+> **ZegoCloud** แทน (ดู [PROJECT_STATUS.md](../PROJECT_STATUS.md)) ทุกจุดที่เอกสารเขียนว่า "Webex"
+> ให้อ่านเป็น "ZegoCloud" แทน — video credential ไม่ผ่าน backend Express นี้แล้ว (route ถูกลบออก)
+> ทำงานจริงอยู่ใน Next.js API route โดยตรง
+
+# Backend Architecture — e-Meeting System (เอกสารเก่า — ดูคำเตือนด้านบน)
 
 ## System Diagram
 

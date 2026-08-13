@@ -37,7 +37,7 @@ export type MeetingSummary = {
 export type AgendaWindow = { agendaId: string; startSec: number; endSec: number };
 
 export type Summarizer = {
-  id: "llm" | "webex_ai" | "mock";
+  id: "llm" | "mock";
   summarizeByAgenda(
     transcript: MeetingTranscript,
     windows: AgendaWindow[]

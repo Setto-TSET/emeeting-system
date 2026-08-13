@@ -1,11 +1,11 @@
 // ═══════════════════════════════════════════
 // Transcription Service — สัญญาของ "ตัวถอดเสียงเป็นข้อความ"
 //
-// จะมี implementation 2 ทางในอนาคต (ตัดสินหลังทดสอบภาษาไทย - Phase A):
-//   - webex.ts     : ดึง transcript ที่ Webex ถอดให้ ผ่าน Transcript API
-//   - assemblyai.ts: ส่งไฟล์เสียงเข้า STT ที่ไทยดีสุด แล้วถอดเอง
+// ตอนนี้ใช้ Web Speech API ฝั่ง client จริงแล้ว (src/services/speech/webSpeechProvider.ts
+// + src/services/transcript/store.ts) — ไฟล์นี้เป็นสัญญาเก่าสำหรับ post-meeting transcript
+// pipeline ที่ยังเป็น mock อยู่ (assemblyai/azure เป็นตัวเลือกในอนาคตถ้าต้องการความแม่นยำสูงขึ้น)
 //
-// ⚠️ ไฟล์นี้เป็นสัญญาล้วน ยังไม่มี implementation — รอผลทดสอบไทยและ backend
+// Webex ถูกตัดออกจากตัวเลือกแล้ว — ไม่มี license/backend และไม่ได้ใช้ ZegoCloud ทำ transcript
 // ═══════════════════════════════════════════
 
 /** หนึ่งช่วงคำพูด — ใครพูด ช่วงเวลาไหน ว่าอะไร */
@@ -30,10 +30,10 @@ export type MeetingTranscript = {
 };
 
 /**
- * สัญญากลาง — หน้าจอ/ท่อสรุปเรียกผ่านนี้ ไม่ต้องรู้ว่าเสียงมาจาก Webex หรือ STT ของเรา
+ * สัญญากลาง — หน้าจอ/ท่อสรุปเรียกผ่านนี้ ไม่ต้องรู้ว่าเสียงมาจาก STT ไหน
  */
 export type TranscriptionProvider = {
-  id: "webex" | "assemblyai" | "azure" | "mock";
+  id: "web_speech" | "assemblyai" | "azure" | "mock";
   /** ดึง/สร้าง transcript ของการประชุม (หลังประชุมจบ) */
   getTranscript(meetingId: string): Promise<MeetingTranscript>;
 };

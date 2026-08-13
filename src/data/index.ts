@@ -336,7 +336,7 @@ export type Meeting = {
    */
   allowGuestJoin?: boolean;
   /**
-   * กุญแจห้องประชุมที่เดาไม่ได้ — สำหรับเครื่องยนต์ที่ฝังในเว็บ (Webex/Jitsi)
+   * กุญแจห้องประชุมที่เดาไม่ได้ — สำหรับเครื่องยนต์ที่ฝังในเว็บ (ZegoCloud)
    * ห้ามใช้ meeting.id เป็นชื่อห้องตรงๆ ไม่งั้นใครเดา id ได้ก็เข้าห้องลับได้
    * backend แลกกุญแจนี้เป็นห้องจริงของผู้ให้บริการ
    */
@@ -445,9 +445,9 @@ export const meetings: Meeting[] = [
     startTime: "09:00",
     endTime: "12:00",
     location: "ห้องประชุม A-101",
-    // ตัวอย่างประชุมที่ใช้ Webex ฝังในเว็บ + AI สรุปให้ (mock — ยังไม่มี license จริง)
-    conferenceProvider: "webex",
-    conferenceRoomKey: "emeeting-demo-webex-mt008",
+    // ตัวอย่างประชุมที่ใช้ ZegoCloud ฝังในเว็บ + AI สรุปให้
+    conferenceProvider: "zegocloud",
+    conferenceRoomKey: "emeeting-demo-zego-mt008",
     transcriptStatus: "none",
     allowGuestJoin: true,
     status: "in_progress",

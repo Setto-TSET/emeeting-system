@@ -7,7 +7,6 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { initDatabase } from './database/connection';
 import { errorHandler, authMiddleware } from './middleware';
-import videoRoutes from './routes/video';
 import transcriptionRoutes from './routes/transcription';
 import summarizeRoutes from './routes/summarize';
 
@@ -40,12 +39,12 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // ─── API Routes (ต้องมี auth middleware ก่อน) ───
-// app.use('/api/video', authMiddleware, videoRoutes);
+// video token ไม่ผ่าน backend นี้แล้ว — ZegoCloud token ออกจาก Next.js API route โดยตรง
+// (src/app/api/video/token/route.ts) ดู backend/README.md
 // app.use('/api/transcription', authMiddleware, transcriptionRoutes);
 // app.use('/api/summarize', authMiddleware, summarizeRoutes);
 
 // Temporary: ยังไม่ต้อง auth ตอนทดสอบ
-app.use('/api/video', videoRoutes);
 app.use('/api/transcription', transcriptionRoutes);
 app.use('/api/summarize', summarizeRoutes);
 

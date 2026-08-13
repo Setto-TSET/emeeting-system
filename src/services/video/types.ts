@@ -2,20 +2,16 @@
 // Video Service — สัญญากลางของ "เครื่องยนต์ประชุม"
 //
 // จุดประสงค์: ให้หน้าห้องประชุม (/live) ไม่ต้องรู้ว่าเบื้องหลังเป็น
-// ห้องจำลอง, เปิดแอปภายนอก, หรือฝัง Webex/Jitsi — เรียกผ่านสัญญาเดียวกันหมด
+// engine ฝังในเว็บ (ZegoCloud) หรือเปิดแอปภายนอก — เรียกผ่านสัญญาเดียวกันหมด
 //
-// ⚠️ ไฟล์นี้เป็น "สัญญา" ล้วน ไม่มี implementation จริง
-//    engine จริง (Webex/Jitsi/ACS) จะมาเสียบเมื่อมี license + backend
-//    ตอนนี้ระบบยังใช้ห้องจำลอง (simulated) เหมือนเดิม ไม่มีอะไรเปลี่ยน
-//
-// กันความเสี่ยง: ห้ามหน้าจอ import Webex ตรงๆ — ต้องผ่าน interface นี้เท่านั้น
-//               ถ้า Webex ไม่ผ่าน (จัดซื้อ/ภาษาไทย) สลับ engine ได้โดยไม่แก้หน้าจอ
+// Webex ถูกตัดออกแล้ว (ไม่มี license/backend และใช้ ZegoCloud แทนถาวร)
+// กันความเสี่ยง: ห้ามหน้าจอ import zego.ts ตรงๆ — ต้องผ่าน interface นี้เท่านั้น
 // ═══════════════════════════════════════════
 
 import type { ResolvedConference } from "@/lib/conference";
 
-/** id ของเครื่องยนต์ที่ฝังในเว็บได้ — ขยายรายการนี้เมื่อเพิ่ม engine ใหม่ */
-export type EmbeddedEngineId = "webex" | "jitsi" | "acs" | "zegocloud";
+/** id ของเครื่องยนต์ที่ฝังในเว็บได้ — ตอนนี้มีแค่ ZegoCloud */
+export type EmbeddedEngineId = "zegocloud";
 
 /**
  * พื้นผิววิดีโอของการประชุมหนึ่งๆ — มี 2 แบบที่ต่างกันคนละเรื่อง
@@ -26,7 +22,7 @@ export type EmbeddedEngineId = "webex" | "jitsi" | "acs" | "zegocloud";
  */
 export type VideoSurface =
   | { kind: "external"; conference: ResolvedConference }   // เปิดแอปภายนอก (Teams/Zoom/Meet)
-  | { kind: "embed"; engineId: EmbeddedEngineId };         // ฝังในเว็บ (ZegoCloud/Webex/Jitsi/ACS)
+  | { kind: "embed"; engineId: EmbeddedEngineId };         // ฝังในเว็บ (ZegoCloud)
 
 /** ข้อมูลที่ engine ต้องใช้ตอนพาผู้ใช้เข้าห้อง */
 export type JoinContext = {

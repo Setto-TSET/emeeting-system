@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════
 // Mock Summarizer — สรุปประชุมจาก transcript จำลอง
-// วันมี LLM API (OpenAI/Claude/Gemini) หรือ Webex AI Assistant
-// สร้าง llmSummarizer.ts / webexAiSummarizer.ts แทน
+// วันมี LLM API (Claude/OpenAI/Gemini) — สร้าง llmSummarizer.ts แทน
 // ═══════════════════════════════════════════
 
 import type { Summarizer, MeetingSummary, AgendaSummary, AgendaWindow } from "./types";

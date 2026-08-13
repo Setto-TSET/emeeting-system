@@ -1,4 +1,10 @@
-# e-Meeting Backend — Webex Integration
+> ⚠️ **DEPRECATED (2026-08-13):** README นี้เขียนไว้ตอนแผนใช้ Webex — ระบบตัด Webex ออกแล้ว ใช้
+> **ZegoCloud** แทน video token endpoint (`routes/video.ts`, `services/webex.ts`) ถูกลบออกจาก backend/
+> นี้แล้ว เพราะ ZegoCloud token generation ทำงานจริงอยู่ใน Next.js API route โดยตรง
+> (`src/app/api/video/token/route.ts`) ไม่ต้องผ่าน backend Express แยกอีก ส่วน transcription/summarize
+> routes ที่เหลือใน backend/ ยังเป็นแผนเดิม ยังไม่ได้ build/deploy จริง
+
+# e-Meeting Backend — Webex Integration (เอกสารเก่า — ดูคำเตือนด้านบน)
 
 Backend server สำหรับระบบประชุมออนไลน์พร้อมการสรุปประชุมโดย AI
 

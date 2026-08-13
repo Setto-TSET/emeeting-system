@@ -1,4 +1,12 @@
-# Backend Integration Spec — Webex + AI Summarization
+> ⚠️ **DEPRECATED (2026-08-13):** สเปกนี้เขียนไว้ตอนแผนใช้ Webex เป็น video engine — ตอนนี้ระบบตัด Webex
+> ออกทั้งหมดแล้ว และใช้ **ZegoCloud** แทนถาวร (ดู [PROJECT_STATUS.md](PROJECT_STATUS.md)) Video credential
+> ไม่ต้องรอ backend แยกอีกต่อไป — มี Next.js API route ทำงานจริงแล้วที่ `src/app/api/video/token/route.ts`
+> (ใช้ `src/lib/zegoToken.ts` เซ็น token04) ส่วน Transcription/Summarization ในเอกสารนี้ยังใช้อ้างอิงได้
+> (แค่เปลี่ยนแหล่งเสียงจาก "Webex Transcript API" เป็น Web Speech API/mock ตามที่ implement จริงใน
+> `src/services/speech/`, `src/services/transcript/`) เนื้อหาด้านล่างเก็บไว้เป็นบันทึกประวัติเท่านั้น
+> ไม่ใช่แผนที่จะทำต่อ
+
+# Backend Integration Spec — Webex + AI Summarization (เอกสารเก่า — ดูคำเตือนด้านบน)
 
 > สำหรับ backend developer ที่จะต่อ Webex API และระบบสรุปประชุม
 

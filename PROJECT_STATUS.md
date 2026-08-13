@@ -13,7 +13,7 @@
 ระบบประชุมเว็บ **พร้อมใช้งานสาธิตแล้ว พร้อมวิดีโอจริง**:
 - ✅ ผู้ใช้ 5 บทบาท (Admin, Secretary, Executive, Staff, External Guest)
 - ✅ การจองห้องประชุม / คณะทำงาน / การตรวจสอบสิทธิ์
-- ✅ วิดีโอจริงผ่าน **ZegoCloud SDK** (token04 generator + API route + engine + component ใช้แทน Webex mock แล้ว)
+- ✅ วิดีโอจริงผ่าน **ZegoCloud SDK** (token04 generator + API route + engine + component — ต่อ credential จริงสำเร็จแล้ว, Webex ถูกตัดออกจากระบบทั้งหมด)
 - ✅ ความลับระดับการประชุม (watermark + blur-on-blur + right-click block)
 - ✅ สรุปประชุมอัตโนมัติจาก AI (pipeline mock สำเร็จ) + notification flow + .ics calendar
 - ✅ อัปโหลดเอกสารจริง (IndexedDB) + preview ด้วย PDF/Markdown viewer
@@ -48,21 +48,24 @@
 | Task | Status | Outcome |
 |------|--------|---------|
 | ทดสอบถอดเสียงภาษาไทยจริง | ✅ | ไทยเล็กน้อยแต่ใช้ได้ สำคัญพอสำหรับ proof-of-concept |
-| Go/No-Go decision | ✅ | **GO:** Webex + Claude AI → implement |
-| เลือก STT provider | ✅ | **Webex Transcript API** (ถ้าจัดซื้อ) |
+| Go/No-Go decision | ✅ | **GO:** Webex + Claude AI → implement (ภายหลังเปลี่ยนเป็น ZegoCloud — ดูหมายเหตุ Phase B) |
+| เลือก STT provider | ✅ | **Webex Transcript API** (ถ้าจัดซื้อ) — ภายหลังใช้ **Web Speech API** จริงแทน (ไม่ต้องซื้อ license) |
 | เลือก LLM provider | ✅ | **Claude API** (สำเร็จได้ดี) |
 
 ---
 
-### Phase B: Video Engine Seam ✅ COMPLETE
+### Phase B: Video Engine Seam ✅ COMPLETE (superseded — see note)
 | Task | Status | Files |
 |------|--------|-------|
 | `VideoEngine` interface | ✅ | `src/services/video/types.ts` |
-| Mock implementation | ✅ | `src/services/video/webexMockEngine.ts` |
-| Webex placeholder | ✅ | `src/services/video/webex.ts` (ทำให้พร้อมต่อ SDK) |
+| Mock implementation | ✅ | ~~`src/services/video/webexMockEngine.ts`~~ ลบแล้ว |
+| Webex placeholder | ✅ | ~~`src/services/video/webex.ts`~~ ลบแล้ว |
 | Wire ใน live page | ✅ | `src/app/(app)/live/[id]/page.tsx` |
 
-**Ready for:** เมื่อมี `@webex/browser-sdk` แค่ลง npm + แก้ `webex.ts` ผ่าน
+> **หมายเหตุ (2026-08-13):** Webex ถูกตัดออกจากระบบทั้งหมดแล้ว — `WebexEmbedStage.tsx`,
+> `src/services/video/webex.ts`, `webexMock.ts` ถูกลบ, `ConferenceProvider`/`EmbeddedEngineId`
+> ไม่มีค่า `"webex"` อีกต่อไป ระบบใช้ **ZegoCloud เป็น video engine เดียว** ถาวร (มี credential จริงแล้ว
+> ใน `.env.local`) รายละเอียดด้านล่างเก็บไว้เป็นประวัติการพัฒนาเท่านั้น
 
 ---
 
@@ -106,18 +109,18 @@ Section "สรุปการประชุมอัตโนมัติ":
 - ปุ่ม "สร้างร่างรายงาน" → เรียก API → บันทึก draft
 - ไฟล์ draft โผล่ที่ `/documents` + `/reports` ด้วย badge "ร่าง"
 
-#### C-5: Webex Production Seam ✅
+#### C-5: Webex Production Seam ✅ (ลบแล้ว — ดูหมายเหตุด้านบน)
 | Component | Status | Details |
 |---|---|---|
-| Container ref | ✅ | `WebexEmbedStage.tsx` + mounting point |
-| Credential fetch | ✅ | `requestVideoCredential()` call ก่อนแสดง stage |
+| Container ref | ✅ | ~~`WebexEmbedStage.tsx`~~ ลบแล้ว, แทนที่ด้วย `ZegoCloudEmbedStage.tsx` |
+| Credential fetch | ✅ | `requestVideoCredential()` call ก่อนแสดง stage (ยังใช้อยู่ กับ ZegoCloud) |
 | Session disposal | ✅ | `session.dispose()` on leave |
-| Mock fallback | ✅ | "demo mode" badge เมื่อ credential = null |
+| Mock fallback | ❌ ตัดออกแล้ว | ไม่มี "demo mode" badge อีกต่อไป — credential fail แล้วแสดง error state จริง |
 
-**Files:**
-- `src/components/meeting/WebexEmbedStage.tsx`
+**Files (ปัจจุบัน):**
+- `src/components/meeting/ZegoCloudEmbedStage.tsx`
 - `src/app/(app)/live/[id]/page.tsx`
-- `src/services/video/webex.ts` (placeholder)
+- `src/lib/zegoToken.ts`, `src/app/api/video/token/route.ts`
 
 #### C-6: Commit & Push ✅
 ```
@@ -192,7 +195,7 @@ D:\Internship\meeting Porject/
 │   │   └── committees/           # Committee management
 │   ├── components/               # Reusable React components
 │   │   ├── meeting/              # Meeting-specific components
-│   │   │   ├── WebexEmbedStage   # Video playback + screen share
+│   │   │   ├── ZegoCloudEmbedStage # Video playback (Webex ตัดออกแล้ว)
 │   │   │   ├── DocumentPreview   # PDF/Image/Markdown viewer
 │   │   │   ├── Watermark         # Anti-leak overlay
 │   │   │   └── MarkdownViewer    # Markdown → HTML renderer
@@ -205,11 +208,10 @@ D:\Internship\meeting Porject/
 │   │   ├── conference.ts         # Conference room link parsing
 │   │   └── ...
 │   ├── services/                 # Business logic
-│   │   ├── video/                # Video engine seam
+│   │   ├── video/                # Video engine seam — ZegoCloud เท่านั้น (Webex ตัดออกแล้ว)
 │   │   │   ├── types.ts
 │   │   │   ├── index.ts
-│   │   │   ├── webexMockEngine.ts
-│   │   │   └── webex.ts (placeholder)
+│   │   │   └── zego.ts
 │   │   ├── transcription/        # Transcription seam
 │   │   │   ├── types.ts
 │   │   │   ├── index.ts
@@ -231,16 +233,14 @@ D:\Internship\meeting Porject/
 │   └── data/                     # Mock data (single source)
 │       └── index.ts              # Users, meetings, committees, documents
 │
-├── backend/                      # Node.js + Express API (Planned, Not Started)
+├── backend/                      # Node.js + Express API (Planned, Not Started, DEPRECATED spec — see below)
 │   ├── src/
 │   │   ├── server.ts             # Express entry point
 │   │   ├── middleware/           # Auth, error handler
 │   │   ├── routes/               # API endpoints
-│   │   │   ├── video.ts          # POST /api/video/token
-│   │   │   ├── transcription.ts  # /api/transcription/*
+│   │   │   ├── transcription.ts  # /api/transcription/* (video.ts ลบแล้ว — ดูหมายเหตุด้านล่าง)
 │   │   │   └── summarize.ts      # POST /api/summarize
-│   │   ├── services/             # Business logic
-│   │   │   ├── webex.ts          # Webex API wrapper
+│   │   ├── services/             # Business logic (webex.ts ลบแล้ว)
 │   │   │   └── claude.ts         # Claude API wrapper
 │   │   └── database/             # MySQL connection + migrations
 │   ├── package.json
@@ -296,12 +296,16 @@ D:\Internship\meeting Porject/
 
 ---
 
-## 🏗️ Backend Architecture (Specification Complete, Not Started)
+## 🏗️ Backend Architecture (Specification Complete, Not Started — Webex parts DEPRECATED)
+
+> **หมายเหตุ (2026-08-13):** `POST /api/video/token` ด้านล่างคือ endpoint เดิมที่ออกแบบไว้สำหรับ
+> Webex — ตอนนี้ไม่ต้องใช้ backend แยกแล้ว เพราะ ZegoCloud token ออกจาก Next.js API route โดยตรง
+> (`src/app/api/video/token/route.ts`, ใช้จริงอยู่แล้ว) ตาราง `webex_rooms` ก็เป็นของแผนเดิมเช่นกัน
+> ส่วน transcription/summarize/guest endpoints ด้านล่างยังเป็นแผนที่ยังไม่ implement เหมือนเดิม
 
 ### Database Schema
 ```sql
 -- Meetings + Rooms
-webex_rooms (meeting_id → webex_space_id mapping)
 transcriptions (status: none|processing|ready|failed)
 summaries (draft + final)
 guest_invites (new table for Phase D)
@@ -313,7 +317,6 @@ users, committees, permissions, sessions (existing)
 
 ### API Endpoints
 ```
-POST /api/video/token           → { token, providerRoomId, expiresAt }
 POST /api/transcription/request → { status: "processing" }
 GET  /api/transcription/result  → { status, segments[] }
 POST /api/transcription/poll    → Background worker
@@ -322,13 +325,15 @@ POST /api/guests/invite-batch   → { sent, failed }  [Phase D]
 GET  /api/guests/list           → { guests[] }     [Phase D]
 ```
 
-**File:** `backend/BACKEND_SPEC_WEBEX.md`, `backend/README.md`, `backend/ARCHITECTURE.md`
+Video token ไม่อยู่ในรายการนี้แล้ว — ทำงานจริงอยู่ที่ `src/app/api/video/token/route.ts` (Next.js, ไม่ผ่าน backend/)
+
+**File:** `BACKEND_SPEC_WEBEX.md` (deprecated), `backend/README.md` (deprecated), `backend/ARCHITECTURE.md` (deprecated)
 
 ### Technology Stack
 - **Runtime:** Node.js 18+
 - **Framework:** Express.js + TypeScript
 - **Database:** MySQL 8.0+
-- **External APIs:** Webex, Claude, Email (Sendgrid/AWS SES)
+- **External APIs:** Claude, Email (Sendgrid/AWS SES) — Webex ตัดออกแล้ว, ZegoCloud token ไม่ผ่าน backend นี้
 - **Authentication:** JWT
 
 ---
@@ -356,7 +361,7 @@ GET  /api/guests/list           → { guests[] }     [Phase D]
 - [ ] Server-side watermark injection (PDF)
 
 ### Production Rollout (Deferred)
-- [ ] Obtain Webex license + API keys
+- [ ] ตั้ง ZegoCloud production credential ถาวร (ไม่ใช่แค่ .env.local ของ dev)
 - [ ] Setup email service (Sendgrid/AWS SES)
 - [ ] Deploy backend + database
 - [ ] SSL/TLS configuration
@@ -384,7 +389,7 @@ GET  /api/guests/list           → { guests[] }     [Phase D]
 | View document | ✅ | Watermark + blur-on-blur working |
 | Change confidentiality | ✅ | Watermark refresh rate updates |
 | Generate summary | ✅ | Mock transcript + mock summary |
-| Video room loading | ✅ | Mock engine, credential wiring |
+| Video room loading | ✅ | ZegoCloud engine จริง — ทดสอบ loginRoom ผ่าน token จริงแล้ว (2026-08-13) |
 
 ---
 
@@ -406,16 +411,15 @@ GET  /api/guests/list           → { guests[] }     [Phase D]
 ## 📞 Known Limitations & Future Work
 
 ### Current (Frontend Only)
-- ❌ No real Webex SDK (placeholder seam)
-- ❌ No backend API (localStorage only)
+- ✅ ZegoCloud SDK จริง (ไม่ใช่ placeholder แล้ว — Webex ถูกตัดออกทั้งหมด)
+- ❌ No backend API (localStorage only, ยกเว้น video token ที่ผ่าน Next.js API route แล้ว)
 - ❌ No email service (template only)
 - ❌ No audit logging (client-side only)
 - ❌ No database (mock data)
 - ❌ No authentication (password uncheckable)
 
 ### Ready to Address (With Backend)
-- 🔄 Real Webex integration (ต้องมี license + OAuth)
-- 🔄 Transcription API (Webex หรือ Azure)
+- 🔄 Transcription API แม่นยำขึ้น (AssemblyAI/Azure STT — ปัจจุบันใช้ Web Speech API ฝั่ง client)
 - 🔄 Claude AI summarization (API key ต้องมี)
 - 🔄 Email with .ics (Sendgrid/AWS SES)
 - 🔄 Signed URLs + audit trail
@@ -463,9 +467,9 @@ npm run dev
 | `PROJECT_STATUS.md` | This file — overall status |
 | `SECURITY_PLAN.md` | 4-layer security model + testing + policy |
 | `GUEST_JOIN_CALENDAR_PLAN.md` | Guest invite + calendar integration (6 days) |
-| `backend/BACKEND_SPEC_WEBEX.md` | API specification + database schema |
-| `backend/ARCHITECTURE.md` | System diagrams + data flows + scalability |
-| `backend/README.md` | Backend setup + quick start |
+| `BACKEND_SPEC_WEBEX.md` | API specification + database schema — **DEPRECATED** (Webex-era, ดูคำเตือนในไฟล์) |
+| `backend/ARCHITECTURE.md` | System diagrams + data flows + scalability — **DEPRECATED** (Webex-era) |
+| `backend/README.md` | Backend setup + quick start — **DEPRECATED** (Webex-era) |
 | `README.md` (root) | Project overview |
 
 ---
@@ -478,9 +482,9 @@ npm run dev
 | ✅ การจองห้องประชุม | ✅ | BookingContext, `/booking/my-bookings` |
 | ✅ ความลับเอกสาร | ✅ | Watermark + blur + confidentiality levels |
 | ✅ สรุปประชุม AI | ✅ | Mock pipeline (transcript → summary → report) |
-| ✅ Webex ready | ✅ | Seam + placeholder, production wrapper prepared |
+| ✅ วิดีโอประชุมจริง | ✅ | ZegoCloud SDK ต่อจริง — ทดสอบ loginRoom สำเร็จ (Webex ตัดออกแล้ว) |
 | ✅ ดูแล้วไม่ต้องดาวน์โหลด | ✅ | IndexedDB + PDF/Markdown viewer |
-| ✅ Backend specification | ✅ | `backend/` folder + BACKEND_SPEC_WEBEX.md |
+| ✅ Backend specification | ✅ | `backend/` folder + BACKEND_SPEC_WEBEX.md (deprecated, video token ไม่ต้องใช้แล้ว) |
 | ✅ Production seams | ✅ | Services abstracted (video, transcription, summarize) |
 
 ---
@@ -488,15 +492,13 @@ npm run dev
 ## 🎯 Next Steps (Priority Order)
 
 ### 1️⃣ Short-term (1–2 weeks)
-- [ ] **Webex Trial Approval** — IT/procurement จัดซื้อ trial license
-- [ ] **Setup Backend Project** — Node.js + Express boilerplate ทำไปได้แล้ว
+- [ ] **ZegoCloud Production Credential** — แยก credential dev/production, จัดเก็บใน secret manager แทน `.env.local`
+- [ ] **Setup Backend Project** — Node.js + Express boilerplate (สำหรับ transcription/summarize/guest เท่านั้น — video token ไม่ต้องใช้แล้ว)
 - [ ] **Email Service Setup** — Sendgrid/AWS SES account
-- [ ] **Start Phase D** — Guest Join implementation (frontend + backend + email)
 
 ### 2️⃣ Medium-term (2–4 weeks)
-- [ ] **Webex SDK Integration** — Embed production SDK in `webex.ts`
+- [ ] **Transcription Accuracy** — ประเมิน AssemblyAI/Azure STT เทียบกับ Web Speech API ปัจจุบัน
 - [ ] **Phase D Testing** — Email → calendar → join workflow
-- [ ] **Transcription Testing** — Real Webex transcript quality verification
 - [ ] **Phase 2 Security** — Audit logging + signed URLs + session management
 
 ### 3️⃣ Long-term (Production)
@@ -514,7 +516,7 @@ npm run dev
 
 **Key Stakeholders:**
 - 🔵 ผู้พัฒนา backend: เตรียม `/backend` + database setup
-- 🟢 IT/Procurement: ติดตามสถานะ Webex license
+- 🟢 IT/Procurement: ติดตามสถานะ ZegoCloud production plan (ปัจจุบันใช้ free/starter plan)
 - 🟡 Security team: Review `SECURITY_PLAN.md` + implement policy
 - 🟠 End-users: UAT เตรียมก่อนการใช้งานจริง
 
