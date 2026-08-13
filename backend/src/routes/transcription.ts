@@ -1,5 +1,7 @@
 // ═══════════════════════════════════════════
-// Routes — Transcription (Webex Transcript API)
+// Routes — Transcription
+// (STT provider TBD — AssemblyAI/Azure ถ้าต้องการความแม่นยำสูงกว่า Web Speech API
+//  ที่ frontend ใช้อยู่ตอนนี้; ดู src/services/speech/webSpeechProvider.ts)
 // ═══════════════════════════════════════════
 
 import { Router, Request, Response } from 'express';
@@ -20,9 +22,9 @@ router.post('/request', asyncHandler(async (req: Request, res: Response) => {
   }
 
   try {
-    // TODO: implement requestWebexTranscript
-    // 1. หา recording ID จาก meeting
-    // 2. สั่ง Webex ถอดเสียง
+    // TODO: implement requestTranscript (AssemblyAI/Azure STT)
+    // 1. หาไฟล์เสียง/บันทึกของ meeting
+    // 2. ส่งเข้า STT provider
     // 3. เก็บ status = processing ใน DB
 
     await query(
@@ -79,14 +81,14 @@ router.get('/result', asyncHandler(async (req: Request, res: Response) => {
 
 /**
  * POST /api/transcription/poll
- * Worker/Cron job: poll Webex untuk status transcription
+ * Worker/Cron job: poll STT provider สำหรับสถานะ transcription
  * (ต้องเรียก periodically ทุก 30 วิจาก backend worker)
  */
 router.post('/poll', asyncHandler(async (req: Request, res: Response) => {
   try {
-    // TODO: implement pollWebexTranscripts
+    // TODO: implement pollTranscripts
     // 1. หาประชุมที่ status = processing
-    // 2. เรียก Webex ถามว่าเสร็จหรือยัง
+    // 2. เรียก STT provider ถามว่าเสร็จหรือยัง
     // 3. ถ้าเสร็จ update segments ใน DB
 
     res.json({ message: 'Polling completed', updated: 0 });

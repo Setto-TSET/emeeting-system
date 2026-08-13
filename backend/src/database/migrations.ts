@@ -9,26 +9,13 @@ async function runMigrations() {
   try {
     console.log('🚀 Running migrations...');
 
-    // ─── Table: webex_rooms ───
-    await query(`
-      CREATE TABLE IF NOT EXISTS webex_rooms (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        meeting_id VARCHAR(50) UNIQUE NOT NULL,
-        room_key VARCHAR(100) UNIQUE NOT NULL,
-        webex_space_id VARCHAR(100) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_meeting_id (meeting_id),
-        INDEX idx_room_key (room_key)
-      );
-    `);
-    console.log('✅ webex_rooms table created');
-
     // ─── Table: transcriptions ───
+    // NOTE: ไม่มีตาราง room mapping แยกแล้ว — ZegoCloud token ออกจาก Next.js API route
+    // แบบ stateless (roomKey มาจาก meeting.conferenceRoomKey ตรงๆ ไม่ต้อง persist)
     await query(`
       CREATE TABLE IF NOT EXISTS transcriptions (
         id INT PRIMARY KEY AUTO_INCREMENT,
         meeting_id VARCHAR(50) UNIQUE NOT NULL,
-        webex_recording_id VARCHAR(100),
         transcript_status ENUM('none', 'processing', 'ready', 'failed') DEFAULT 'none',
         segments JSON,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

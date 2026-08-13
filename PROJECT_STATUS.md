@@ -248,7 +248,6 @@ D:\Internship\meeting Porject/
 │   └── README.md
 │
 ├── docs/                         # Documentation
-│   ├── BACKEND_SPEC_WEBEX.md     # API specification
 │   ├── SECURITY_PLAN.md          # 4-layer security model
 │   ├── GUEST_JOIN_CALENDAR_PLAN.md # Guest invite feature
 │   └── PROJECT_STATUS.md         # This file
@@ -296,12 +295,11 @@ D:\Internship\meeting Porject/
 
 ---
 
-## 🏗️ Backend Architecture (Specification Complete, Not Started — Webex parts DEPRECATED)
+## 🏗️ Backend Architecture (Specification Complete, Not Started)
 
-> **หมายเหตุ (2026-08-13):** `POST /api/video/token` ด้านล่างคือ endpoint เดิมที่ออกแบบไว้สำหรับ
-> Webex — ตอนนี้ไม่ต้องใช้ backend แยกแล้ว เพราะ ZegoCloud token ออกจาก Next.js API route โดยตรง
-> (`src/app/api/video/token/route.ts`, ใช้จริงอยู่แล้ว) ตาราง `webex_rooms` ก็เป็นของแผนเดิมเช่นกัน
-> ส่วน transcription/summarize/guest endpoints ด้านล่างยังเป็นแผนที่ยังไม่ implement เหมือนเดิม
+> **หมายเหตุ (2026-08-13):** Video token ไม่ต้องใช้ backend แยกแล้ว เพราะ ZegoCloud token ออกจาก
+> Next.js API route โดยตรง (`src/app/api/video/token/route.ts`, ใช้จริงอยู่แล้ว) backend/ ที่เหลือ
+> เป็นแผนสำหรับ transcription/summarize/guest endpoints เท่านั้น ยังไม่ implement
 
 ### Database Schema
 ```sql
@@ -327,7 +325,7 @@ GET  /api/guests/list           → { guests[] }     [Phase D]
 
 Video token ไม่อยู่ในรายการนี้แล้ว — ทำงานจริงอยู่ที่ `src/app/api/video/token/route.ts` (Next.js, ไม่ผ่าน backend/)
 
-**File:** `BACKEND_SPEC_WEBEX.md` (deprecated), `backend/README.md` (deprecated), `backend/ARCHITECTURE.md` (deprecated)
+**File:** `backend/README.md`, `backend/ARCHITECTURE.md`
 
 ### Technology Stack
 - **Runtime:** Node.js 18+
@@ -467,9 +465,8 @@ npm run dev
 | `PROJECT_STATUS.md` | This file — overall status |
 | `SECURITY_PLAN.md` | 4-layer security model + testing + policy |
 | `GUEST_JOIN_CALENDAR_PLAN.md` | Guest invite + calendar integration (6 days) |
-| `BACKEND_SPEC_WEBEX.md` | API specification + database schema — **DEPRECATED** (Webex-era, ดูคำเตือนในไฟล์) |
-| `backend/ARCHITECTURE.md` | System diagrams + data flows + scalability — **DEPRECATED** (Webex-era) |
-| `backend/README.md` | Backend setup + quick start — **DEPRECATED** (Webex-era) |
+| `backend/ARCHITECTURE.md` | System diagrams + data flows + scalability (transcription/summarize เท่านั้น) |
+| `backend/README.md` | Backend setup + quick start (transcription/summarize เท่านั้น) |
 | `README.md` (root) | Project overview |
 
 ---
@@ -482,9 +479,9 @@ npm run dev
 | ✅ การจองห้องประชุม | ✅ | BookingContext, `/booking/my-bookings` |
 | ✅ ความลับเอกสาร | ✅ | Watermark + blur + confidentiality levels |
 | ✅ สรุปประชุม AI | ✅ | Mock pipeline (transcript → summary → report) |
-| ✅ วิดีโอประชุมจริง | ✅ | ZegoCloud SDK ต่อจริง — ทดสอบ loginRoom สำเร็จ (Webex ตัดออกแล้ว) |
+| ✅ วิดีโอประชุมจริง | ✅ | ZegoCloud SDK ต่อจริง — ทดสอบ loginRoom สำเร็จ |
 | ✅ ดูแล้วไม่ต้องดาวน์โหลด | ✅ | IndexedDB + PDF/Markdown viewer |
-| ✅ Backend specification | ✅ | `backend/` folder + BACKEND_SPEC_WEBEX.md (deprecated, video token ไม่ต้องใช้แล้ว) |
+| ✅ Backend specification | ✅ | `backend/` folder (transcription/summarize — video token ไม่ต้องใช้ backend แล้ว) |
 | ✅ Production seams | ✅ | Services abstracted (video, transcription, summarize) |
 
 ---

@@ -1,7 +1,7 @@
 {
   "name": "emeeting-backend",
   "version": "1.0.0",
-  "description": "Backend for e-Meeting System with Webex + AI Summarization",
+  "description": "Backend for e-Meeting System — transcription + AI summarization",
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node src/server.ts",
@@ -10,7 +10,7 @@
     "migrate": "ts-node src/database/migrations.ts",
     "test": "jest"
   },
-  "keywords": ["webex", "meeting", "summarization", "ai"],
+  "keywords": ["meeting", "transcription", "summarization", "ai"],
   "author": "e-Meeting Team",
   "license": "MIT",
   "dependencies": {
@@ -20,7 +20,6 @@
     "mysql2": "^3.6.5",
     "axios": "^1.6.0",
     "@anthropic-ai/sdk": "^0.10.0",
-    "@webex/meetings": "^2.75.0",
     "jsonwebtoken": "^9.1.0",
     "bcryptjs": "^2.4.3"
   },

@@ -1,9 +1,8 @@
-> ⚠️ **DEPRECATED (2026-08-13):** ไดอะแกรมนี้เขียนไว้ตอนแผนใช้ Webex — ระบบตัด Webex ออกแล้ว ใช้
-> **ZegoCloud** แทน (ดู [PROJECT_STATUS.md](../PROJECT_STATUS.md)) ทุกจุดที่เอกสารเขียนว่า "Webex"
-> ให้อ่านเป็น "ZegoCloud" แทน — video credential ไม่ผ่าน backend Express นี้แล้ว (route ถูกลบออก)
-> ทำงานจริงอยู่ใน Next.js API route โดยตรง
+# Backend Architecture — e-Meeting System
 
-# Backend Architecture — e-Meeting System (เอกสารเก่า — ดูคำเตือนด้านบน)
+> Video (ZegoCloud) ไม่ผ่าน backend นี้ — token ออกจาก Next.js API route โดยตรงที่
+> `src/app/api/video/token/route.ts` (เซ็นด้วย `src/lib/zegoToken.ts`) backend/ นี้จึงเหลือ
+> transcription + summarize เท่านั้น ยัง Planned, Not Started
 
 ## System Diagram
 
@@ -12,15 +11,16 @@
 │                       Frontend (Next.js)                         │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
 │  │ Meetings    │  │ Live Room    │  │ Summary Report         │ │
-│  │ (UI for     │  │ (Webex +     │  │ (Markdown viewer)      │ │
+│  │ (UI for     │  │ (ZegoCloud + │  │ (Markdown viewer)      │ │
 │  │ creating)   │  │  Documents)  │  │                        │ │
 │  └──────┬──────┘  └──────┬───────┘  └────────┬───────────────┘ │
 │         │                 │                   │                 │
+│         │        (video token: Next.js        │                 │
+│         │         API route, ไม่ผ่าน backend/) │                 │
 │         └─────────────────┼───────────────────┘                 │
 │                           │                                      │
 │        ┌──────────────────▼──────────────────┐                 │
 │        │   API Client (Frontend context)     │                 │
-│        │  - requestVideoCredential()         │                 │
 │        │  - POST /api/transcription/request  │                 │
 │        │  - POST /api/summarize              │                 │
 │        └──────────────────┬──────────────────┘                 │
@@ -36,13 +36,13 @@
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │                    Express Server                        │  │
-│  │  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │  │
-│  │  │ /api/video  │  │ /api/         │  │ /api/          │  │  │
-│  │  │ /token      │  │ transcription │  │ summarize      │  │  │
-│  │  │ (Webex)     │  │ (Webex API)   │  │ (Claude API)   │  │  │
-│  │  └──────┬──────┘  └──────┬────────┘  └────────┬───────┘  │  │
-│  │         │                │                   │            │  │
-│  │         └────────────────┼───────────────────┘            │  │
+│  │       ┌──────────────┐  ┌────────────────┐              │  │
+│  │       │ /api/         │  │ /api/          │              │  │
+│  │       │ transcription │  │ summarize      │              │  │
+│  │       │ (STT TBD)     │  │ (Claude API)   │              │  │
+│  │       └──────┬────────┘  └────────┬───────┘              │  │
+│  │              │                   │                        │  │
+│  │              └───────────────────┘                        │  │
 │  │                          │                                │  │
 │  │         ┌────────────────▼─────────────────┐             │  │
 │  │         │   Middleware Layer               │             │  │
@@ -55,10 +55,9 @@
 │  ┌────────────────────────────▼──────────────────────────┐   │
 │  │            Service Layer                             │   │
 │  │  ┌──────────────────┐  ┌─────────────────────────┐   │   │
-│  │  │ WebexService     │  │ ClaudeService           │   │   │
-│  │  │ - getToken()     │  │ - summarizeTranscript() │   │   │
+│  │  │ STTService (TBD) │  │ ClaudeService           │   │   │
+│  │  │ - requestSTT()   │  │ - summarizeTranscript() │   │   │
 │  │  │ - pollStatus()   │  │ - parseResponse()       │   │   │
-│  │  │ - parseVTT()     │  │                         │   │   │
 │  │  └──────────┬───────┘  └─────────────┬───────────┘   │   │
 │  │             │                        │                │   │
 │  └─────────────┼────────────────────────┼────────────────┘   │
@@ -66,24 +65,23 @@
 └────────────────┼────────────────────────┼────────────────────┘
                  │                        │
         ┌────────▼────────┐      ┌────────▼─────────┐
-        │  Webex APIs     │      │  Claude API      │
-        │  - Guest Token  │      │  - Summarize     │
-        │  - Transcript   │      │                  │
-        │  - Recording    │      │                  │
+        │  STT provider   │      │  Claude API      │
+        │  (AssemblyAI/   │      │  - Summarize     │
+        │   Azure — TBD)  │      │                  │
         └────────┬────────┘      └────────┬─────────┘
                  │                        │
         ┌────────▼────────────────────────▼───────┐
         │      External Services                  │
-        │  - Webex Cloud (webexapis.com)          │
+        │  - STT provider cloud (TBD)              │
         │  - Anthropic Cloud (api.anthropic.com)  │
         └─────────────────────────────────────────┘
 
         ┌──────────────────────────────────────────┐
         │          Database (MySQL)                │
-        │  ┌──────────┐  ┌──────────┐  ┌────────┐ │
-        │  │webex_    │  │transc-   │  │summ-   │ │
-        │  │rooms     │  │riptions  │  │aries   │ │
-        │  └──────────┘  └──────────┘  └────────┘ │
+        │       ┌──────────┐  ┌────────┐           │
+        │       │transc-   │  │summ-   │           │
+        │       │riptions  │  │aries   │           │
+        │       └──────────┘  └────────┘           │
         └──────────────────────────────────────────┘
 ```
 
@@ -91,36 +89,7 @@
 
 ## Data Flow
 
-### 1️⃣ Get Video Token (Webex Embedded Meeting)
-
-```
-Frontend
-   │
-   ├─→ POST /api/video/token { engineId, roomKey }
-   │
-   ↓
-Backend: videoController.post()
-   │
-   ├─→ WebexService.getWebexGuestToken()
-   │   ├─→ Call Webex Guest Issuer API
-   │   └─→ Return JWT token
-   │
-   ├─→ Database: Save roomKey ↔ spaceId mapping
-   │
-   └─→ Return { token, providerRoomId, expiresAt }
-   │
-   ↑
-Frontend
-   │
-   ├─→ Mount WebexEmbedStage with token
-   │
-   ↓
-Browser
-   │
-   └─→ Webex SDK joins meeting
-```
-
-### 2️⃣ Transcription Workflow
+### 1️⃣ Transcription Workflow
 
 ```
 Frontend (Meeting ends)
@@ -130,9 +99,9 @@ Frontend (Meeting ends)
    ↓
 Backend: transcriptionController.post()
    │
-   ├─→ WebexService.requestWebexTranscript()
-   │   ├─→ Find recording ID from meetingId
-   │   └─→ Call Webex Transcript API
+   ├─→ STTService.requestTranscript()
+   │   ├─→ Find recording/audio source from meetingId
+   │   └─→ Call STT provider API (AssemblyAI/Azure — TBD)
    │
    ├─→ Database: Update status = "processing"
    │
@@ -151,9 +120,9 @@ Worker (every 30 seconds)
    │
    ├─→ Find all "processing" transcriptions
    │
-   ├─→ WebexService.getWebexTranscriptStatus()
+   ├─→ STTService.getStatus()
    │
-   ├─→ When done: parse VTT → TranscriptSegment[]
+   ├─→ When done: parse response → TranscriptSegment[]
    │
    ├─→ Database: Save segments, update status = "ready"
    │
@@ -178,7 +147,11 @@ Frontend
    ├─→ Show "พร้อมสร้างรายงาน"
 ```
 
-### 3️⃣ Summarization Workflow
+> **หมายเหตุ:** ตอนนี้ frontend ใช้ Web Speech API ฝั่ง client (`src/services/speech/webSpeechProvider.ts`)
+> ถอดเสียงแบบ realtime ระหว่างประชุมอยู่แล้ว, บันทึกลง IndexedDB (`src/services/transcript/store.ts`)
+> workflow ด้านบนคือแผนสำหรับ post-meeting transcript ที่แม่นยำกว่า ยังไม่ได้ implement จริง
+
+### 2️⃣ Summarization Workflow
 
 ```
 Frontend (User clicks "สร้างร่างรายงาน")
@@ -230,9 +203,11 @@ Frontend
 | **Language** | TypeScript | Type safety |
 | **Database** | MySQL 8.0+ | Data persistence |
 | **ORM/Query** | mysql2 | Database queries |
-| **External APIs** | Webex, Claude | Integrations |
+| **External APIs** | STT provider (TBD), Claude | Integrations |
 | **Auth** | JWT | API authentication |
 | **Testing** | Jest | Unit tests |
+
+Video (ZegoCloud) ไม่อยู่ในตารางนี้ — token generation ทำงานอยู่ใน Next.js API route แล้ว ไม่ต้องผ่าน backend Express นี้
 
 ---
 
@@ -271,9 +246,8 @@ Frontend
        └─────────┘      └─────────┘    └──────────┘
 
 Workers (Background)
-  └─→ Poll Webex transcription status
+  └─→ Poll STT provider transcription status
   └─→ Process Claude summarization
-  └─→ Cleanup old tokens
 ```
 
 ---
@@ -311,7 +285,7 @@ Workers (Background)
 └──────────────┬──────────────────────────────────┘
                │
 ┌──────────────▼──────────────────────────────────┐
-│  Services (Webex, Claude, Database)            │
+│  Services (STT provider, Claude, Database)      │
 │  ├─ API key rotation                            │
 │  ├─ Error handling                              │
 │  └─ Retry logic with backoff                    │
@@ -370,7 +344,7 @@ Metrics
   ├─→ API latency (p50, p95, p99)
   ├─→ Error rate per endpoint
   ├─→ Database connection pool
-  ├─→ External API latencies (Webex, Claude)
+  ├─→ External API latencies (STT provider, Claude)
   └─→ Custom: transcription queue size
 
 Tracing
@@ -387,6 +361,7 @@ Alerts
 
 ---
 
-**Created: 2026-08-03**  
-**Version: 1.0 (Planning)**  
+**Created: 2026-08-03**
+**Updated: 2026-08-13 — ตัด Webex ออกทั้งหมด, video token ย้ายไป Next.js API route**
+**Version: 1.1 (Planning)**
 **Status: Ready for Implementation**
