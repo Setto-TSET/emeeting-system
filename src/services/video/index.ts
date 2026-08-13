@@ -10,7 +10,10 @@ import type { Meeting } from "@/data";
 import type { VideoSurface, EmbeddedEngineId, EmbeddedEngine } from "./types";
 import { zegoEngine } from "./zego";
 
-/** Registry ของ engine ที่ระบบรู้จัก — ตอนนี้มีแค่ ZegoCloud */
+/**
+ * Registry ของ engine ที่ระบบรู้จัก — ตอนนี้มีแค่ ZegoCloud
+ * เพิ่มเจ้าใหม่: implement EmbeddedEngine แล้วลงทะเบียนที่นี่ — หน้าจอไม่ต้องแก้
+ */
 export const embeddedEngines: Record<EmbeddedEngineId, EmbeddedEngine> = {
   zegocloud: zegoEngine,
 };

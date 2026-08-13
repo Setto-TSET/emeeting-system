@@ -187,24 +187,37 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   // จาก IndexedDB แม้ผู้ใช้จะไม่ได้เปิดแท็บโหวตอยู่ตอนที่สัญญาณมาถึง (ดู Fix 2)
   const [voteRefreshToken, setVoteRefreshToken] = useState(0);
 
-  // Credential สำหรับ engine ฝัง — null ระหว่างรอ (loading) หรือถ้า fetch ล้มเหลว (error)
-  // แยกสองสถานะนี้ด้วย videoCredentialStatus เพราะห้องประชุมไม่มี mock UI ให้ fallback แล้ว
-  // ต้องบอกผู้ใช้ตรงๆ ว่ากำลังเชื่อมต่อ หรือเชื่อมต่อไม่สำเร็จ
+  // Credential สำหรับ engine ฝัง — null = เข้าห้องจริงไม่ได้ พร้อมเหตุผลใน credentialError
   const [videoCredential, setVideoCredential] = useState<VideoCredential | null>(null);
-  const [videoCredentialStatus, setVideoCredentialStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [credentialError, setCredentialError] = useState<string | null>(null);
+
+  // ตัวตนในห้องประชุมของผู้ให้บริการ — ต้องเป็นค่าเดียวกันทั้งตอนขอ token และตอน login
+  // เพราะ token ของ ZegoCloud ผูกกับ user_id ถ้าไม่ตรงจะ login ไม่ผ่าน
+  // แขกภายนอกไม่มีบัญชี จึงใช้ id ของ session ตัวเอง ไม่งั้นแขกทุกคนชนกันแล้วเตะกันออก
+  const roomIdentityId = localParticipant?.userId ?? localParticipant?.id ?? currentUser.id;
+  const roomIdentityName = localParticipant?.name ?? currentUser.name;
 
   useEffect(() => {
     if (!meeting) return;
     const surface = resolveVideoSurface(meeting);
     if (surface.kind !== "embed") return;
     const roomKey = meeting.conferenceRoomKey ?? meeting.id;
-    setVideoCredentialStatus("loading");
-    requestVideoCredential(surface.engineId, roomKey, currentUser.id, currentUser.name).then((cred) => {
-      setVideoCredential(cred);
-      setVideoCredentialStatus(cred ? "ready" : "error");
+    let cancelled = false;
+    requestVideoCredential(surface.engineId, roomKey, roomIdentityId, roomIdentityName).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setVideoCredential(result.credential);
+        setCredentialError(null);
+      } else {
+        setVideoCredential(null);
+        setCredentialError(result.reason);
+      }
     });
+    return () => {
+      cancelled = true;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meeting?.id]);
+  }, [meeting?.id, roomIdentityId]);
 
   // Initialize presence
   useEffect(() => {
@@ -628,8 +641,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               meeting={meeting}
               isHost={isManager}
               credential={videoCredential}
-              status={videoCredentialStatus}
-              userId={currentUser.id}
+              credentialError={credentialError}
+              userId={roomIdentityId}
+              displayName={roomIdentityName}
               onLeave={() => {
                 if (raisedHands.has(currentUser.id)) {
                   broadcastRef.current?.({ type: "hand_raise", payload: { raised: false } });

@@ -24,18 +24,23 @@ export type VideoCredential = {
   expiresAt: number;
 };
 
+/** ผลของการขอ credential — แยก error ออกมาเพื่อให้หน้าจอบอกผู้ใช้ได้ว่าทำไมถึงเป็นโหมดสาธิต */
+export type VideoCredentialResult =
+  | { ok: true; credential: VideoCredential }
+  | { ok: false; reason: string };
+
 /**
  * ขอ credential สำหรับเข้าห้องประชุม
  *
- * @returns null เมื่อ backend ไม่พร้อมหรือ fetch ล้มเหลว
- *          — เป็นสัญญาณให้หน้าจอแสดง error state (ไม่มี mock ให้ fallback แล้ว)
+ * @returns ok:false พร้อมเหตุผล เมื่อ backend ไม่พร้อมหรือ fetch ล้มเหลว
+ *          — หน้าจอเอาเหตุผลไปแสดงตรงๆ แทนที่จะเงียบแล้วตกเป็น demo mode (ไม่มีให้ fallback แล้ว)
  */
 export async function requestVideoCredential(
   engineId: EmbeddedEngineId,
   roomKey: string,
   userId: string,
   userName: string
-): Promise<VideoCredential | null> {
+): Promise<VideoCredentialResult> {
   try {
     const response = await fetch("/api/video/token", {
       method: "POST",
@@ -43,22 +48,29 @@ export async function requestVideoCredential(
       body: JSON.stringify({ roomId: roomKey, userId, userName }),
     });
 
+    const data = await response.json().catch(() => null);
+
     if (!response.ok) {
-      console.warn("[credentials] Token request failed:", response.status);
-      return null;
+      const reason = data?.error ?? `ขอ token ไม่สำเร็จ (HTTP ${response.status})`;
+      console.warn("[credentials] Token request failed:", reason);
+      return { ok: false, reason };
     }
 
-    const data = await response.json();
     return {
-      engineId,
-      token: data.token,
-      providerRoomId: roomKey,
-      appId: data.appId,
-      serverUrl: data.serverUrl,
-      expiresAt: data.expiresAt,
+      ok: true,
+      credential: {
+        engineId,
+        token: data.token,
+        providerRoomId: roomKey,
+        appId: data.appId,
+        serverUrl: data.serverUrl,
+        expiresAt: data.expiresAt,
+      },
     };
   } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "ติดต่อเซิร์ฟเวอร์ออก token ไม่ได้";
     console.warn("[credentials] Token request error:", error);
-    return null;
+    return { ok: false, reason };
   }
 }

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { committees, meetingRooms, Meeting } from "@/data";
+import { committees, meetingRooms, users, Meeting, MeetingParticipant } from "@/data";
 import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
 import { conferenceProviders, detectProvider, newConferenceRoomKey } from "@/lib/conference";
@@ -29,10 +29,15 @@ export default function NewMeetingPage() {
     startTime: "09:00",
     endTime: "12:00",
     roomId: meetingRooms[0].id,
-    conferenceEngine: "mock" as "mock" | "zegocloud" | "external",
+    // ค่าเริ่มต้นเป็นห้องประชุมจริง — ห้องจำลองมีไว้เดโมเฉยๆ ไม่ควรเป็นค่าตั้งต้น
+    conferenceEngine: "zegocloud" as "mock" | "zegocloud" | "external",
     conferenceLink: "",
     description: "",
     confidentialityLevel: "normal" as "normal" | "restricted" | "top_secret",
+    /** เชิญสมาชิกคณะทำงานเข้าเป็นองค์ประชุมอัตโนมัติ — ถ้าไม่เชิญ จะไม่มีใครเข้าห้องได้นอกจากผู้จัด */
+    inviteCommitteeMembers: true,
+    /** เปิดให้คนนอกที่ได้รับลิงก์เข้าเองได้ — จำเป็นตอนทดสอบหลายเครื่อง/หลายหน้าต่าง */
+    allowGuestJoin: true,
   });
 
   const update = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(p => ({ ...p, [k]: v }));
@@ -50,6 +55,32 @@ export default function NewMeetingPage() {
     const committee = committees.find(c => c.id === form.committeeId)!;
     // ฟอร์มเก็บ roomId แต่ทุกหน้าที่แสดงผลคาดหวัง "ชื่อห้อง" — แปลงตรงนี้จุดเดียว
     const room = meetingRooms.find(r => r.id === form.roomId)!;
+
+    // องค์ประชุมตั้งต้น: ผู้จัด + สมาชิกคณะทำงานที่เลือก
+    // เดิมสร้างประชุมแล้วได้ participants ว่าง ทำให้ไม่มีใครเข้าห้องได้เลยนอกจากผู้จัด
+    const invitedUsers = form.inviteCommitteeMembers
+      ? users.filter(u => u.committeeIds.includes(committee.id) || u.id === currentUser.id)
+      : users.filter(u => u.id === currentUser.id);
+
+    const participants: MeetingParticipant[] = invitedUsers.map(u => ({
+      id: `P-${u.id}`,
+      userId: u.id,
+      name: u.name,
+      position:
+        u.id === currentUser.id
+          ? "ผู้จัดประชุม"
+          : u.systemRole === "secretary"
+          ? "เลขานุการ"
+          : u.systemRole === "executive"
+          ? "ประธาน"
+          : "กรรมการ",
+      role: u.position,
+      department: u.department,
+      email: u.email,
+      attendance: "pending",
+      present: false,
+      inSystem: true,
+    }));
 
     const newMeeting: Meeting = {
       id: `MT-${Date.now()}`,
@@ -75,7 +106,8 @@ export default function NewMeetingPage() {
       confidentialityLevel: form.confidentialityLevel,
       status: "prepare",
       displayFormat: 2,
-      participants: [],
+      participants,
+      allowGuestJoin: form.allowGuestJoin,
       files: [],
       agenda: [],
       secretGroups: [],
@@ -187,10 +219,40 @@ export default function NewMeetingPage() {
                 <div className="md:col-span-2">
                   <div className="rounded-lg bg-[#0055FF]/5 border border-[#0055FF]/20 px-3 py-2 flex items-center gap-2 text-xs">
                     <span className="material-symbols-outlined text-[16px] text-[#0055FF]">videocam</span>
-                    <span className="text-muted-foreground">ผู้เข้าร่วมจะประชุมผ่าน ZegoCloud ในหน้าเว็บนี้โดยตรง ไม่ต้องติดตั้งแอป</span>
+                    <span className="text-muted-foreground">ผู้เข้าร่วมจะประชุมผ่าน ZegoCloud ในหน้าเว็บนี้โดยตรง ไม่ต้องติดตั้งแอป (ต้องอนุญาตให้ใช้ไมค์)</span>
                   </div>
                 </div>
               )}
+              <div className="md:col-span-2 space-y-2">
+                <label className="flex items-start gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.inviteCommitteeMembers}
+                    onChange={e => update("inviteCommitteeMembers", e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium">เชิญสมาชิกคณะทำงานเป็นองค์ประชุมอัตโนมัติ</span>
+                    <span className="block text-muted-foreground">
+                      ผู้ใช้ในคณะที่เลือกจะเข้าห้องประชุมได้ทันที — ถ้าไม่ติ๊ก จะมีแค่ผู้จัดที่เข้าได้
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.allowGuestJoin}
+                    onChange={e => update("allowGuestJoin", e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium">อนุญาตให้บุคคลภายนอกที่มีลิงก์เข้าร่วมเอง</span>
+                    <span className="block text-muted-foreground">
+                      ใช้ตอนทดสอบหลายเครื่อง/หลายหน้าต่าง หรือมีวิทยากรที่ไม่มีบัญชีในระบบ
+                    </span>
+                  </span>
+                </label>
+              </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">ชั้นความลับ</label>
                 <select
