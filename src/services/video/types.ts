@@ -53,6 +53,8 @@ export type EmbeddedSession = {
   dispose(): void;
   /** callback เมื่อผู้ใช้กดออกจากฝั่ง engine เอง */
   onLeft(cb: () => void): void;
+  /** callback เมื่อมี error ที่ไม่ถึงขั้นห้องล่ม (เช่น กล้อง/ไมค์ใช้ไม่ได้) — ห้องยัง join ต่อได้ */
+  onError?(cb: (message: string) => void): void;
 };
 
 /** สัญญาของเครื่องยนต์ที่ฝังในเว็บได้ */

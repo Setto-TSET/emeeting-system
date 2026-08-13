@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Meeting } from "@/data";
@@ -65,6 +66,8 @@ export function ZegoCloudEmbedStage({ meeting, isHost, onLeave, credential, stat
         sessionRef.current = session;
         sdkMounted.current = true;
         session.onLeft(() => onLeave());
+        // กล้อง/ไมค์ใช้ไม่ได้ไม่ทำให้ห้องล่มแล้ว — แค่เตือนไว้ ยังอยู่ในห้องต่อได้
+        session.onError?.((message) => toast.warning(message));
       });
     });
 
