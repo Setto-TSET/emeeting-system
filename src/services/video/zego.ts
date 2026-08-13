@@ -117,7 +117,14 @@ export const zegoEngine: EmbeddedEngine = {
 
       return session;
     } catch (error) {
-      console.error("[zegoEngine] mount failed:", error);
+      // ZegoCloud SDK มักโยน plain object { code, msg } ไม่ใช่ Error instance —
+      // console.error เฉยๆ จะโชว์ {} ใน Next.js dev overlay เพราะ serialize ไม่ออก
+      // ดึง code/msg ออกมา log ตรงๆ เพื่อวินิจฉัยได้จริง
+      const details =
+        error && typeof error === "object"
+          ? { code: (error as { code?: unknown }).code, msg: (error as { msg?: unknown }).msg, raw: error }
+          : error;
+      console.error("[zegoEngine] mount failed:", JSON.stringify(details), details);
       return noopSession;
     }
   },
