@@ -20,7 +20,7 @@
 - ✅ อัปโหลดเอกสารจริง (IndexedDB) + preview ด้วย PDF/Markdown viewer
 - ✅ การจำหน่ายเอกสารตามสิทธิ์ (4 ระดับการมองเห็น)
 - ✅ Guest Join — Magic Link flow (เชิญบุคคลภายนอกเข้าประชุมโดยไม่ต้องสร้างบัญชี, ใช้งานได้จริงแล้ว ไม่ใช่แค่ plan)
-- ✅ โหวตแบบ realtime, ยกมือแบบ realtime, ซับไตเติลสด (Web Speech API), ถอดคำพูด + แชร์เอกสารซิงค์ข้ามผู้เข้าร่วม (ผ่าน BroadcastChannel signaling layer)
+- ✅ โหวตแบบ realtime, ยกมือแบบ realtime, ซับไตเติลสด (Web Speech API), ถอดคำพูด + แชร์เอกสารซิงค์ — ผ่าน `BroadcastChannel` signaling layer ⚠️ **sync ได้แค่ระหว่างแท็บของเบราว์เซอร์เดียวกันบนเครื่องเดียวกันเท่านั้น** ไม่ข้ามเครื่อง/ไม่ข้ามเบราว์เซอร์จริง (มีแค่วิดีโอ ZegoCloud ที่ sync ข้ามเครื่องได้จริงเพราะเป็น cloud service — ดู README.md)
 
 ### ⏳ ยังเลื่อน
 - ❌ Backend + API + Database (specification ทำสำเร็จ, ยังไม่ deploy จริง)

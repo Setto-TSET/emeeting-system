@@ -37,8 +37,15 @@ export function VoteCreateDialog({ open, onOpenChange, onCreate }: Props) {
     onOpenChange(false);
   };
 
+  // ปิดโดยไม่สร้างโหวต (ยกเลิก, กด X, กด Escape, คลิกนอกกล่อง) ก็ต้อง reset ฟอร์มเหมือนกัน
+  // ไม่งั้นเปิดครั้งถัดไปจะเห็นหัวข้อ/ตัวเลือกเก่าค้างอยู่
+  const closeWithoutSaving = (next: boolean) => {
+    if (!next) reset();
+    onOpenChange(next);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={closeWithoutSaving}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>สร้างโหวต</DialogTitle>
@@ -69,7 +76,7 @@ export function VoteCreateDialog({ open, onOpenChange, onCreate }: Props) {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>ยกเลิก</Button>
+          <Button variant="outline" onClick={() => closeWithoutSaving(false)}>ยกเลิก</Button>
           <Button disabled={!canSubmit} onClick={handleSubmit}>สร้างโหวต</Button>
         </DialogFooter>
       </DialogContent>
