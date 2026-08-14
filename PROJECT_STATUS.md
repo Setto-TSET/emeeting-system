@@ -1,9 +1,10 @@
 # e-Meeting System — Project Status Report
 
 **Project:** ระบบประชุมออนไลน์พร้อมความลับ + สรุปประชุมอัตโนมัติ + ZegoCloud Integration  
-**Status:** Phase 0–C Complete + Guest Join Complete + ZegoCloud Real SDK Integrated + Phase E (Voting/Hand Raise/Subtitle/Doc-Share Sync) Complete — Zoom Room SIP bridge still blocked on licensing  
-**Last Updated:** 2026-08-13  
-**Repository:** https://github.com/Setto-TSET/emeeting-system
+**Status:** Phase 0–C Complete + Guest Join Complete + ZegoCloud Real SDK Integrated + Phase E (Voting/Hand Raise/Subtitle/Doc-Share Sync) Complete + **Deployed to Vercel production** — Zoom Room SIP bridge still blocked on licensing  
+**Last Updated:** 2026-08-14  
+**Repository:** https://github.com/Setto-TSET/emeeting-system  
+**Production:** https://meeting-system-features-40fa4d.vercel.app
 
 ---
 
@@ -358,8 +359,10 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 - [ ] Single-active session enforcement
 - [ ] Server-side watermark injection (PDF)
 
-### Production Rollout (Deferred)
-- [ ] ตั้ง ZegoCloud production credential ถาวร (ไม่ใช่แค่ .env.local ของ dev)
+### Production Rollout
+- [x] Deploy frontend to Vercel — https://meeting-system-features-40fa4d.vercel.app (2026-08-14)
+- [x] ตั้ง ZegoCloud credential บน Vercel Environment Variables (Sensitive, ไม่ผ่านโค้ด)
+- [ ] Custom domain (ปัจจุบันใช้ *.vercel.app)
 - [ ] Setup email service (Sendgrid/AWS SES)
 - [ ] Deploy backend + database
 - [ ] SSL/TLS configuration
@@ -442,12 +445,12 @@ npm run dev
 # Open http://localhost:3000
 ```
 
-### Test Data Access
-- **Admin:** admin@example.com
-- **Secretary:** secretary@example.com  
-- **Executive:** executive@example.com
-- **Staff:** staff@example.com
-- **External Guest:** guest@example.com (no password check)
+### Test Data Access (ไม่เช็ครหัสผ่าน — กดปุ่ม "บัญชีทดสอบ" หน้า login ได้เลย)
+- **Admin:** admin@e-office.cloud
+- **ผู้บริหาร:** prasert@e-office.cloud
+- **เลขานุการ:** malee.r@e-office.cloud
+- **เจ้าหน้าที่:** somchai.j@e-office.cloud, wipha.s@e-office.cloud, decha@e-office.cloud
+- **บุคคลภายนอก:** expert@external.org
 
 ### Demo Path
 1. Login as **admin** → see all meetings
@@ -489,7 +492,7 @@ npm run dev
 ## 🎯 Next Steps (Priority Order)
 
 ### 1️⃣ Short-term (1–2 weeks)
-- [ ] **ZegoCloud Production Credential** — แยก credential dev/production, จัดเก็บใน secret manager แทน `.env.local`
+- [x] **Deploy frontend** — Vercel production, ZegoCloud credential ตั้งเป็น env var บน Vercel แล้ว (ไม่ใช่แค่ dev `.env.local`)
 - [ ] **Setup Backend Project** — Node.js + Express boilerplate (สำหรับ transcription/summarize/guest เท่านั้น — video token ไม่ต้องใช้แล้ว)
 - [ ] **Email Service Setup** — Sendgrid/AWS SES account
 
