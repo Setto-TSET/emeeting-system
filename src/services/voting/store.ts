@@ -1,21 +1,16 @@
 // src/services/voting/store.ts
+import { openIdbDatabase, idbRun } from "@/lib/idb";
 import type { VoteTopic, VoteRecord } from "./types";
 
 const DB_NAME = "emeeting_voting";
 const STORE = "vote_topics";
 const VERSION = 1;
 
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: "key" });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+function db() {
+  return openIdbDatabase(DB_NAME, VERSION, (database) => {
+    if (!database.objectStoreNames.contains(STORE)) {
+      database.createObjectStore(STORE, { keyPath: "key" });
+    }
   });
 }
 
@@ -24,36 +19,21 @@ function topicKey(meetingId: string, topicId: string) {
 }
 
 export async function saveTopic(topic: VoteTopic): Promise<void> {
-  const db = await openDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).put({ key: topicKey(topic.meetingId, topic.id), ...topic });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  await idbRun(await db(), STORE, "readwrite", (tx) =>
+    tx.objectStore(STORE).put({ key: topicKey(topic.meetingId, topic.id), ...topic })
+  );
 }
 
 export async function getTopic(meetingId: string, topicId: string): Promise<VoteTopic | null> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readonly");
-    const req = tx.objectStore(STORE).get(topicKey(meetingId, topicId));
-    req.onsuccess = () => resolve((req.result as VoteTopic) ?? null);
-    req.onerror = () => reject(req.error);
-  });
+  const result = await idbRun<VoteTopic | undefined>(await db(), STORE, "readonly", (tx) =>
+    tx.objectStore(STORE).get(topicKey(meetingId, topicId))
+  );
+  return result ?? null;
 }
 
 export async function listTopics(meetingId: string): Promise<VoteTopic[]> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readonly");
-    const req = tx.objectStore(STORE).getAll();
-    req.onsuccess = () => {
-      const all = (req.result as VoteTopic[]) ?? [];
-      resolve(all.filter((t) => t.meetingId === meetingId).sort((a, b) => a.createdAt - b.createdAt));
-    };
-    req.onerror = () => reject(req.error);
-  });
+  const all = await idbRun<VoteTopic[]>(await db(), STORE, "readonly", (tx) => tx.objectStore(STORE).getAll());
+  return (all ?? []).filter((t) => t.meetingId === meetingId).sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export async function castVote(meetingId: string, topicId: string, record: VoteRecord): Promise<VoteTopic | null> {
