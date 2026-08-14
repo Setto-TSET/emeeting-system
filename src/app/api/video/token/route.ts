@@ -11,6 +11,14 @@ const EXPIRY_SECONDS = 1800; // 30 minutes
 
 export async function POST(request: NextRequest) {
   try {
+    // ระบบนี้ไม่มี session ฝั่ง server (auth เป็น client-side mock ทั้งหมด) — เอ็นด์พอยต์นี้จึงไม่มีทาง
+    // เช็คว่าใครเรียก ด่านแรกที่ทำได้จริงคือกันสคริปต์/เว็บอื่นยิงตรงเข้ามาขอ token ข้าม origin
+    // (เบราว์เซอร์แนบ Origin ให้เองเสมอสำหรับ POST แบบนี้ ปลอมจาก JS ฝั่ง client ไม่ได้)
+    const origin = request.headers.get("origin");
+    if (origin && origin !== request.nextUrl.origin) {
+      return NextResponse.json({ error: "Cross-origin request rejected" }, { status: 403 });
+    }
+
     const appId = Number(process.env.ZEGO_APP_ID);
     const secret = process.env.ZEGO_SERVER_SECRET;
     // ZEGO_SERVER_URL เป็นตัวเลือก — ถ้าไม่ได้ตั้ง ให้ประกอบจาก App ID ตามรูปแบบมาตรฐานของ ZegoCloud

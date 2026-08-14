@@ -256,8 +256,14 @@ export const zegoEngine: EmbeddedEngine = {
             emitError("เครื่องนี้ไม่มีไมค์ที่ใช้ได้ — เข้าประชุมแบบดู/ฟังอย่างเดียว");
             return false;
           }
-          const ok = zg.mutePublishStreamAudio(localStream, !on);
-          if (!ok) return false;
+          // mutePublishStreamAudio ของ SDK คืน void ไม่ใช่ boolean — เช็ค !ok แบบเดิมจะเป็น false
+          // เสมอ (ปุ่มปิดไมค์กดไม่ติด) ต้องจับด้วย try/catch แทนเพื่อรู้ว่าสำเร็จจริงไหม
+          try {
+            zg.mutePublishStreamAudio(localStream, !on);
+          } catch (error) {
+            emitError(describeMediaError(error));
+            return false;
+          }
           const local = tiles.get(streamID);
           if (local) {
             tiles.set(streamID, { ...local, micOn: on });
@@ -270,8 +276,12 @@ export const zegoEngine: EmbeddedEngine = {
             emitError("เครื่องนี้ไม่มีกล้องที่ใช้ได้ — เข้าประชุมด้วยเสียงอย่างเดียว");
             return false;
           }
-          const ok = zg.mutePublishStreamVideo(localStream, !on);
-          if (!ok) return false;
+          try {
+            zg.mutePublishStreamVideo(localStream, !on);
+          } catch (error) {
+            emitError(describeMediaError(error));
+            return false;
+          }
           const local = tiles.get(streamID);
           if (local) {
             tiles.set(streamID, { ...local, cameraOn: on });

@@ -29,8 +29,9 @@ export default function NewMeetingPage() {
     startTime: "09:00",
     endTime: "12:00",
     roomId: meetingRooms[0].id,
-    // ค่าเริ่มต้นเป็นห้องประชุมจริง — ห้องจำลองมีไว้เดโมเฉยๆ ไม่ควรเป็นค่าตั้งต้น
-    conferenceEngine: "zegocloud" as "mock" | "zegocloud" | "external",
+    // "ห้องจำลอง (Mock)" ถูกตัดออกจากตัวเลือกแล้ว — resolveVideoSurface() ไม่มี simulated view
+    // ให้ fallback อีกต่อไป เลือกอะไรก็ลง ZegoCloud จริงเหมือนกันหมด (ดู src/services/video/index.ts)
+    conferenceEngine: "zegocloud" as "zegocloud" | "external",
     conferenceLink: "",
     description: "",
     confidentialityLevel: "normal" as "normal" | "restricted" | "top_secret",
@@ -43,9 +44,7 @@ export default function NewMeetingPage() {
   const update = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(p => ({ ...p, [k]: v }));
 
   const externalProvider = detectProvider(form.conferenceLink);
-  const provider = form.conferenceEngine === "zegocloud" ? "zegocloud" as const
-    : form.conferenceEngine === "external" ? externalProvider
-    : "mock" as const;
+  const provider = form.conferenceEngine === "external" ? externalProvider : "zegocloud" as const;
   const detectedSpec = conferenceProviders[provider];
 
   const submit = (e: React.FormEvent) => {
@@ -189,7 +188,6 @@ export default function NewMeetingPage() {
                   onChange={e => update("conferenceEngine", e.target.value as typeof form.conferenceEngine)}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
                 >
-                  <option value="mock">ห้องจำลอง (Mock)</option>
                   <option value="zegocloud">ZegoCloud (ประชุมในเว็บ)</option>
                   <option value="external">วางลิงก์ภายนอก (Teams / Zoom / Meet)</option>
                 </select>

@@ -99,15 +99,18 @@ export function ZegoCloudEmbedStage({
   }, [credential, meeting.id, userId, displayName, isHost]);
 
   const toggleMic = () => {
+    // engine ยังไม่ mount เสร็จ (sessionRef.current เป็น null) — ห้ามอัปเดตไอคอนเฉยๆ ไม่งั้น UI
+    // จะโชว์ "ปิดไมค์" ทั้งที่ engine เพิ่งมา mount แล้วเริ่มแบบเปิดไมค์เสมอ (desync)
+    if (!sessionRef.current?.setMicEnabled) return;
     const next = !micOn;
-    // ถ้า engine ปฏิเสธ (ยังไม่เข้าห้อง/ไม่มีไมค์) อย่าเปลี่ยนไอคอนให้ผู้ใช้เข้าใจผิด
-    if (sessionRef.current?.setMicEnabled && !sessionRef.current.setMicEnabled(next)) return;
+    if (!sessionRef.current.setMicEnabled(next)) return;
     setMicOn(next);
   };
 
   const toggleCamera = () => {
+    if (!sessionRef.current?.setCameraEnabled) return;
     const next = !cameraOn;
-    if (sessionRef.current?.setCameraEnabled && !sessionRef.current.setCameraEnabled(next)) return;
+    if (!sessionRef.current.setCameraEnabled(next)) return;
     setCameraOn(next);
   };
 
