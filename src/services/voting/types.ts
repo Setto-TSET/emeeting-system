@@ -1,26 +1,10 @@
 // src/services/voting/types.ts
+//
+// รูปร่างของข้อมูลโหวตมาจาก server แล้ว — นิยามไว้ที่ signaling/types.ts จุดเดียว
+// ไฟล์นี้เหลือไว้เพื่อไม่ให้ import เดิมของคอมโพเนนต์พัง
 
-export type VoteOption = {
-  id: string; // "opt-1", "opt-2", ...
-  label: string;
-};
-
-export type VoteRecord = {
-  userId: string;
-  userName: string;
-  optionId: string;
-  timestamp: number;
-};
-
-export type VoteTopic = {
-  id: string; // "vote-{uuid}"
-  meetingId: string;
-  title: string;
-  description?: string;
-  options: VoteOption[];
-  createdBy: string;
-  createdByName: string;
-  createdAt: number;
-  status: "open" | "closed";
-  votes: VoteRecord[];
-};
+export type {
+  VoteOptionDto as VoteOption,
+  VoteRecordDto as VoteRecord,
+  VoteTopicDto as VoteTopic,
+} from "@/services/signaling/types";

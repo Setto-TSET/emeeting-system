@@ -8,13 +8,11 @@ import { VoteTopicCard } from "./VoteTopicCard";
 import { VoteResultsDialog } from "./VoteResultsDialog";
 import { useRoomSignaling } from "@/context/RoomSignalingContext";
 import { useCurrentUser } from "@/context/UserContext";
-import { listTopics, saveTopic, castVote, closeTopic } from "@/services/voting/store";
+import { listTopics } from "@/services/voting/store";
 import type { VoteTopic } from "@/services/voting/types";
 
-// `voteRefreshToken` เป็นตัวนับที่ RoomSignalBridge (mounted เสมอ ไม่ว่าจะเปิดแท็บโหวตอยู่หรือไม่)
-// เพิ่มค่าทุกครั้งที่ได้รับสัญญาณ vote_create/vote_cast/vote_close — VotePanel แค่ฟังการเปลี่ยนแปลง
-// ของค่านี้แล้วอ่าน topics ใหม่จาก IndexedDB เอง (ตัว toast และการฟังสัญญาณจริงย้ายไปอยู่ที่ RoomSignalBridge แล้ว
-// เพื่อให้ทำงานได้ไม่ว่าผู้ใช้จะเปิดแท็บไหนอยู่ — ดู Fix 2 ในรายงานรีวิว)
+// server เป็นเจ้าของสถานะโหวต: กดโหวตแล้วส่งเจตนาไป แล้วรอ vote_state กลับมาทับของเดิม
+// ไม่มีการอัปเดตแบบ optimistic เพราะ server อาจปฏิเสธ (หัวข้อปิดแล้ว/ไม่มีสิทธิ์)
 export function VotePanel({
   meetingId,
   canManage,
@@ -25,7 +23,7 @@ export function VotePanel({
   voteRefreshToken: number;
 }) {
   const { currentUser } = useCurrentUser();
-  const { broadcast } = useRoomSignaling();
+  const { broadcast, useSignal } = useRoomSignaling();
   const [topics, setTopics] = useState<VoteTopic[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [resultsTopic, setResultsTopic] = useState<VoteTopic | null>(null);
@@ -34,41 +32,35 @@ export function VotePanel({
     listTopics(meetingId).then(setTopics);
   }, [meetingId, voteRefreshToken]);
 
-  const handleCreate = async (draft: Pick<VoteTopic, "title" | "description" | "options">) => {
-    const topic: VoteTopic = {
-      id: `vote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      meetingId,
-      title: draft.title,
-      description: draft.description,
-      options: draft.options,
-      createdBy: currentUser.id,
-      createdByName: currentUser.name,
-      createdAt: Date.now(),
-      status: "open",
-      votes: [],
-    };
-    await saveTopic(topic);
-    setTopics((prev) => [...prev, topic]);
-    broadcast({ type: "vote_create", payload: { topicId: topic.id } });
-  };
+  const applyTopic = useCallback((incoming: VoteTopic) => {
+    setTopics((prev) => {
+      const exists = prev.some((t) => t.id === incoming.id);
+      return exists ? prev.map((t) => (t.id === incoming.id ? incoming : t)) : [...prev, incoming];
+    });
+  }, []);
 
-  const handleVote = useCallback(
-    async (topicId: string, optionId: string) => {
-      const updated = await castVote(meetingId, topicId, {
-        userId: currentUser.id,
-        userName: currentUser.name,
-        optionId,
-        timestamp: Date.now(),
-      });
-      if (updated) setTopics((prev) => prev.map((t) => (t.id === topicId ? updated : t)));
-      broadcast({ type: "vote_cast", payload: { topicId, optionId } });
-    },
-    [meetingId, currentUser.id, currentUser.name, broadcast]
+  useSignal(
+    "vote_state",
+    useCallback((signal) => applyTopic(signal.payload.topic), [applyTopic])
   );
 
-  const handleClose = async (topicId: string) => {
-    const updated = await closeTopic(meetingId, topicId);
-    if (updated) setTopics((prev) => prev.map((t) => (t.id === topicId ? updated : t)));
+  const handleCreate = (draft: Pick<VoteTopic, "title" | "description" | "options">) => {
+    broadcast({
+      type: "vote_create",
+      payload: {
+        title: draft.title,
+        ...(draft.description ? { description: draft.description } : {}),
+        options: draft.options,
+      },
+    });
+    setCreateOpen(false);
+  };
+
+  const handleVote = (topicId: string, optionId: string) => {
+    broadcast({ type: "vote_cast", payload: { topicId, optionId } });
+  };
+
+  const handleClose = (topicId: string) => {
     broadcast({ type: "vote_close", payload: { topicId } });
   };
 
@@ -79,7 +71,9 @@ export function VotePanel({
           + สร้างโหวต
         </Button>
       )}
-      {topics.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">ยังไม่มีโหวตในการประชุมนี้</p>}
+      {topics.length === 0 && (
+        <p className="text-xs text-muted-foreground text-center py-4">ยังไม่มีโหวตในการประชุมนี้</p>
+      )}
       {topics
         .slice()
         .reverse()

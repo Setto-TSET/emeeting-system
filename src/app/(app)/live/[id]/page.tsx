@@ -22,7 +22,6 @@ import { resolveVideoSurface } from "@/services/video";
 import { requestVideoCredential, type VideoCredential } from "@/services/credentials";
 import { webSpeechProvider } from "@/services/speech/webSpeechProvider";
 import { appendSegment } from "@/services/transcript/store";
-import { getTopic } from "@/services/voting/store";
 import type { RoomSignal } from "@/services/signaling/types";
 import { can } from "@/lib/authz";
 import { MeetingParticipant, MeetingFile, canViewFile } from "@/data";
@@ -37,7 +36,7 @@ type Broadcast = ReturnType<typeof useRoomSignaling>["broadcast"];
  * คอมโพเนนต์นี้ mount อยู่ตลอดอายุห้องประชุม (ไม่ผูกกับแท็บที่เปิดอยู่) จึงเป็นที่รวมของทุกสัญญาณ
  * ที่ต้องทำงานได้ไม่ว่าผู้ใช้จะเปิดแท็บไหนอยู่: hand_raise/hand_lower, subtitle_text (คำบรรยายที่ผู้พูดคนอื่นส่งมา —
  * บันทึกท่อน final ที่รับมาลง transcript store ของเครื่องนี้เอง ดูข้อจำกัดที่ store.ts), doc_share* (การแชร์เอกสาร),
- * และ vote_create/vote_cast/vote_close (แจ้งเตือน + กระตุ้นให้ VotePanel อ่านข้อมูลโหวตใหม่แม้ไม่ได้เปิดแท็บโหวตอยู่)
+ * และ signal_error (แจ้งเตือนเมื่อ server ปฏิเสธเจตนาที่ส่งไป — สัญญาณ vote_* ตอนนี้ VotePanel ฟังเอง)
  */
 function RoomSignalBridge({
   currentUserId,
@@ -132,18 +131,8 @@ function RoomSignalBridge({
     toast.info(`${signal.senderName} หยุดแชร์เอกสารแล้ว`);
   });
 
-  useSignal("vote_create", async (signal) => {
-    const topic = await getTopic(meetingId, signal.payload.topicId);
-    setVoteRefreshToken((n) => n + 1);
-    toast.info(`${signal.senderName} สร้างโหวตใหม่: ${topic?.title ?? ""}`);
-  });
-
-  useSignal("vote_cast", () => {
-    setVoteRefreshToken((n) => n + 1);
-  });
-
-  useSignal("vote_close", () => {
-    setVoteRefreshToken((n) => n + 1);
+  useSignal("signal_error", (signal) => {
+    toast.error(signal.payload.reason);
   });
 
   return null;
