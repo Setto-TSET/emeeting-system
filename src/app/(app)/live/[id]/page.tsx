@@ -172,8 +172,11 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const [lightboxPage, setLightboxPage] = useState(1);
   const [viewerZoom, setViewerZoom] = useState(100);
   const [sharedFileId, setSharedFileId] = useState<string | null>(null); // For simulated presentation share
-  // นับจำนวนครั้งที่ได้รับสัญญาณ vote_* จาก RoomSignalBridge — VotePanel เฝ้าดูค่านี้เพื่ออ่าน topics ใหม่
-  // จาก IndexedDB แม้ผู้ใช้จะไม่ได้เปิดแท็บโหวตอยู่ตอนที่สัญญาณมาถึง (ดู Fix 2)
+  // VotePanel อ่าน snapshot โหวตจาก server ตอน mount และทุกครั้งที่ meetingId เปลี่ยนเท่านั้น
+  // (ผ่าน listTopics -> GET /api/rooms/:meetingId/state) — การอัปเดตแบบ real-time มาทาง
+  // vote_state ที่ VotePanel ฟังเองโดยตรง ไม่ผ่านตัวนับนี้แล้ว
+  // ตัวนับนี้จึงตายแล้ว (setVoteRefreshToken ไม่มีใครเรียกอีกต่อไป) แต่คงไว้เพราะ props ของ
+  // VotePanel ถูกล็อกไม่ให้เปลี่ยนในงานนี้ — ดู task-10 brief
   const [voteRefreshToken, setVoteRefreshToken] = useState(0);
 
   // Credential สำหรับ engine ฝัง — null = เข้าห้องจริงไม่ได้ พร้อมเหตุผลใน credentialError
