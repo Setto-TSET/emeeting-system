@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import { query, close } from '../../src/database/connection';
 import { runMigrations } from '../../src/database/migrations';
 import { seedFromMockData } from '../../src/database/seed';
@@ -39,6 +40,7 @@ describe('auth service', () => {
   it('is case-insensitive on email', async () => {
     const claims = await verifyPassword('ADMIN@E-OFFICE.CLOUD', 'Meeting@2569');
     expect(claims).not.toBeNull();
+    expect(claims!.sub).toBe('U-999');
   });
 
   it('round-trips an access token', () => {
@@ -68,5 +70,54 @@ describe('auth service', () => {
     const decoded = verifyAccessToken(token);
     expect(decoded!.role).toBe('guest');
     expect(decoded!.meetingId).toBe('MT-2569-007');
+  });
+
+  // ═══════════════════════════════════════════
+  // Regression tests for the security-critical decode path.
+  // ตัวตนของผู้เข้าร่วมทั้งหมดมาจาก token เหล่านี้ — ถ้าการตรวจสอบอ่อนลง
+  // แม้เพียงจุดเดียว ผู้เข้าร่วมคนหนึ่งอาจปลอมเป็นอีกคนได้
+  // ═══════════════════════════════════════════
+
+  it('rejects an expired token', () => {
+    const token = jwt.sign(
+      { sub: 'U-001', email: 'somchai.j@e-office.cloud', name: 'นาย สมชาย ใจดี', role: 'staff' },
+      process.env.JWT_SECRET as string,
+      { expiresIn: -10 }
+    );
+    expect(verifyAccessToken(token)).toBeNull();
+  });
+
+  it('rejects a token signed with a different secret', () => {
+    const token = jwt.sign(
+      { sub: 'U-001', email: 'somchai.j@e-office.cloud', name: 'นาย สมชาย ใจดี', role: 'staff' },
+      'a-completely-different-secret',
+      { expiresIn: '8h' }
+    );
+    expect(verifyAccessToken(token)).toBeNull();
+  });
+
+  it('rejects an alg:none token', () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({ sub: 'U-001', email: 'somchai.j@e-office.cloud', name: 'นาย สมชาย ใจดี', role: 'admin' })
+    ).toString('base64url');
+    const token = `${header}.${payload}.`;
+    expect(verifyAccessToken(token)).toBeNull();
+  });
+
+  it('rejects a validly-signed payload missing required claims', () => {
+    const missingSub = jwt.sign(
+      { email: 'somchai.j@e-office.cloud', name: 'นาย สมชาย ใจดี', role: 'staff' },
+      process.env.JWT_SECRET as string,
+      { expiresIn: '8h' }
+    );
+    expect(verifyAccessToken(missingSub)).toBeNull();
+
+    const missingRole = jwt.sign(
+      { sub: 'U-001', email: 'somchai.j@e-office.cloud', name: 'นาย สมชาย ใจดี' },
+      process.env.JWT_SECRET as string,
+      { expiresIn: '8h' }
+    );
+    expect(verifyAccessToken(missingRole)).toBeNull();
   });
 });
