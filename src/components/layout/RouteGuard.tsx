@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCurrentUser } from "@/context/UserContext";
-import { canAccessRoute, HOME_ROUTE } from "@/lib/access";
+import { canAccessRoute, getHomeRoute } from "@/lib/access";
 
 /**
  * กันผู้เข้าร่วมพิมพ์ URL ตรงเข้าหน้าที่ไม่มีสิทธิ์ (เช่น /booking, /meetings)
@@ -21,7 +21,7 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     if (!allowed) {
-      router.replace(HOME_ROUTE);
+      router.replace(getHomeRoute(currentUser.systemRole));
     }
   }, [allowed, currentUser.systemRole, router]);
 

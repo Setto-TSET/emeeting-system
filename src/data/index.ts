@@ -21,7 +21,8 @@ export type SystemRole =
   | "executive"   // ผู้บริหาร — เห็นเอกสารระดับผู้บริหาร + คณะที่ตัวเองเป็นสมาชิก
   | "secretary"  // เลขานุการ — เห็น + จัดการเอกสารในคณะที่รับผิดชอบ
   | "staff"      // เจ้าหน้าที่ทั่วไป — เห็นเฉพาะเอกสารที่มีสิทธิ์
-  | "external";  // บุคคลภายนอก — เห็นเฉพาะเอกสารสาธารณะที่ส่งให้เท่านั้น
+  | "external"   // บุคคลภายนอก — เห็นเฉพาะเอกสารสาธารณะที่ส่งให้เท่านั้น
+  | "room";      // บัญชีห้องประชุม — คอมประจำห้อง login ค้าง เข้า kiosk mode
 
 export const systemRoleLabels: Record<SystemRole, string> = {
   admin: "ผู้ดูแลระบบ",
@@ -29,6 +30,7 @@ export const systemRoleLabels: Record<SystemRole, string> = {
   secretary: "เลขานุการ",
   staff: "เจ้าหน้าที่",
   external: "บุคคลภายนอก",
+  room: "บัญชีห้องประชุม",
 };
 
 export const systemRoleColors: Record<SystemRole, string> = {
@@ -37,6 +39,7 @@ export const systemRoleColors: Record<SystemRole, string> = {
   secretary: "bg-blue-100 text-blue-700 border-blue-300",
   staff: "bg-slate-100 text-slate-700 border-slate-300",
   external: "bg-amber-100 text-amber-800 border-amber-300",
+  room: "bg-teal-100 text-teal-700 border-teal-300",
 };
 
 export const systemRoleDescriptions: Record<SystemRole, string> = {
@@ -45,6 +48,7 @@ export const systemRoleDescriptions: Record<SystemRole, string> = {
   secretary: "จัดการวาระ/เอกสารของคณะที่รับผิดชอบ",
   staff: "เห็นเฉพาะเอกสารสาธารณะ + เอกสารที่มีสิทธิ์เท่านั้น",
   external: "เข้าถึงได้เฉพาะเอกสารสาธารณะที่ถูกส่งให้",
+  room: "บัญชีห้องประชุม — แสดงเฉพาะประชุมที่จัดในห้องนี้ (kiosk mode)",
 };
 
 // ===== Users (สำหรับสลับทดสอบสิทธิ์) =====
@@ -56,6 +60,7 @@ export type AppUser = {
   email: string;
   systemRole: SystemRole;
   committeeIds: string[];  // คณะที่สังกัด
+  roomId?: string;         // เฉพาะ role "room" — ห้องประชุมที่ผูกกับบัญชีนี้
 };
 
 export const users: AppUser[] = [
@@ -122,6 +127,36 @@ export const users: AppUser[] = [
     systemRole: "external",
     committeeIds: ["COM-01"],
   },
+  {
+    id: "U-ROOM-801",
+    name: "ห้องประชุม 801",
+    position: "บัญชีห้องประชุม",
+    department: "อาคารสำนักงาน ชั้น 8",
+    email: "room-801@e-office.cloud",
+    systemRole: "room",
+    committeeIds: [],
+    roomId: "R-801",
+  },
+  {
+    id: "U-ROOM-808",
+    name: "ห้องประชุม 808",
+    position: "บัญชีห้องประชุม",
+    department: "อาคารสำนักงาน ชั้น 8",
+    email: "room-808@e-office.cloud",
+    systemRole: "room",
+    committeeIds: [],
+    roomId: "R-808",
+  },
+  {
+    id: "U-ROOM-901",
+    name: "ห้องประชุม 901",
+    position: "บัญชีห้องประชุม",
+    department: "อาคารสำนักงาน ชั้น 9",
+    email: "room-901@e-office.cloud",
+    systemRole: "room",
+    committeeIds: [],
+    roomId: "R-901",
+  },
 ];
 
 // หมายเหตุ: เดิมมี `export const currentUser = users[0]` ตรงนี้
@@ -151,13 +186,14 @@ export type Room = {
   hasZoomRoom?: boolean;
   zoomRoomDeviceId?: string;
   hasIpad?: boolean;
+  accountId?: string;        // id ของ AppUser ที่เป็นบัญชีห้องนี้ (role "room")
 };
 
 // ห้องประชุมจริงขององค์กร — ตัดห้องจำลอง (A-101 ฯลฯ) ออกหมดแล้ว เหลือ 3 ห้องที่ใช้งานจริง
 export const meetingRooms: Room[] = [
-  { id: "R-801", name: "ห้องประชุม 801", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคารสำนักงาน", floor: "ชั้น 8", amenities: ["โปรเจกเตอร์", "ระบบเสียง", "Video Conference"], status: "available" },
-  { id: "R-808", name: "ห้องประชุม 808", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคารสำนักงาน", floor: "ชั้น 8", amenities: ["โปรเจกเตอร์", "ระบบเสียง", "Video Conference"], status: "available" },
-  { id: "R-901", name: "ห้องประชุม 901", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคารสำนักงาน", floor: "ชั้น 9", amenities: ["โปรเจกเตอร์", "ระบบเสียง", "Video Conference"], status: "available" },
+  { id: "R-801", name: "ห้องประชุม 801", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคารสำนักงาน", floor: "ชั้น 8", amenities: ["โปรเจกเตอร์", "ระบบเสียง", "Video Conference"], status: "available", accountId: "U-ROOM-801" },
+  { id: "R-808", name: "ห้องประชุม 808", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคารสำนักงาน", floor: "ชั้น 8", amenities: ["โปรเจกเตอร์", "ระบบเสียง", "Video Conference"], status: "available", accountId: "U-ROOM-808" },
+  { id: "R-901", name: "ห้องประชุม 901", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคารสำนักงาน", floor: "ชั้น 9", amenities: ["โปรเจกเตอร์", "ระบบเสียง", "Video Conference"], status: "available", accountId: "U-ROOM-901" },
 ];
 
 // ===== Room Bookings =====

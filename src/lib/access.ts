@@ -14,7 +14,7 @@ import { SystemRole } from "@/data";
  *
  * ปรับได้ที่ตารางนี้จุดเดียว ถ้าอยากย้าย executive ไปเป็น participant
  */
-export type AccessLevel = "participant" | "manager";
+export type AccessLevel = "participant" | "manager" | "kiosk";
 
 const roleAccessLevel: Record<SystemRole, AccessLevel> = {
   admin: "manager",
@@ -22,6 +22,7 @@ const roleAccessLevel: Record<SystemRole, AccessLevel> = {
   executive: "manager",
   staff: "participant",
   external: "participant",
+  room: "kiosk",
 };
 
 export function getAccessLevel(role: SystemRole): AccessLevel {
@@ -30,6 +31,10 @@ export function getAccessLevel(role: SystemRole): AccessLevel {
 
 export function isParticipant(role: SystemRole): boolean {
   return getAccessLevel(role) === "participant";
+}
+
+export function isKiosk(role: SystemRole): boolean {
+  return getAccessLevel(role) === "kiosk";
 }
 
 export type NavItem = { href: string; icon: string; label: string };
@@ -42,6 +47,15 @@ const participantNav: NavGroup[] = [
       { href: "/dashboard", icon: "home", label: "หน้าหลัก" },
       { href: "/portal", icon: "event_note", label: "การประชุมของฉัน" },
       { href: "/documents", icon: "folder_shared", label: "เอกสารการประชุม" },
+    ],
+  },
+];
+
+/** เมนูสำหรับบัญชีห้องประชุม — เห็นแค่หน้า kiosk */
+const kioskNav: NavGroup[] = [
+  {
+    items: [
+      { href: "/kiosk", icon: "tv", label: "หน้าจอห้องประชุม" },
     ],
   },
 ];
@@ -81,21 +95,35 @@ const managerNav: NavGroup[] = [
 ];
 
 export function getNavGroups(role: SystemRole): NavGroup[] {
+  if (isKiosk(role)) return kioskNav;
   return isParticipant(role) ? participantNav : managerNav;
 }
 
 /** หน้าที่ผู้เข้าร่วมเข้าได้ — นอกจากนี้เด้งกลับหน้าหลัก */
 const participantAllowedPrefixes = ["/dashboard", "/portal", "/documents", "/live"];
 
+/** หน้าที่บัญชีห้องประชุมเข้าได้ — kiosk + live เท่านั้น */
+const kioskAllowedPrefixes = ["/kiosk", "/live"];
+
 /**
  * กันการพิมพ์ URL ตรงเพื่อข้ามเมนู
  * ซ่อนเมนูอย่างเดียวไม่พอ เพราะ /booking ยังพิมพ์เข้าได้อยู่
  */
 export function canAccessRoute(role: SystemRole, pathname: string): boolean {
+  if (isKiosk(role)) {
+    return kioskAllowedPrefixes.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`)
+    );
+  }
   if (!isParticipant(role)) return true;
   return participantAllowedPrefixes.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );
+}
+
+/** หน้าหลักตามสิทธิ์ — kiosk ไป /kiosk, ที่เหลือ /dashboard */
+export function getHomeRoute(role: SystemRole): string {
+  return isKiosk(role) ? "/kiosk" : "/dashboard";
 }
 
 /** หน้าหลักของทุกสิทธิ์ — /dashboard ปรับเนื้อหาตามสิทธิ์อยู่แล้ว */

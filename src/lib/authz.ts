@@ -84,6 +84,15 @@ export function can(user: AppUser, action: MeetingAction, meeting: Meeting): boo
   // admin ผ่านทุกอย่าง — รวมไว้จุดเดียว ไม่กระจายไปเช็คตามที่ต่างๆ
   if (isAdmin(user)) return true;
 
+  // room account — เข้าร่วมและดูได้เฉพาะประชุมที่จัดในห้องนี้
+  if (user.systemRole === "room") {
+    const isInMyRoom =
+      meeting.location.includes(user.name) ||
+      meeting.participants.some((p) => p.userId === user.id);
+    if (action === "meeting.view" || action === "meeting.join") return isInMyRoom;
+    return false;
+  }
+
   const isManager = isManagerOfMeeting(user, meeting);
 
   switch (action) {
