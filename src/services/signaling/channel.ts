@@ -17,8 +17,26 @@ export type TransportHandlers = {
   onStatus: (connected: boolean) => void;
 };
 
-const RECONNECT_BASE_MS = 1000;
-const RECONNECT_MAX_MS = 15000;
+export const RECONNECT_BASE_MS = 1000;
+export const RECONNECT_MAX_MS = 15000;
+
+// จำกัดคิวก่อนต่อสำเร็จ กันหน่วยความจำบวมตอนหลุดการเชื่อมต่อนาน ๆ
+// (เช่น subtitle_text ที่ยิงถี่ทุกผลลัพธ์การถอดเสียงบางส่วน)
+export const MAX_QUEUE_SIZE = 50;
+
+// สัญญาณกลุ่มนี้คือ "สถานะล่าสุด" ของสิ่งหนึ่ง ไม่ใช่ลำดับเหตุการณ์ที่ต้องเรียงกัน
+// ต่อกลับมาแล้วส่งแค่ค่าล่าสุดก็พอ — ของเก่าในคิวถูกแทนที่ ไม่สะสม
+const COALESCE_ON_RECONNECT: ReadonlySet<SignalType> = new Set<SignalType>([
+  "hand_raise",
+  "hand_lower",
+  "doc_share",
+  "doc_share_page",
+  "doc_share_stop",
+]);
+
+// สัญญาณกลุ่มนี้ transient เกินกว่าจะมีความหมายหลังต่อกลับมา — ทิ้งทันทีตอนออฟไลน์
+// (คำบรรยายบางส่วนที่เก่าไปแล้วไม่มีประโยชน์ ผู้ใช้พิมพ์/พูดใหม่เองเมื่อกลับมาต่อ)
+const DISCARD_WHEN_OFFLINE: ReadonlySet<SignalType> = new Set<SignalType>(["subtitle_text"]);
 
 export function wsBaseUrl(): string {
   return process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001/ws";
@@ -40,17 +58,27 @@ export function openTransport(meetingId: string, handlers: TransportHandlers): R
   let closedByCaller = false;
   let attempt = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  const queue: string[] = [];
+  const queue: { type: SignalType; body: string }[] = [];
 
   const flush = () => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    while (queue.length > 0) socket.send(queue.shift()!);
+    while (queue.length > 0) socket.send(queue.shift()!.body);
+  };
+
+  // ใช้ backoff เดียวกันทั้งตอน onclose และตอนไม่มี token — ไม่งั้น transport
+  // จะค้างตายถ้า provider mount ก่อน token hydrate เสร็จ (เช่น hard refresh)
+  const scheduleReconnect = () => {
+    if (closedByCaller) return;
+    attempt += 1;
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempt - 1), RECONNECT_MAX_MS);
+    reconnectTimer = setTimeout(connect, delay);
   };
 
   const connect = () => {
     const token = getAccessToken();
     if (!token) {
       handlers.onStatus(false);
+      scheduleReconnect();
       return;
     }
 
@@ -77,10 +105,7 @@ export function openTransport(meetingId: string, handlers: TransportHandlers): R
 
     socket.onclose = () => {
       handlers.onStatus(false);
-      if (closedByCaller) return;
-      attempt += 1;
-      const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempt - 1), RECONNECT_MAX_MS);
-      reconnectTimer = setTimeout(connect, delay);
+      scheduleReconnect();
     };
 
     socket.onerror = () => {
@@ -93,8 +118,20 @@ export function openTransport(meetingId: string, handlers: TransportHandlers): R
   return {
     send(type, payload) {
       const body = JSON.stringify({ type, payload });
-      if (socket && socket.readyState === WebSocket.OPEN) socket.send(body);
-      else queue.push(body);
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(body);
+        return;
+      }
+      if (DISCARD_WHEN_OFFLINE.has(type)) return;
+      if (COALESCE_ON_RECONNECT.has(type)) {
+        const existingIndex = queue.findIndex((item) => item.type === type);
+        if (existingIndex !== -1) {
+          queue[existingIndex] = { type, body };
+          return;
+        }
+      }
+      queue.push({ type, body });
+      if (queue.length > MAX_QUEUE_SIZE) queue.shift();
     },
     close() {
       closedByCaller = true;
