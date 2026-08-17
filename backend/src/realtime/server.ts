@@ -41,6 +41,20 @@ export function attachRealtime(server: http.Server): WebSocketServer {
     const claims = verifyAccessToken(token);
     if (!claims) return socket.close(CLOSE_UNAUTHORIZED, 'invalid token');
 
+    const client: RoomClient = {
+      socket,
+      meetingId,
+      userId: claims.sub,
+      userName: claims.name,
+      role: claims.role,
+    };
+
+    // ผูก listener ก่อน await ใดๆ — ถ้า client หลุดระหว่างรอ query membership
+    // (ยังไม่ถูก addClient) removeClient จะเป็น no-op ปลอดภัย ไม่ผูกทีหลังเพราะ
+    // ถ้าหลุดระหว่างรอ query จะไม่มีใครมาถอดทะเบียนออก กลายเป็น client ค้างตลอดไป
+    socket.on('close', () => removeClient(client));
+    socket.on('error', () => removeClient(client));
+
     // guest token ผูกกับการประชุมเดียวตอนออก token — เข้าห้องอื่นไม่ได้
     if (claims.role === 'guest') {
       if (claims.meetingId !== meetingId) return socket.close(CLOSE_FORBIDDEN, 'not your meeting');
@@ -49,13 +63,9 @@ export function attachRealtime(server: http.Server): WebSocketServer {
       if (!member) return socket.close(CLOSE_FORBIDDEN, 'not a participant');
     }
 
-    const client: RoomClient = {
-      socket,
-      meetingId,
-      userId: claims.sub,
-      userName: claims.name,
-      role: claims.role,
-    };
+    // socket อาจถูกปิดไปแล้วระหว่างรอ query ข้างบน — ห้ามลงทะเบียน client ที่ตายแล้ว
+    if (socket.readyState !== WebSocket.OPEN) return;
+
     addClient(client);
 
     send(socket, {
@@ -75,9 +85,6 @@ export function attachRealtime(server: http.Server): WebSocketServer {
       }
       await handleSignal(client, parsed);
     });
-
-    socket.on('close', () => removeClient(client));
-    socket.on('error', () => removeClient(client));
   });
 
   return wss;
