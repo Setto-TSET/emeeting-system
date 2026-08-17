@@ -210,13 +210,61 @@ describe('signal handlers', () => {
     expect(message.payload.raised).toEqual([
       expect.objectContaining({ userId: 'U-003', userName: 'นางสาว มาลี รักษาสัตย์' }),
     ]);
+    // lastAction ของการยกมือตัวเอง: userId และ byUserId ต้องเป็นคนเดียวกัน (ผู้ส่งเอง)
+    expect(message.payload.lastAction).toEqual({ userId: 'U-003', byUserId: 'U-003' });
 
     const lowered = nextMessage(a);
     b.send(JSON.stringify({ type: 'hand_raise', payload: { raised: false } }));
-    expect((await lowered).payload.raised).toEqual([]);
+    const loweredMessage = await lowered;
+    expect(loweredMessage.payload.raised).toEqual([]);
+    expect(loweredMessage.payload.lastAction).toEqual({ userId: 'U-003', byUserId: 'U-003' });
 
     a.close();
     b.close();
+  });
+
+  it('refuses hand_lower from a non-manager targeting someone else, but lets a manager lower it — and stamps lastAction with the real actor', async () => {
+    const manager = await openClient('U-999', 'IT Admin'); // role admin ∈ MANAGER_ROLES
+    const target = await openClient('U-003', 'นางสาว มาลี รักษาสัตย์', 'staff');
+    const outsider = await openClient('U-001', 'นาย สมชาย ใจดี', 'staff');
+
+    // broadcast กระจายไปทุก socket ในห้อง (รวมทั้ง target/outsider เอง) — ต้องดักรับให้ครบ
+    // ทุกตัวก่อนไปทำ action ถัดไป ไม่งั้นข้อความเก่าที่ยังไม่ถูกอ่านจะมาปนกับผลลัพธ์รอบถัดไป
+    const raisedAll = Promise.all([nextMessage(manager), nextMessage(target), nextMessage(outsider)]);
+    target.send(JSON.stringify({ type: 'hand_raise', payload: { raised: true } }));
+    await raisedAll;
+
+    // ผู้ใช้ทั่วไปที่ไม่ใช่เจ้าของมือและไม่ใช่ manager ต้องเอามือคนอื่นลงไม่ได้ — ถ้าเอาการเช็คสิทธิ์
+    // ออก (targetUserId !== client.userId && !MANAGER_ROLES.has(...)) เทสต์นี้จะจับได้ทันที
+    const rejected = nextMessage(outsider);
+    outsider.send(JSON.stringify({ type: 'hand_lower', payload: { targetUserId: 'U-003' } }));
+    expect((await rejected).type).toBe('signal_error');
+
+    const stillRaised = (await query('SELECT user_id FROM hand_raises WHERE meeting_id = ? AND user_id = ?', [
+      MEETING,
+      'U-003',
+    ])) as unknown[];
+    expect(stillRaised).toHaveLength(1);
+
+    // manager เอามือของ U-003 ลงได้ — lastAction ต้องบอกว่ามือของใคร (U-003) และใครเป็นคนกด (U-999)
+    // broadcast นี้ก็กระจายไปทุก socket เช่นกัน ต้องดักรับให้ครบทั้งสามอีกครั้ง
+    const loweredAll = Promise.all([nextMessage(manager), nextMessage(target), nextMessage(outsider)]);
+    manager.send(JSON.stringify({ type: 'hand_lower', payload: { targetUserId: 'U-003' } }));
+    const [, loweredMessage] = await loweredAll;
+    expect(loweredMessage.type).toBe('hand_state');
+    expect(loweredMessage.payload.raised).toEqual([]);
+    expect(loweredMessage.payload.lastAction).toEqual({ userId: 'U-003', byUserId: 'U-999' });
+    expect(loweredMessage.payload.lastAction.userId).not.toBe(loweredMessage.payload.lastAction.byUserId);
+
+    const gone = (await query('SELECT user_id FROM hand_raises WHERE meeting_id = ? AND user_id = ?', [
+      MEETING,
+      'U-003',
+    ])) as unknown[];
+    expect(gone).toHaveLength(0);
+
+    manager.close();
+    target.close();
+    outsider.close();
   });
 
   it('relays only final subtitle segments to storage but broadcasts interim ones', async () => {
@@ -248,6 +296,123 @@ describe('signal handlers', () => {
     const a = await openClient('U-999', 'IT Admin');
     a.send(JSON.stringify({ type: 'not_a_real_signal', payload: {} }));
     await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(a.readyState).toBe(WebSocket.OPEN);
+    a.close();
+  });
+
+  it('starts a document share, lets the sharer change pages, and refuses an unrelated non-manager', async () => {
+    const sharer = await openClient('U-001', 'นาย สมชาย ใจดี', 'staff');
+    const outsider = await openClient('U-003', 'นางสาว มาลี รักษาสัตย์', 'staff');
+
+    const started = nextMessage(outsider);
+    sharer.send(JSON.stringify({ type: 'doc_share', payload: { fileId: 'F-1', fileName: 'สรุปการประชุม.pdf' } }));
+    const startMessage = await started;
+    expect(startMessage.type).toBe('doc_share_state');
+    expect(startMessage.payload.share).toEqual(
+      expect.objectContaining({ fileId: 'F-1', fileName: 'สรุปการประชุม.pdf', sharedBy: 'U-001', page: 1 })
+    );
+
+    let rows = (await query('SELECT file_id, page, shared_by FROM doc_shares WHERE meeting_id = ?', [
+      MEETING,
+    ])) as { file_id: string; page: number; shared_by: string }[];
+    expect(rows).toEqual([{ file_id: 'F-1', page: 1, shared_by: 'U-001' }]);
+
+    // เจ้าของการแชร์เปลี่ยนหน้าได้เอง
+    const paged = nextMessage(outsider);
+    sharer.send(JSON.stringify({ type: 'doc_share_page', payload: { page: 3 } }));
+    const pagedMessage = await paged;
+    expect(pagedMessage.payload.share.page).toBe(3);
+
+    rows = (await query('SELECT file_id, page, shared_by FROM doc_shares WHERE meeting_id = ?', [
+      MEETING,
+    ])) as { file_id: string; page: number; shared_by: string }[];
+    expect(rows).toEqual([{ file_id: 'F-1', page: 3, shared_by: 'U-001' }]);
+
+    // ผู้ใช้อื่นที่ไม่ใช่เจ้าของและไม่ใช่ manager เปลี่ยนหน้าไม่ได้ — เทสต์นี้จะจับได้ถ้าลบ
+    // การเช็คสิทธิ์ (current.sharedBy !== client.userId && !MANAGER_ROLES.has(...)) ออก
+    const rejectedPage = nextMessage(outsider);
+    outsider.send(JSON.stringify({ type: 'doc_share_page', payload: { page: 5 } }));
+    expect((await rejectedPage).type).toBe('signal_error');
+
+    rows = (await query('SELECT file_id, page, shared_by FROM doc_shares WHERE meeting_id = ?', [
+      MEETING,
+    ])) as { file_id: string; page: number; shared_by: string }[];
+    expect(rows).toEqual([{ file_id: 'F-1', page: 3, shared_by: 'U-001' }]);
+
+    // ผู้ใช้อื่นที่ไม่ใช่เจ้าของและไม่ใช่ manager หยุดแชร์ของคนอื่นไม่ได้
+    const rejectedStop = nextMessage(outsider);
+    outsider.send(JSON.stringify({ type: 'doc_share_stop', payload: {} }));
+    expect((await rejectedStop).type).toBe('signal_error');
+
+    rows = (await query('SELECT file_id, page, shared_by FROM doc_shares WHERE meeting_id = ?', [
+      MEETING,
+    ])) as { file_id: string; page: number; shared_by: string }[];
+    expect(rows).toHaveLength(1);
+
+    // เจ้าของหยุดแชร์เองได้ — ต้องลบแถวออกจริงและกระจาย share: null
+    const stopped = nextMessage(outsider);
+    sharer.send(JSON.stringify({ type: 'doc_share_stop', payload: {} }));
+    const stopMessage = await stopped;
+    expect(stopMessage.type).toBe('doc_share_state');
+    expect(stopMessage.payload.share).toBeNull();
+
+    const finalRows = (await query('SELECT file_id FROM doc_shares WHERE meeting_id = ?', [MEETING])) as {
+      file_id: string;
+    }[];
+    expect(finalRows).toHaveLength(0);
+
+    sharer.close();
+    outsider.close();
+  });
+
+  it('lets a manager stop another participant\'s document share', async () => {
+    const sharer = await openClient('U-001', 'นาย สมชาย ใจดี', 'staff');
+    const manager = await openClient('U-999', 'IT Admin'); // role admin ∈ MANAGER_ROLES
+
+    const started = nextMessage(manager);
+    sharer.send(JSON.stringify({ type: 'doc_share', payload: { fileId: 'F-2', fileName: 'วาระ.pdf' } }));
+    await started;
+
+    const stopped = nextMessage(sharer);
+    manager.send(JSON.stringify({ type: 'doc_share_stop', payload: {} }));
+    const stopMessage = await stopped;
+    expect(stopMessage.type).toBe('doc_share_state');
+    expect(stopMessage.payload.share).toBeNull();
+
+    const rows = (await query('SELECT file_id FROM doc_shares WHERE meeting_id = ?', [MEETING])) as unknown[];
+    expect(rows).toHaveLength(0);
+
+    sharer.close();
+    manager.close();
+  });
+
+  it('rejects vote_create with no title, vote_cast with a missing optionId, and a non-object payload — without crashing or writing', async () => {
+    const a = await openClient('U-999', 'IT Admin');
+
+    // vote_create ไม่มี title
+    let error = nextMessage(a);
+    a.send(JSON.stringify({ type: 'vote_create', payload: { options: [{ id: 'opt-1', label: 'x' }] } }));
+    expect((await error).type).toBe('signal_error');
+
+    let topics = (await query('SELECT id FROM vote_topics WHERE meeting_id = ?', [MEETING])) as unknown[];
+    expect(topics).toHaveLength(0);
+
+    // vote_cast ไม่มี optionId
+    error = nextMessage(a);
+    a.send(JSON.stringify({ type: 'vote_cast', payload: { topicId: 'whatever' } }));
+    expect((await error).type).toBe('signal_error');
+
+    const votes = (await query('SELECT topic_id FROM vote_records')) as unknown[];
+    expect(votes).toHaveLength(0);
+
+    // payload ไม่ใช่ object เลย — ต้องไม่ throw และไม่ปิด socket
+    error = nextMessage(a);
+    a.send(JSON.stringify({ type: 'vote_create', payload: 'not-an-object' }));
+    expect((await error).type).toBe('signal_error');
+
+    topics = (await query('SELECT id FROM vote_topics WHERE meeting_id = ?', [MEETING])) as unknown[];
+    expect(topics).toHaveLength(0);
+
     expect(a.readyState).toBe(WebSocket.OPEN);
     a.close();
   });
