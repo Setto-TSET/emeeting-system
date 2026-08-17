@@ -8,6 +8,7 @@
     "build": "tsc && node -e \"require('fs').copyFileSync('src/database/schema.sql','dist/database/schema.sql')\"",
     "start": "node dist/server.js",
     "migrate": "ts-node src/database/migrations.ts",
+    "seed": "ts-node -r tsconfig-paths/register src/database/seed.ts",
     "test": "jest"
   },
   "keywords": [
@@ -40,6 +41,7 @@
     "supertest": "^7.2.2",
     "ts-jest": "^29.1.1",
     "ts-node": "^10.9.1",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.2.2"
   }
 }
