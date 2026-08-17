@@ -1,73 +1,41 @@
 // ═══════════════════════════════════════════
-// Database Migrations
+// Migrations — รัน schema.sql ทีละคำสั่ง
+// ทุกคำสั่งเป็น CREATE TABLE IF NOT EXISTS จึงรันซ้ำได้ปลอดภัย
 // ═══════════════════════════════════════════
-// Run: npm run migrate
 
-import { query } from './connection';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { query, close } from './connection';
 
-async function runMigrations() {
-  try {
-    console.log('🚀 Running migrations...');
+export async function runMigrations(): Promise<void> {
+  const sql = readFileSync(join(__dirname, 'schema.sql'), 'utf8');
+  const statements = sql
+    .split(';')
+    .map((s) => s.trim())
+    .filter((s) => {
+      // ตัดคอมเมนต์ทิ้งก่อนเช็คว่าเหลือคำสั่ง SQL จริงหรือไม่
+      // (ไม่ใช้ startsWith('--') เพราะบางคำสั่งมีคอมเมนต์นำหน้า CREATE TABLE)
+      const withoutComments = s
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('--'))
+        .join('\n')
+        .trim();
+      return withoutComments.length > 0;
+    });
 
-    // ─── Table: transcriptions ───
-    // NOTE: ไม่มีตาราง room mapping แยกแล้ว — ZegoCloud token ออกจาก Next.js API route
-    // แบบ stateless (roomKey มาจาก meeting.conferenceRoomKey ตรงๆ ไม่ต้อง persist)
-    await query(`
-      CREATE TABLE IF NOT EXISTS transcriptions (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        meeting_id VARCHAR(50) UNIQUE NOT NULL,
-        transcript_status ENUM('none', 'processing', 'ready', 'failed') DEFAULT 'none',
-        segments JSON,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_meeting_id (meeting_id),
-        INDEX idx_status (transcript_status)
-      );
-    `);
-    console.log('✅ transcriptions table created');
-
-    // ─── Table: summaries ───
-    await query(`
-      CREATE TABLE IF NOT EXISTS summaries (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        meeting_id VARCHAR(50) UNIQUE NOT NULL,
-        summary_json JSON,
-        is_draft BOOLEAN DEFAULT true,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_meeting_id (meeting_id),
-        INDEX idx_is_draft (is_draft)
-      );
-    `);
-    console.log('✅ summaries table created');
-
-    // ─── Table: audit_logs (ทำจริงเมื่อต้อง) ───
-    await query(`
-      CREATE TABLE IF NOT EXISTS audit_logs (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        user_id VARCHAR(50),
-        action VARCHAR(100),
-        meeting_id VARCHAR(50),
-        resource VARCHAR(100),
-        ip_address VARCHAR(45),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_user_id (user_id),
-        INDEX idx_meeting_id (meeting_id),
-        INDEX idx_created_at (created_at)
-      );
-    `);
-    console.log('✅ audit_logs table created');
-
-    console.log('✅ All migrations completed successfully');
-  } catch (error) {
-    console.error('❌ Migration failed:', error);
-    process.exit(1);
+  for (const statement of statements) {
+    await query(statement);
   }
 }
 
-// Run if called directly
 if (require.main === module) {
-  runMigrations().then(() => process.exit(0));
+  runMigrations()
+    .then(() => {
+      console.log('✅ Migrations complete');
+      return close();
+    })
+    .catch((error) => {
+      console.error('❌ Migration failed:', error);
+      process.exit(1);
+    });
 }
-
-export { runMigrations };
