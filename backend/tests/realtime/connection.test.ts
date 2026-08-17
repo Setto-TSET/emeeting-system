@@ -1,0 +1,127 @@
+import http from 'http';
+import { AddressInfo } from 'net';
+import WebSocket from 'ws';
+import { query, close } from '../../src/database/connection';
+import { runMigrations } from '../../src/database/migrations';
+import { seedFromMockData } from '../../src/database/seed';
+import { signAccessToken } from '../../src/services/auth';
+import { createApp } from '../../src/server';
+import { attachRealtime } from '../../src/realtime/server';
+
+let server: http.Server;
+let port: number;
+
+// หมายเหตุ: ข้อมูลจำลองมีการประชุมเดียวคือ MT-2569-010 (MT-2569-005..009 ถูกตัดออกแล้ว)
+const MEETING_ID = 'MT-2569-010';
+
+function connect(url: string): Promise<{ socket: WebSocket; opened: boolean; closeCode?: number }> {
+  return new Promise((resolve) => {
+    const socket = new WebSocket(url);
+    let settled = false;
+
+    socket.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      resolve({ socket, opened: false, closeCode: code });
+    });
+
+    // หมายเหตุ: ตาม WS spec, 'open' ที่ฝั่ง client ยิงก่อนเสมอแม้ server จะปิด
+    // connection ทันทีหลัง handshake (เช่นตอน auth ล้มเหลว) เพราะปิดแบบมีโค้ด
+    // ต้องผ่าน close frame ซึ่งมาหลัง handshake เสร็จเท่านั้น — เคสที่ server
+    // ต้อง query DB ก่อนปิด (membership check) ใช้เวลานานกว่าหนึ่ง event loop tick
+    // จึงรอ 100ms หลัง 'open' เพื่อเช็คอีกครั้งว่า socket ยังเปิดอยู่จริง
+    socket.on('open', () => {
+      setTimeout(() => {
+        if (settled) return;
+        if (socket.readyState === WebSocket.OPEN) {
+          settled = true;
+          resolve({ socket, opened: true });
+        }
+      }, 100);
+    });
+  });
+}
+
+describe('realtime connection', () => {
+  beforeAll(async () => {
+    await runMigrations();
+    await query('DELETE FROM meeting_participants');
+    await query('DELETE FROM meetings');
+    await query('DELETE FROM app_users');
+    await seedFromMockData('Meeting@2569');
+
+    server = http.createServer(createApp());
+    attachRealtime(server);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    port = (server.address() as AddressInfo).port;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await close();
+  });
+
+  it('rejects a connection with no token', async () => {
+    const result = await connect(`ws://localhost:${port}/ws?meetingId=${MEETING_ID}`);
+    expect(result.opened).toBe(false);
+    expect(result.closeCode).toBe(4401);
+  });
+
+  it('rejects a connection with an invalid token', async () => {
+    const result = await connect(`ws://localhost:${port}/ws?meetingId=${MEETING_ID}&token=garbage`);
+    expect(result.opened).toBe(false);
+    expect(result.closeCode).toBe(4401);
+  });
+
+  it('rejects a valid token for a meeting the user is not a member of', async () => {
+    await query('DELETE FROM meeting_participants WHERE meeting_id = ? AND user_id = ?', [
+      MEETING_ID,
+      'U-005',
+    ]);
+    const token = signAccessToken({
+      sub: 'U-005',
+      email: 'decha@e-office.cloud',
+      name: 'นาย เดชา เก่งจริง',
+      role: 'staff',
+    });
+    const result = await connect(`ws://localhost:${port}/ws?meetingId=${MEETING_ID}&token=${token}`);
+    expect(result.opened).toBe(false);
+    expect(result.closeCode).toBe(4403);
+  });
+
+  it('accepts a member and lets an admin in without a membership row', async () => {
+    const memberRow = (await query(
+      'SELECT user_id FROM meeting_participants WHERE meeting_id = ? LIMIT 1',
+      [MEETING_ID]
+    )) as { user_id: string }[];
+    expect(memberRow.length).toBe(1);
+
+    const adminToken = signAccessToken({
+      sub: 'U-999',
+      email: 'admin@e-office.cloud',
+      name: 'IT Admin',
+      role: 'admin',
+    });
+    const result = await connect(`ws://localhost:${port}/ws?meetingId=${MEETING_ID}&token=${adminToken}`);
+    expect(result.opened).toBe(true);
+    result.socket.close();
+  });
+
+  it('confirms the join with a room_joined message carrying the identity from the token', async () => {
+    const token = signAccessToken({
+      sub: 'U-999',
+      email: 'admin@e-office.cloud',
+      name: 'IT Admin',
+      role: 'admin',
+    });
+    const socket = new WebSocket(`ws://localhost:${port}/ws?meetingId=${MEETING_ID}&token=${token}`);
+
+    const message = await new Promise<Record<string, unknown>>((resolve) => {
+      socket.on('message', (raw) => resolve(JSON.parse(raw.toString())));
+    });
+
+    expect(message.type).toBe('room_joined');
+    expect((message.payload as Record<string, unknown>).userId).toBe('U-999');
+    socket.close();
+  });
+});

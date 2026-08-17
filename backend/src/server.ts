@@ -5,11 +5,13 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import http from 'http';
 import { initDatabase } from './database/connection';
 import { errorHandler } from './middleware';
 import authRoutes from './routes/auth';
 import transcriptionRoutes from './routes/transcription';
 import summarizeRoutes from './routes/summarize';
+import { attachRealtime } from './realtime/server';
 
 dotenv.config();
 
@@ -58,9 +60,12 @@ async function start() {
     await initDatabase();
     console.log('✅ Database connected');
 
-    const app = createApp();
-    app.listen(PORT, () => {
+    const server = http.createServer(createApp());
+    attachRealtime(server);
+
+    server.listen(PORT, () => {
       console.log(`✅ Server running on http://localhost:${PORT}`);
+      console.log(`✅ WebSocket listening on ws://localhost:${PORT}/ws`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
