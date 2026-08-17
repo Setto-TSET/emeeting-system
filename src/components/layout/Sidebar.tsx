@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { systemRoleLabels, systemRoleColors } from "@/data";
 import { useCurrentUser } from "@/context/UserContext";
-import { getNavGroups, HOME_ROUTE } from "@/lib/access";
+import { getNavGroups, getHomeRoute } from "@/lib/access";
 
 function SidebarNav({ pathname }: { pathname: string }) {
   const router = useRouter();
@@ -28,7 +28,7 @@ function SidebarNav({ pathname }: { pathname: string }) {
   return (
     <div className="flex h-full flex-col bg-transparent">
       {/* Logo */}
-      <Link href={HOME_ROUTE} className="block px-5 pt-5 pb-4">
+      <Link href={getHomeRoute(currentUser.systemRole)} className="block px-5 pt-5 pb-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white flex-shrink-0">
             <span className="material-symbols-outlined text-[26px] text-primary">event_note</span>
