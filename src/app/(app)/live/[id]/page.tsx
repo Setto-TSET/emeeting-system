@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
 import { RoomSignalingProvider, useRoomSignaling } from "@/context/RoomSignalingContext";
-import { HandRaiseList, type RaisedHand } from "@/components/meeting/HandRaiseList";
+import { HandRaiseList } from "@/components/meeting/HandRaiseList";
 import { SimulatedDocumentViewer, DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { ExternalConferenceStage } from "@/components/meeting/ExternalConferenceStage";
 import { ZegoCloudEmbedStage } from "@/components/meeting/ZegoCloudEmbedStage";
@@ -21,8 +21,8 @@ import { resolveConference } from "@/lib/conference";
 import { resolveVideoSurface } from "@/services/video";
 import { requestVideoCredential, type VideoCredential } from "@/services/credentials";
 import { webSpeechProvider } from "@/services/speech/webSpeechProvider";
-import { appendSegment } from "@/services/transcript/store";
-import type { RoomSignal } from "@/services/signaling/types";
+import { fetchRoomSnapshot } from "@/services/rooms/snapshot";
+import type { RoomSignal, RaisedHandDto } from "@/services/signaling/types";
 import { can } from "@/lib/authz";
 import { MeetingParticipant, MeetingFile, canViewFile } from "@/data";
 
@@ -34,32 +34,25 @@ type Broadcast = ReturnType<typeof useRoomSignaling>["broadcast"];
  * — ส่ง broadcast กลับขึ้นไปให้ parent ผ่าน ref แทนการยกทั้งหน้าเข้าไปอยู่ใต้ Provider
  *
  * คอมโพเนนต์นี้ mount อยู่ตลอดอายุห้องประชุม (ไม่ผูกกับแท็บที่เปิดอยู่) จึงเป็นที่รวมของทุกสัญญาณ
- * ที่ต้องทำงานได้ไม่ว่าผู้ใช้จะเปิดแท็บไหนอยู่: hand_raise/hand_lower, subtitle_text (คำบรรยายที่ผู้พูดคนอื่นส่งมา —
- * บันทึกท่อน final ที่รับมาลง transcript store ของเครื่องนี้เอง ดูข้อจำกัดที่ store.ts), doc_share* (การแชร์เอกสาร),
+ * ที่ต้องทำงานได้ไม่ว่าผู้ใช้จะเปิดแท็บไหนอยู่: hand_state (สถานะมือที่ยกอยู่ ณ ปัจจุบัน — server เป็นเจ้าของ),
+ * subtitle_text (คำบรรยายที่ผู้พูดคนอื่นส่งมา — server เป็นคนบันทึกลง transcript เมื่อ isFinal, ฝั่งนี้แค่แสดงผล),
+ * doc_share_state (สถานะเอกสารที่กำลังแชร์ ณ ปัจจุบัน — server เป็นเจ้าของ),
  * และ signal_error (แจ้งเตือนเมื่อ server ปฏิเสธเจตนาที่ส่งไป — สัญญาณ vote_* ตอนนี้ VotePanel ฟังเอง)
  */
 function RoomSignalBridge({
   currentUserId,
-  meetingId,
-  meetingStartRef,
   broadcastRef,
   setRaisedHands,
   setLatestSubtitle,
   setSharedFileId,
   setSharedViewerPage,
-  isFileVisible,
-  setVoteRefreshToken,
 }: {
   currentUserId: string;
-  meetingId: string;
-  meetingStartRef: React.MutableRefObject<number>;
   broadcastRef: React.MutableRefObject<Broadcast | null>;
-  setRaisedHands: React.Dispatch<React.SetStateAction<Map<string, RaisedHand>>>;
+  setRaisedHands: React.Dispatch<React.SetStateAction<RaisedHandDto[]>>;
   setLatestSubtitle: React.Dispatch<React.SetStateAction<RoomSignal<"subtitle_text"> | null>>;
   setSharedFileId: React.Dispatch<React.SetStateAction<string | null>>;
   setSharedViewerPage: React.Dispatch<React.SetStateAction<number>>;
-  isFileVisible: (fileId: string) => boolean;
-  setVoteRefreshToken: React.Dispatch<React.SetStateAction<number>>;
 }) {
   const { broadcast, useSignal } = useRoomSignaling();
 
@@ -67,68 +60,21 @@ function RoomSignalBridge({
     broadcastRef.current = broadcast;
   }, [broadcast, broadcastRef]);
 
-  useSignal("hand_raise", (signal) => {
-    setRaisedHands((prev) => {
-      const copy = new Map(prev);
-      if (signal.payload.raised) {
-        copy.set(signal.senderId, { userId: signal.senderId, userName: signal.senderName, raisedAt: signal.timestamp });
-      } else {
-        copy.delete(signal.senderId);
-      }
-      return copy;
-    });
-  });
-
-  useSignal("hand_lower", (signal) => {
-    if (signal.payload.targetUserId === currentUserId) {
-      setRaisedHands((prev) => {
-        const copy = new Map(prev);
-        copy.delete(currentUserId);
-        return copy;
-      });
-      toast.info("โฮสต์ลดมือให้คุณแล้ว");
-    } else {
-      setRaisedHands((prev) => {
-        const copy = new Map(prev);
-        copy.delete(signal.payload.targetUserId);
-        return copy;
-      });
-    }
+  useSignal("hand_state", (signal) => {
+    setRaisedHands(signal.payload.raised);
   });
 
   useSignal("subtitle_text", (signal) => {
     setLatestSubtitle(signal);
-    if (signal.payload.isFinal) {
-      appendSegment(meetingId, {
-        speakerId: signal.senderId,
-        speakerName: signal.senderName,
-        startSec: (signal.timestamp - meetingStartRef.current) / 1000,
-        text: signal.payload.text,
-      });
+  });
+
+  useSignal("doc_share_state", (signal) => {
+    const share = signal.payload.share;
+    setSharedFileId(share?.fileId ?? null);
+    setSharedViewerPage(share?.page ?? 1);
+    if (share && signal.senderId !== currentUserId) {
+      toast.info(`${share.sharedName} กำลังแชร์เอกสาร: ${share.fileName}`);
     }
-  });
-
-  useSignal("doc_share", (signal) => {
-    if (signal.senderId === currentUserId) return; // ไม่ต้อง apply สัญญาณของตัวเองซ้ำ
-    // กันชื่อไฟล์ลับหลุดไปหาคนที่ไม่มีสิทธิ์ดู — เช็คสิทธิ์ก่อนแม้แต่จะ toast ชื่อไฟล์
-    if (!isFileVisible(signal.payload.fileId)) {
-      toast.info(`${signal.senderName} กำลังแชร์เอกสารที่คุณไม่มีสิทธิ์ดู`);
-      return;
-    }
-    setSharedFileId(signal.payload.fileId);
-    setSharedViewerPage(1);
-    toast.info(`${signal.senderName} กำลังแชร์เอกสาร: ${signal.payload.fileName}`);
-  });
-
-  useSignal("doc_share_page", (signal) => {
-    if (signal.senderId === currentUserId) return;
-    setSharedViewerPage(signal.payload.page);
-  });
-
-  useSignal("doc_share_stop", (signal) => {
-    if (signal.senderId === currentUserId) return;
-    setSharedFileId(null);
-    toast.info(`${signal.senderName} หยุดแชร์เอกสารแล้ว`);
   });
 
   useSignal("signal_error", (signal) => {
@@ -154,8 +100,10 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const [localParticipant, setLocalParticipant] = useState<MeetingParticipant | null>(null);
 
   // UI Control states
-  const [raisedHands, setRaisedHands] = useState<Map<string, RaisedHand>>(new Map());
-  const handRaised = raisedHands.has(currentUser.id);
+  // server เป็นเจ้าของสถานะมือที่ยกอยู่: ส่งเจตนา (hand_raise/hand_lower) แล้วรอ hand_state
+  // กลับมาทับของเดิม ไม่มีการอัปเดตแบบ optimistic ในเครื่องนี้
+  const [raisedHands, setRaisedHands] = useState<RaisedHandDto[]>([]);
+  const handRaised = raisedHands.some((h) => h.userId === currentUser.id);
   const broadcastRef = useRef<Broadcast | null>(null);
   const [subtitleOn, setSubtitleOn] = useState(false);
   const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
@@ -254,6 +202,22 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       setHasJoined(true);
     }
   }, [meeting?.id, currentUser]);
+
+  // คนที่เข้าห้องทีหลังต้องได้สถานะปัจจุบันทั้งก้อนก่อน — ดึง snapshot ครั้งเดียวตอนห้อง mount
+  // แล้วค่อยฟังสัญญาณ live ต่อ (RoomSignalBridge) ไม่งั้นจะไม่เห็นมือที่ยกอยู่/เอกสารที่แชร์ค้างไว้ก่อนหน้า
+  useEffect(() => {
+    if (!meeting) return;
+    let cancelled = false;
+    fetchRoomSnapshot(meeting.id).then((snapshot) => {
+      if (cancelled) return;
+      setRaisedHands(snapshot.raisedHands);
+      setSharedFileId(snapshot.docShare?.fileId ?? null);
+      setVoteRefreshToken((n) => n + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [meeting?.id]);
 
   // Detect when meeting ends (organizer ended it) — show notification to guests
   // Can't use isManager here because it's after early returns, so compute inline
@@ -435,25 +399,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     setChatInput("");
   };
 
-  const handleHandRaise = () => {
-    const next = !handRaised;
-    broadcastRef.current?.({ type: "hand_raise", payload: { raised: next } });
-    setRaisedHands((prev) => {
-      const copy = new Map(prev);
-      if (next) copy.set(currentUser.id, { userId: currentUser.id, userName: currentUser.name, raisedAt: Date.now() });
-      else copy.delete(currentUser.id);
-      return copy;
-    });
-  };
-
-  const handleLowerHand = (userId: string) => {
-    broadcastRef.current?.({ type: "hand_lower", payload: { targetUserId: userId } });
-    setRaisedHands((prev) => {
-      const copy = new Map(prev);
-      copy.delete(userId);
-      return copy;
-    });
-  };
+  // server เป็นเจ้าของสถานะมือที่ยกอยู่: ส่งเจตนาไปเท่านั้น แล้วรอ hand_state กลับมาทับของเดิม
+  const toggleMyHand = (next: boolean) => broadcastRef.current?.({ type: "hand_raise", payload: { raised: next } });
+  const lowerOther = (targetUserId: string) => broadcastRef.current?.({ type: "hand_lower", payload: { targetUserId } });
 
   // แชร์เอกสารให้ผู้เข้าร่วมทั้งหมดในห้อง — broadcast แล้วให้ผู้เข้าร่วมคนอื่นตามหน้าจอโฮสต์อัตโนมัติ
   const handleShareFile = (file: MeetingFile) => {
@@ -491,25 +439,20 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     webSpeechProvider.start(
       "th-TH",
       (result) => {
+        // เวลาที่ผ่านไปนับจากเริ่มห้อง — ส่งไปเป็น startSec ให้ server บันทึก offset ที่ถูกต้อง
+        // ตอนได้รับ subtitle_text ที่ isFinal (ฝั่งนี้ไม่บันทึกเองแล้ว ดู transcript/store.ts)
+        const elapsedSeconds = (Date.now() - meetingStartRef.current) / 1000;
         const signal: RoomSignal<"subtitle_text"> = {
           type: "subtitle_text",
           senderId: currentUser.id,
           senderName: currentUser.name,
           timestamp: Date.now(),
-          payload: { text: result.text, isFinal: result.isFinal, lang: result.lang },
+          payload: { text: result.text, isFinal: result.isFinal, lang: result.lang, startSec: elapsedSeconds },
         };
         broadcastRef.current?.({ type: "subtitle_text", payload: signal.payload });
         // BroadcastChannel ไม่ส่งข้อความกลับมาหาผู้ส่งเอง — ต้องเซ็ต latestSubtitle ในเครื่องนี้เองด้วย
         // ไม่งั้นคนที่พูดจะไม่เห็นซับไตเติลของตัวเอง (ดู Fix 1)
         setLatestSubtitle(signal);
-        if (result.isFinal) {
-          appendSegment(meeting.id, {
-            speakerId: currentUser.id,
-            speakerName: currentUser.name,
-            startSec: (Date.now() - meetingStartRef.current) / 1000,
-            text: result.text,
-          });
-        }
       },
       (reason) => {
         // recognition หยุดทำงานเอง — ทำให้ปุ่ม CC สะท้อนสถานะจริงแทนที่จะค้างเป็น "on" เฉย ๆ (ดู Fix 5)
@@ -528,15 +471,11 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     <RoomSignalingProvider meetingId={meeting.id}>
     <RoomSignalBridge
       currentUserId={currentUser.id}
-      meetingId={meeting.id}
-      meetingStartRef={meetingStartRef}
       broadcastRef={broadcastRef}
       setRaisedHands={setRaisedHands}
       setLatestSubtitle={setLatestSubtitle}
       setSharedFileId={setSharedFileId}
       setSharedViewerPage={setSharedViewerPage}
-      isFileVisible={(fileId) => visibleFiles.some((f) => f.id === fileId)}
-      setVoteRefreshToken={setVoteRefreshToken}
     />
     <div className="fixed inset-0 bg-background text-foreground flex flex-col font-sans overflow-hidden z-[1000]">
       {/* Top Header */}
@@ -599,13 +538,8 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
             size="sm"
             onClick={() => {
               // Lower own raised hand for everyone else before leaving
-              if (raisedHands.has(currentUser.id)) {
-                broadcastRef.current?.({ type: "hand_raise", payload: { raised: false } });
-                setRaisedHands((prev) => {
-                  const copy = new Map(prev);
-                  copy.delete(currentUser.id);
-                  return copy;
-                });
+              if (handRaised) {
+                toggleMyHand(false);
               }
               // Set present false in context on leave
               if (localParticipant) {
@@ -642,13 +576,8 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               userId={roomIdentityId}
               displayName={roomIdentityName}
               onLeave={() => {
-                if (raisedHands.has(currentUser.id)) {
-                  broadcastRef.current?.({ type: "hand_raise", payload: { raised: false } });
-                  setRaisedHands((prev) => {
-                    const copy = new Map(prev);
-                    copy.delete(currentUser.id);
-                    return copy;
-                  });
+                if (handRaised) {
+                  toggleMyHand(false);
                 }
                 if (localParticipant) {
                   const updatedParticipants = meeting.participants.map((p) =>
@@ -708,7 +637,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               (ไมค์/กล้องคุมผ่าน UI ของ engine เอง เช่น ZegoCloudEmbedStage — ไม่ซ้ำปุ่มที่นี่) */}
           <div className="h-16 bg-card border border-border rounded-2xl items-center justify-center gap-2 sm:gap-4 px-4 shrink-0 shadow-lg flex">
             <Button
-              onClick={handleHandRaise}
+              onClick={() => toggleMyHand(!handRaised)}
               size="icon"
               className={`rounded-xl h-10 w-10 border transition-all ${
                 handRaised
@@ -965,7 +894,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                 </Badge>
               </div>
 
-              <HandRaiseList raised={[...raisedHands.values()]} isHost={isManager} onLower={handleLowerHand} />
+              <HandRaiseList raised={raisedHands} isHost={isManager} onLower={lowerOther} />
 
               <div className="space-y-2">
                 {/* Local user */}
@@ -993,7 +922,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                   .filter((p) => p.id !== localParticipant?.id)
                   .map((p) => {
                     const isPresent = p.present;
-                    const raised = p.userId ? raisedHands.has(p.userId) : false;
+                    const raised = p.userId ? raisedHands.some((h) => h.userId === p.userId) : false;
                     return (
                       <div
                         key={p.id}
