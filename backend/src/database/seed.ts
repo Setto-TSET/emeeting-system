@@ -44,6 +44,14 @@ export async function seedFromMockData(defaultPassword: string): Promise<SeedRes
   let participantCount = 0;
 
   for (const meeting of meetings) {
+    // schema.sql กำหนด meetings.organizer_id เป็น NOT NULL แต่ type ฝั่งหน้าเว็บอนุญาต null ได้
+    // (กรณียังไม่ระบุผู้จัด) — ข้ามการประชุมนั้นทั้งรายการแทนที่จะปล่อยให้ query ล้มกลางคัน
+    // ไม่ใช้ throw เพราะการประชุมอื่นที่ข้อมูลถูกต้องควร seed ต่อได้ตามปกติ
+    if (!meeting.organizerId) {
+      console.warn(`⚠️ ข้าม meeting ${meeting.id} — ไม่มี organizerId (organizer_id เป็น NOT NULL)`);
+      continue;
+    }
+
     // หมายเหตุ: mock data ฝั่งหน้าเว็บใช้ฟิลด์ `name` ไม่ใช่ `title` — ตาราง meetings ใช้คอลัมน์ title
     await query(
       `INSERT INTO meetings (id, title, organizer_id, meeting_date, start_time, end_time, status, allow_guest_join)
@@ -75,14 +83,13 @@ export async function seedFromMockData(defaultPassword: string): Promise<SeedRes
     }
 
     // ผู้จัดต้องเข้าห้องได้เสมอ แม้ไม่ได้อยู่ในรายชื่อผู้เข้าร่วม
-    if (meeting.organizerId) {
-      await query(
-        `INSERT INTO meeting_participants (meeting_id, user_id, role)
-         VALUES (?, ?, 'organizer')
-         ON DUPLICATE KEY UPDATE role = 'organizer'`,
-        [meeting.id, meeting.organizerId]
-      );
-    }
+    // (ถึงจุดนี้ meeting.organizerId การันตีว่าไม่ใช่ null แล้วจากการ guard ด้านบน)
+    await query(
+      `INSERT INTO meeting_participants (meeting_id, user_id, role)
+       VALUES (?, ?, 'organizer')
+       ON DUPLICATE KEY UPDATE role = 'organizer'`,
+      [meeting.id, meeting.organizerId]
+    );
   }
 
   return { users: userCount, meetings: meetingCount, participants: participantCount };

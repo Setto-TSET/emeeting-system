@@ -35,17 +35,31 @@ describe('seedFromMockData', () => {
     expect(participants[0].n).toBeGreaterThan(0);
   });
 
-  it('is idempotent — running twice does not duplicate or change hashes', async () => {
-    const before = (await query('SELECT password_hash FROM app_users WHERE email = ?', [
+  it('is idempotent — running twice does not duplicate rows or change hashes', async () => {
+    const beforeHash = (await query('SELECT password_hash FROM app_users WHERE email = ?', [
       'admin@e-office.cloud',
     ])) as { password_hash: string }[];
+    const beforeMeetings = (await query('SELECT COUNT(*) AS n FROM meetings')) as { n: number }[];
+    const beforeParticipants = (await query(
+      'SELECT COUNT(*) AS n FROM meeting_participants'
+    )) as { n: number }[];
+    const beforeUsers = (await query('SELECT COUNT(*) AS n FROM app_users')) as { n: number }[];
 
     await seedFromMockData('Meeting@2569');
 
-    const after = (await query('SELECT password_hash FROM app_users WHERE email = ?', [
+    const afterHash = (await query('SELECT password_hash FROM app_users WHERE email = ?', [
       'admin@e-office.cloud',
     ])) as { password_hash: string }[];
-    expect(after).toHaveLength(1);
-    expect(after[0].password_hash).toBe(before[0].password_hash);
+    const afterMeetings = (await query('SELECT COUNT(*) AS n FROM meetings')) as { n: number }[];
+    const afterParticipants = (await query(
+      'SELECT COUNT(*) AS n FROM meeting_participants'
+    )) as { n: number }[];
+    const afterUsers = (await query('SELECT COUNT(*) AS n FROM app_users')) as { n: number }[];
+
+    expect(afterHash).toHaveLength(1);
+    expect(afterHash[0].password_hash).toBe(beforeHash[0].password_hash);
+    expect(afterUsers[0].n).toBe(beforeUsers[0].n);
+    expect(afterMeetings[0].n).toBe(beforeMeetings[0].n);
+    expect(afterParticipants[0].n).toBe(beforeParticipants[0].n);
   });
 });
