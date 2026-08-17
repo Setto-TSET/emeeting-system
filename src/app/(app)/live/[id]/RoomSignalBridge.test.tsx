@@ -3,13 +3,13 @@
 // Fix round 1 (code review): ครอบคลุมพฤติกรรมที่แก้ไขใน RoomSignalBridge
 //   1) สัญญาณสด (hand_state/doc_share_state) ที่มาถึงก่อน room snapshot ตอบกลับ ต้อง "ชนะ" —
 //      snapshot ที่มาช้ากว่าต้องไม่ทับข้อมูลสด (ธง handSignalReceivedRef/docShareSignalReceivedRef)
-//   2) hand_state ที่ทำให้ currentUser หลุดจากรายชื่อคนยกมือ ต้อง toast "โฮสต์ลดมือให้คุณแล้ว"
-//      เฉพาะตอนที่ "คนอื่น" ลดมือให้ — ไม่ toast ถ้าผู้ใช้กดลดมือตัวเอง (selfLoweredHandRef)
 //   3) doc_share_state อัปเดตไฟล์/หน้าที่แชร์ และเคลียร์ค่าเมื่อ share เป็น null
 //
-// Fix round 2 (code review): selfLoweredHandRef ต้องไม่ค้าง true ตลอดไปถ้า hand_state ที่คู่กันไม่มาถึง
-// (เช่น disconnect กลางทาง) — ไม่งั้นตอนโฮสต์มาลดมือให้จริงทีหลัง toast จะถูกกลืนทิ้งผิดๆ
-// ทดสอบด้วยการจำลอง connected: true -> false -> true ผ่าน setConnectedMock
+// Fix round 3 (code review): รอบที่ 2 พยายามเดา "ใครลดมือ" จากไคลเอนต์เอง (selfLoweredHandRef +
+// disconnect reset) แล้วพังเพราะ hand_state เก่าที่มาถึงหลัง reconnect มี payload เหมือนกันเป๊ะ
+// ไม่ว่าผู้ใช้จะลดมือเองหรือโฮสต์ลดให้ — ทำให้ toast โกหกได้ ตอนนี้เปลี่ยนมาใช้ attribution
+// (`lastAction`) ที่ server เป็นคนบอกมาตรงๆ เท่านั้น ไม่มีการเดาฝั่งไคลเอนต์อีกต่อไป —
+// selfLoweredHandRef/disconnect-reset ถูกลบทิ้งทั้งหมด (ดู page.tsx)
 "use client";
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -38,47 +38,25 @@ const broadcastMock = vi.fn();
 type AnyHandler = (signal: RoomSignal) => void;
 let handlersByType: Map<string, Set<AnyHandler>> = new Map();
 
-// --- ควบคุม `connected` จากภายนอกได้ — จำลอง transport disconnect/reconnect ---
-// pub/sub ธรรมดา: useRoomSignaling() ผูก useState เข้ากับ listener set นี้ผ่าน useEffect
-// เพื่อให้ component ที่ใช้ useRoomSignaling() re-render เมื่อ setConnectedMock ถูกเรียก
-let connectedValue = true;
-const connectedListeners = new Set<() => void>();
-function setConnectedMock(value: boolean) {
-  connectedValue = value;
-  connectedListeners.forEach((fn) => fn());
-}
-
 vi.mock("@/context/RoomSignalingContext", () => ({
-  useRoomSignaling: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const [connected, setConnected] = useState(connectedValue);
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useEffect(() => {
-      const listener = () => setConnected(connectedValue);
-      connectedListeners.add(listener);
-      return () => {
-        connectedListeners.delete(listener);
-      };
-    }, []);
-    return {
-      broadcast: broadcastMock,
-      connected,
-      useSignal: (type: string, handler: AnyHandler) => {
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        useEffect(() => {
-          let set = handlersByType.get(type);
-          if (!set) {
-            set = new Set();
-            handlersByType.set(type, set);
-          }
-          set.add(handler);
-          return () => {
-            set!.delete(handler);
-          };
-        }, [type, handler]);
-      },
-    };
-  },
+  useRoomSignaling: () => ({
+    broadcast: broadcastMock,
+    connected: true,
+    useSignal: (type: string, handler: AnyHandler) => {
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      useEffect(() => {
+        let set = handlersByType.get(type);
+        if (!set) {
+          set = new Set();
+          handlersByType.set(type, set);
+        }
+        set.add(handler);
+        return () => {
+          set!.delete(handler);
+        };
+      }, [type, handler]);
+    },
+  }),
 }));
 
 function emit<T extends "hand_state" | "doc_share_state">(
@@ -121,7 +99,6 @@ function Harness({
   const broadcastRef = useRef<((signal: unknown) => void) | null>(null);
   const handSignalReceivedRef = useRef(false);
   const docShareSignalReceivedRef = useRef(false);
-  const selfLoweredHandRef = useRef(false);
 
   useEffect(() => {
     snapshotPromise.then((snapshot) => {
@@ -131,16 +108,11 @@ function Harness({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const toggleMyHand = (next: boolean) => {
-    if (!next) selfLoweredHandRef.current = true;
-  };
-
   return (
     <div>
       <div data-testid="raised">{raisedHands.map((h) => h.userId).join(",")}</div>
       <div data-testid="shared-file">{sharedFileId ?? ""}</div>
       <div data-testid="shared-page">{sharedViewerPage}</div>
-      <button data-testid="lower-self" onClick={() => toggleMyHand(false)} />
       <RoomSignalBridge
         currentUserId={currentUserId}
         broadcastRef={broadcastRef as React.MutableRefObject<((signal: unknown) => void) | null>}
@@ -150,7 +122,6 @@ function Harness({
         setSharedViewerPage={setSharedViewerPage}
         handSignalReceivedRef={handSignalReceivedRef}
         docShareSignalReceivedRef={docShareSignalReceivedRef}
-        selfLoweredHandRef={selfLoweredHandRef}
       />
     </div>
   );
@@ -169,7 +140,6 @@ describe("RoomSignalBridge", () => {
     broadcastMock.mockClear();
     toastInfoMock.mockClear();
     toastErrorMock.mockClear();
-    setConnectedMock(true);
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -219,43 +189,56 @@ describe("RoomSignalBridge", () => {
     expect(container.querySelector('[data-testid="raised"]')?.textContent).toBe("U-3");
   });
 
-  it("toasts the target when the chair lowers someone else's hand", async () => {
+  it("toasts when hand_state attribution names another user lowering the current user's hand", async () => {
     const snap = deferred<RoomSnapshot>();
     await act(async () => {
       root.render(<Harness currentUserId="U-1" snapshotPromise={snap.promise} />);
       snap.resolve(emptySnapshot());
     });
 
-    // U-1 ถูกยกมืออยู่ก่อน
+    await act(async () => {
+      emit("hand_state", "server", {
+        raised: [],
+        lastAction: { userId: "U-1", byUserId: "U-2" },
+      });
+    });
+
+    expect(toastInfoMock).toHaveBeenCalledWith("โฮสต์ลดมือให้คุณแล้ว");
+  });
+
+  it("does not toast when hand_state attribution names the current user as the actor", async () => {
+    const snap = deferred<RoomSnapshot>();
+    await act(async () => {
+      root.render(<Harness currentUserId="U-1" snapshotPromise={snap.promise} />);
+      snap.resolve(emptySnapshot());
+    });
+
+    await act(async () => {
+      emit("hand_state", "server", {
+        raised: [],
+        lastAction: { userId: "U-1", byUserId: "U-1" },
+      });
+    });
+
+    expect(toastInfoMock).not.toHaveBeenCalled();
+  });
+
+  it("does not toast on a hand_state with no attribution, even if the current user disappears from raised", async () => {
+    // นี่คือ regression test ของ toast โกหกจากรอบที่ 2: hand_state เก่าที่ไม่มี lastAction (ทุกข้อความ
+    // วันนี้เป็นแบบนี้ทั้งหมด เพราะ server ยังไม่ส่ง lastAction มา) ต้องไม่ toast แม้ currentUser
+    // จะหายไปจาก raised list ก็ตาม — ห้ามมีใครใส่การเดาแบบ diff-based กลับเข้ามาแทน
+    const snap = deferred<RoomSnapshot>();
+    await act(async () => {
+      root.render(<Harness currentUserId="U-1" snapshotPromise={snap.promise} />);
+      snap.resolve(emptySnapshot());
+    });
+
     await act(async () => {
       emit("hand_state", "server", { raised: [{ userId: "U-1", userName: "ผู้ใช้ทดสอบ", raisedAt: 1 }] });
     });
     expect(toastInfoMock).not.toHaveBeenCalled();
 
-    // โฮสต์ (ไม่ใช่ U-1) ลดมือให้ — ไม่มีการกด lower-self ก่อน
-    await act(async () => {
-      emit("hand_state", "server", { raised: [] });
-    });
-
-    expect(toastInfoMock).toHaveBeenCalledWith("โฮสต์ลดมือให้คุณแล้ว");
-    expect(container.querySelector('[data-testid="raised"]')?.textContent).toBe("");
-  });
-
-  it("does not toast when the user lowers their own hand", async () => {
-    const snap = deferred<RoomSnapshot>();
-    await act(async () => {
-      root.render(<Harness currentUserId="U-1" snapshotPromise={snap.promise} />);
-      snap.resolve(emptySnapshot());
-    });
-
-    await act(async () => {
-      emit("hand_state", "server", { raised: [{ userId: "U-1", userName: "ผู้ใช้ทดสอบ", raisedAt: 1 }] });
-    });
-
-    // ผู้ใช้กดลดมือตัวเอง — ตั้งธง selfLoweredHandRef ก่อนที่ hand_state จะตอบกลับ
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[data-testid="lower-self"]')!.click();
-    });
+    // U-1 หายไปจาก raised list แต่ไม่มี lastAction แนบมา — ไม่รู้ว่าใครทำ ต้องเงียบ
     await act(async () => {
       emit("hand_state", "server", { raised: [] });
     });
@@ -285,41 +268,5 @@ describe("RoomSignalBridge", () => {
     });
     expect(container.querySelector('[data-testid="shared-file"]')?.textContent).toBe("");
     expect(container.querySelector('[data-testid="shared-page"]')?.textContent).toBe("1");
-  });
-
-  it("clears a stuck selfLoweredHandRef on disconnect so a later chair-lower still toasts", async () => {
-    const snap = deferred<RoomSnapshot>();
-    await act(async () => {
-      root.render(<Harness currentUserId="U-1" snapshotPromise={snap.promise} />);
-      snap.resolve(emptySnapshot());
-    });
-
-    // U-1 ถูกยกมืออยู่ก่อน
-    await act(async () => {
-      emit("hand_state", "server", { raised: [{ userId: "U-1", userName: "ผู้ใช้ทดสอบ", raisedAt: 1 }] });
-    });
-
-    // ผู้ใช้กดลดมือตัวเอง — ตั้งธง selfLoweredHandRef แล้วส่ง intent ไป แต่ hand_state ที่คาดว่าจะ
-    // ตอบกลับ "ไม่มาถึง" เลย (จำลองสาย disconnect กลางทาง)
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[data-testid="lower-self"]')!.click();
-    });
-
-    // สาย disconnect แล้ว reconnect — เจตนาที่ค้างอยู่ (ยกมือ) ไม่มีทางได้ hand_state คู่กันแล้ว
-    // ธงต้องถูกเคลียร์ตรงนี้ ไม่งั้นจะค้าง true ตลอดไป
-    await act(async () => {
-      setConnectedMock(false);
-    });
-    await act(async () => {
-      setConnectedMock(true);
-    });
-
-    // ทีนี้โฮสต์ลดมือให้ "จริงๆ" (เหตุการณ์ใหม่ ไม่เกี่ยวกับ intent ที่หลุดไปก่อนหน้า) — ต้องได้ toast
-    // เพราะธง selfLoweredHandRef ถูกเคลียร์ไปแล้วตอน disconnect ไม่ใช่ถูกกลืนทิ้งผิดๆ
-    await act(async () => {
-      emit("hand_state", "server", { raised: [] });
-    });
-
-    expect(toastInfoMock).toHaveBeenCalledWith("โฮสต์ลดมือให้คุณแล้ว");
   });
 });

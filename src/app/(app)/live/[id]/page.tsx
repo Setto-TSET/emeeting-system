@@ -48,7 +48,6 @@ export function RoomSignalBridge({
   setSharedViewerPage,
   handSignalReceivedRef,
   docShareSignalReceivedRef,
-  selfLoweredHandRef,
 }: {
   currentUserId: string;
   broadcastRef: React.MutableRefObject<Broadcast | null>;
@@ -59,43 +58,26 @@ export function RoomSignalBridge({
   // ธงบอกว่าได้รับสัญญาณสดแล้ว — กัน snapshot ที่มาช้ากว่ามาทับข้อมูลสด (ดู Fix 1 ของ code review รอบที่ 1)
   handSignalReceivedRef: React.MutableRefObject<boolean>;
   docShareSignalReceivedRef: React.MutableRefObject<boolean>;
-  selfLoweredHandRef: React.MutableRefObject<boolean>;
 }) {
-  const { broadcast, useSignal, connected } = useRoomSignaling();
+  const { broadcast, useSignal } = useRoomSignaling();
 
   useEffect(() => {
     broadcastRef.current = broadcast;
   }, [broadcast, broadcastRef]);
 
-  // Fix 2 (code review รอบที่ 2): selfLoweredHandRef ต้องไม่ค้างเป็น true ตลอดไปถ้า hand_state
-  // ที่คู่กับมันไม่มาถึง (สาย disconnect กลางทาง) — ถ้าไม่เคลียร์ ตอนที่โฮสต์มาลดมือให้จริงๆ ทีหลัง
-  // handler จะเข้าใจผิดว่าเป็นกรณีลดมือตัวเองแล้วกลืน toast ทิ้ง ที่นี่เคลียร์เมื่อขาดการเชื่อมต่อ
-  // เพราะเจตนาที่ส่งไปแล้วไม่มีทางได้รับ hand_state ตอบกลับอีกเมื่อ socket หลุด
-  // Fix 2 (code review รอบที่ 2): selfLoweredHandRef ต้องไม่ค้างเป็น true ตลอดไปถ้า hand_state
-  // ที่คู่กับมันไม่มาถึง (สาย disconnect กลางทาง) — ถ้าไม่เคลียร์ ตอนที่โฮสต์มาลดมือให้จริงๆ ทีหลัง
-  // handler จะเข้าใจผิดว่าเป็นกรณีลดมือตัวเองแล้วกลืน toast ทิ้ง ที่นี่เคลียร์เมื่อขาดการเชื่อมต่อ
-  // เพราะเจตนาที่ส่งไปแล้วไม่มีทางได้รับ hand_state ตอบกลับอีกเมื่อ socket หลุด
-  useEffect(() => {
-    if (!connected) selfLoweredHandRef.current = false;
-  }, [connected, selfLoweredHandRef]);
-
   useSignal("hand_state", (signal) => {
     // สัญญาณสดมาถึงแล้ว — ตั้งแต่นี้ snapshot effect ที่ยังค้าง fetch อยู่ (ถ้ามี) ต้องไม่ทับสถานะนี้อีก
     // ห้ามลบธงนี้ทิ้งแม้จะดูเหมือนไม่มีอะไรอ่านซ้ำ เพราะ snapshot .then() อ่านมันก่อน setRaisedHands ทุกครั้ง
     handSignalReceivedRef.current = true;
-    setRaisedHands((prev) => {
-      const wasRaised = prev.some((h) => h.userId === currentUserId);
-      const nowRaised = signal.payload.raised.some((h) => h.userId === currentUserId);
-      if (wasRaised && !nowRaised) {
-        if (selfLoweredHandRef.current) {
-          // ผู้ใช้กดลดมือตัวเอง ไม่ใช่โฮสต์ลดให้ — เคลียร์ธงแล้วไม่ต้อง toast
-          selfLoweredHandRef.current = false;
-        } else {
-          toast.info("โฮสต์ลดมือให้คุณแล้ว");
-        }
-      }
-      return signal.payload.raised;
-    });
+    // Fix 2 (code review รอบที่ 3): เดา "ใครทำให้มือลด" จาก diff ของ raised list ในเครื่องไม่ได้ —
+    // payload เหมือนกันทุกประการไม่ว่าจะเป็นผู้ใช้กดลดมือเองหรือโฮสต์ลดให้ (ดูรอบที่ 2 ที่พังเพราะเดาผิด
+    // ตอน hand_state เก่าที่ค้างมาถึงหลัง reconnect) ต้องรอ server ส่ง lastAction มาบอกตรงๆ เท่านั้น —
+    // ตอนนี้ server ยังไม่ส่ง (ดู Task 7) ธงนี้จึงเงียบเสมอจนกว่า server จะเติม lastAction มาให้
+    const action = signal.payload.lastAction;
+    if (action && action.userId === currentUserId && action.byUserId !== currentUserId) {
+      toast.info("โฮสต์ลดมือให้คุณแล้ว");
+    }
+    setRaisedHands(signal.payload.raised);
   });
 
   useSignal("subtitle_text", (signal) => {
@@ -146,9 +128,6 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   // มาทับ ธงนี้ตั้งเป็น true ใน useSignal handler ที่เกี่ยวข้อง แล้ว snapshot effect เช็คก่อนเซ็ตสเตท
   const handSignalReceivedRef = useRef(false);
   const docShareSignalReceivedRef = useRef(false);
-  // Fix 2: แยกกรณี "ผู้ใช้กดลดมือตัวเอง" ออกจาก "โฮสต์ลดมือให้" — ตั้งใน toggleMyHand(false)
-  // แล้วให้ hand_state handler เคลียร์ทิ้งเมื่อเจอ ไม่งั้นผู้ใช้จะได้ toast "โฮสต์ลดมือให้คุณแล้ว" ทุกครั้งที่ลดมือเอง
-  const selfLoweredHandRef = useRef(false);
   const [subtitleOn, setSubtitleOn] = useState(false);
   const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
   const meetingStartRef = useRef(Date.now());
@@ -446,11 +425,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   };
 
   // server เป็นเจ้าของสถานะมือที่ยกอยู่: ส่งเจตนาไปเท่านั้น แล้วรอ hand_state กลับมาทับของเดิม
-  const toggleMyHand = (next: boolean) => {
-    // กดลดมือตัวเอง (ไม่ใช่โฮสต์ลดให้) — ตั้งธงกันไม่ให้ hand_state ที่ตามมา toast "โฮสต์ลดมือให้คุณแล้ว"
-    if (!next) selfLoweredHandRef.current = true;
-    broadcastRef.current?.({ type: "hand_raise", payload: { raised: next } });
-  };
+  const toggleMyHand = (next: boolean) => broadcastRef.current?.({ type: "hand_raise", payload: { raised: next } });
   const lowerOther = (targetUserId: string) => broadcastRef.current?.({ type: "hand_lower", payload: { targetUserId } });
 
   // แชร์เอกสารให้ผู้เข้าร่วมทั้งหมดในห้อง — broadcast แล้วให้ผู้เข้าร่วมคนอื่นตามหน้าจอโฮสต์อัตโนมัติ
@@ -528,7 +503,6 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       setSharedViewerPage={setSharedViewerPage}
       handSignalReceivedRef={handSignalReceivedRef}
       docShareSignalReceivedRef={docShareSignalReceivedRef}
-      selfLoweredHandRef={selfLoweredHandRef}
     />
     <div className="fixed inset-0 bg-background text-foreground flex flex-col font-sans overflow-hidden z-[1000]">
       {/* Top Header */}

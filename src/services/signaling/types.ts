@@ -67,6 +67,9 @@ export interface SignalPayloadMap {
   room_joined: { userId: string; userName: string; meetingId: string };
   signal_error: { reason: string };
   vote_state: { topic: VoteTopicDto };
-  hand_state: { raised: RaisedHandDto[] };
+  // lastAction: ใครเป็นคนทำให้เกิดการเปลี่ยนแปลงล่าสุด (ใครลด/ยกมือให้ใคร) — optional เพราะฝั่ง
+  // server ยังไม่ส่งมาวันนี้ (ดู Task 7) client ใช้ field นี้เพื่อรู้ "ใครทำ" แทนการเดาจาก diff
+  // ของ raised list เอง (เดาไม่ได้แน่นอน เพราะ payload เหมือนกันไม่ว่าใครเป็นคนลด)
+  hand_state: { raised: RaisedHandDto[]; lastAction?: { userId: string; byUserId: string } };
   doc_share_state: { share: DocShareDto | null };
 }
