@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { openTransport, MAX_QUEUE_SIZE, RECONNECT_BASE_MS, RECONNECT_MAX_MS } from './channel';
+import {
+  openTransport,
+  MAX_QUEUE_SIZE,
+  RECONNECT_BASE_MS,
+  RECONNECT_MAX_MS,
+  CLOSE_UNAUTHORIZED,
+  CLOSE_FORBIDDEN,
+} from './channel';
 import { setAccessToken } from '@/services/api/client';
 
 class FakeWebSocket {
@@ -12,7 +19,7 @@ class FakeWebSocket {
   url: string;
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: { code: number }) => void) | null = null;
   onerror: (() => void) | null = null;
 
   constructor(url: string) {
@@ -24,9 +31,9 @@ class FakeWebSocket {
     this.sent.push(data);
   }
 
-  close() {
+  close(code = 1006) {
     this.readyState = FakeWebSocket.CLOSED;
-    this.onclose?.();
+    this.onclose?.({ code });
   }
 
   simulateOpen() {
@@ -226,5 +233,42 @@ describe('openTransport', () => {
 
     vi.advanceTimersByTime(1);
     expect(FakeWebSocket.instances).toHaveLength(lastIndex + 2);
+  });
+
+  it('does not reconnect and reports a fatal status after a 4401 close (invalid/missing token per backend/src/realtime/server.ts)', () => {
+    const onStatus = vi.fn();
+    openTransport('MT-2569-007', { onMessage: vi.fn(), onStatus });
+    FakeWebSocket.instances[0].simulateOpen();
+
+    FakeWebSocket.instances[0].close(CLOSE_UNAUTHORIZED);
+    expect(onStatus).toHaveBeenLastCalledWith(false, 'fatal');
+
+    vi.advanceTimersByTime(60_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it('does not reconnect and reports a fatal status after a 4403 close (not a participant, or guest token scoped elsewhere)', () => {
+    const onStatus = vi.fn();
+    openTransport('MT-2569-007', { onMessage: vi.fn(), onStatus });
+    FakeWebSocket.instances[0].simulateOpen();
+
+    FakeWebSocket.instances[0].close(CLOSE_FORBIDDEN);
+    expect(onStatus).toHaveBeenLastCalledWith(false, 'fatal');
+
+    vi.advanceTimersByTime(60_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it('still reconnects with backoff after an ordinary close code (not fatal)', () => {
+    const onStatus = vi.fn();
+    openTransport('MT-2569-007', { onMessage: vi.fn(), onStatus });
+    FakeWebSocket.instances[0].simulateOpen();
+
+    FakeWebSocket.instances[0].close(1006);
+    expect(onStatus).toHaveBeenLastCalledWith(false);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    vi.advanceTimersByTime(RECONNECT_BASE_MS);
+    expect(FakeWebSocket.instances).toHaveLength(2);
   });
 });

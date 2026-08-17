@@ -12,13 +12,25 @@ export type RoomTransport = {
   close: () => void;
 };
 
+// "still-trying" คือค่าเริ่มต้น/ค่าปกติระหว่างพยายามต่อใหม่ — เดิม onStatus(false) หมายถึงสถานะนี้เสมอ
+// "fatal" คือ transport เลิกพยายามแล้วเพราะ token ใช้ไม่ได้กับห้องนี้อีกต่อไป (ดู FATAL_CLOSE_CODES ด้านล่าง)
+export type ConnectionStatus = "connecting" | "fatal";
+
 export type TransportHandlers = {
   onMessage: (signal: RoomSignal) => void;
-  onStatus: (connected: boolean) => void;
+  // อาร์กิวเมนต์ที่สองเป็น optional เพื่อไม่ให้ผู้ใช้เดิม (เช่น setConnected ตรง ๆ) พัง —
+  // consumer ที่ไม่สนใจเหตุผลของการไม่เชื่อมต่อยังใช้แค่ boolean ตัวแรกได้เหมือนเดิม
+  onStatus: (connected: boolean, status?: ConnectionStatus) => void;
 };
 
 export const RECONNECT_BASE_MS = 1000;
 export const RECONNECT_MAX_MS = 15000;
+
+// รหัสปิดที่ server ส่งมาใน backend/src/realtime/server.ts (CLOSE_UNAUTHORIZED / CLOSE_FORBIDDEN)
+// ทั้งสองรหัสนี้หมายถึง token ปัจจุบันใช้กับห้องนี้ไม่ได้ถาวร — retry ซ้ำด้วย token เดิมไม่มีทางสำเร็จ
+export const CLOSE_UNAUTHORIZED = 4401; // token หายไปหรือไม่ถูกต้อง
+export const CLOSE_FORBIDDEN = 4403; // ผู้เรียกไม่ใช่ผู้เข้าร่วมห้องนี้ หรือ guest token ผูกกับห้องอื่น
+const FATAL_CLOSE_CODES: ReadonlySet<number> = new Set([CLOSE_UNAUTHORIZED, CLOSE_FORBIDDEN]);
 
 // จำกัดคิวก่อนต่อสำเร็จ กันหน่วยความจำบวมตอนหลุดการเชื่อมต่อนาน ๆ
 // (เช่น subtitle_text ที่ยิงถี่ทุกผลลัพธ์การถอดเสียงบางส่วน)
@@ -103,7 +115,12 @@ export function openTransport(meetingId: string, handlers: TransportHandlers): R
       handlers.onMessage(parsed);
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
+      if (FATAL_CLOSE_CODES.has(event.code)) {
+        // server บอกชัดเจนว่า token ใช้กับห้องนี้ไม่ได้ — เลิก retry ทันที ไม่งั้นยิงถล่ม server ด้วย token เดิมที่ไม่มีทางผ่าน
+        handlers.onStatus(false, "fatal");
+        return;
+      }
       handlers.onStatus(false);
       scheduleReconnect();
     };

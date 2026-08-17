@@ -9,6 +9,9 @@ type Ctx = {
   broadcast: <T extends SignalType>(signal: Omit<RoomSignal<T>, "senderId" | "senderName" | "timestamp">) => void;
   useSignal: <T extends SignalType>(type: T, handler: (signal: RoomSignal<T>) => void) => void;
   connected: boolean;
+  // true เมื่อ transport เจอ close code 4401/4403 แล้วเลิก retry ถาวร — ต่างจาก connected=false
+  // ธรรมดาที่ยังพยายามต่ออยู่เบื้องหลัง หน้าที่แสดงผล (เช่น live room page) ใช้ค่านี้ตัดสินใจว่าจะบอกผู้ใช้อย่างไร
+  connectionFailed: boolean;
 };
 
 const RoomSignalingContext = createContext<Ctx | null>(null);
@@ -19,14 +22,19 @@ export function RoomSignalingProvider({ meetingId, children }: { meetingId: stri
   const transportRef = useRef<RoomTransport | null>(null);
   const listenersRef = useRef<Map<SignalType, Set<Listener>>>(new Map());
   const [connected, setConnected] = useState(false);
+  const [connectionFailed, setConnectionFailed] = useState(false);
 
   useEffect(() => {
+    setConnectionFailed(false);
     const transport = openTransport(meetingId, {
       onMessage: (signal) => {
         const set = listenersRef.current.get(signal.type);
         set?.forEach((fn) => fn(signal));
       },
-      onStatus: setConnected,
+      onStatus: (isConnected, status) => {
+        setConnected(isConnected);
+        setConnectionFailed(status === "fatal");
+      },
     });
     transportRef.current = transport;
 
@@ -34,6 +42,7 @@ export function RoomSignalingProvider({ meetingId, children }: { meetingId: stri
       transport.close();
       transportRef.current = null;
       setConnected(false);
+      setConnectionFailed(false);
     };
   }, [meetingId]);
 
@@ -59,7 +68,7 @@ export function RoomSignalingProvider({ meetingId, children }: { meetingId: stri
   }, []);
 
   return (
-    <RoomSignalingContext.Provider value={{ broadcast, useSignal, connected }}>
+    <RoomSignalingContext.Provider value={{ broadcast, useSignal, connected, connectionFailed }}>
       {children}
     </RoomSignalingContext.Provider>
   );
