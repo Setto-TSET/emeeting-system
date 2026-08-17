@@ -1,38 +1,58 @@
 // ═══════════════════════════════════════════
 // Session — จุดเดียวที่ระบบรู้ว่า "ตอนนี้ใครล็อกอินอยู่"
 //
-// รอบนี้ยังเป็น prototype: ตรวจแค่อีเมล ไม่ตรวจรหัสผ่าน
-// แต่ "รูปแบบการเรียก" ถูกต้องแล้ว — วันที่มี backend จริงเปลี่ยนแค่ในไฟล์นี้
-// โดยที่หน้า login และ UserContext ไม่ต้องแก้เลย
-//
-// ⚠️ ยังไม่ใช่ระบบรักษาความปลอดภัยจริง
-//    ไม่มี token / ไม่มีการเข้ารหัสรหัสผ่าน / ไม่มีการตรวจซ้ำที่ server
-//    ใครแก้ localStorage ก็เปลี่ยนตัวเองเป็น admin ได้
+// ล็อกอินผ่าน backend จริงแล้ว (POST /api/auth/login) — ตรวจรหัสผ่านที่ server
+// และเก็บ JWT ไว้ให้ apiFetch แนบไปกับทุก request ต่อจากนี้
 // ═══════════════════════════════════════════
 
 import { users, AppUser } from "@/data";
+import { apiFetch, setAccessToken, ApiError } from "@/services/api/client";
 
 export type SignInResult =
   | { ok: true; user: AppUser }
   | { ok: false; reason: string };
 
+type LoginResponse = {
+  token: string;
+  user: { id: string; name: string; email: string; systemRole: string; roomId?: string };
+};
+
 /**
- * เข้าสู่ระบบ
- *
- * เวอร์ชันนี้หาผู้ใช้จากอีเมลอย่างเดียว (รหัสผ่านรับไว้แต่ยังไม่ตรวจ)
- * เมื่อต่อ backend ให้เปลี่ยนเป็น POST /api/auth/login แล้วคืนผลแบบเดียวกัน
+ * เข้าสู่ระบบผ่าน backend จริง — ตรวจรหัสผ่านที่ server ด้วย bcrypt
+ * แล้วเก็บ JWT ไว้ให้ทุก request และ WebSocket ใช้ต่อ
  */
 export async function signIn(email: string, password: string): Promise<SignInResult> {
-  void password; // ยังไม่ตรวจรหัสผ่าน — รับไว้เพื่อให้ signature ตรงกับตอนต่อ backend
   const normalized = email.trim().toLowerCase();
   if (!normalized) return { ok: false, reason: "กรุณากรอกอีเมล" };
+  if (!password) return { ok: false, reason: "กรุณากรอกรหัสผ่าน" };
 
-  const user = users.find((u) => u.email.toLowerCase() === normalized);
-  if (!user) {
-    return { ok: false, reason: "ไม่พบผู้ใช้งานนี้ในระบบ" };
+  try {
+    const result = await apiFetch<LoginResponse>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: normalized, password }),
+    });
+
+    setAccessToken(result.token);
+
+    // ข้อมูลโปรไฟล์เต็ม (คณะที่สังกัด ฯลฯ) ยังมาจาก mock data จนกว่าจะย้าย meetings ขึ้น server ครบ
+    const local = users.find((u) => u.id === result.user.id);
+    const user: AppUser = local ?? {
+      id: result.user.id,
+      name: result.user.name,
+      position: "",
+      department: "",
+      email: result.user.email,
+      systemRole: result.user.systemRole as AppUser["systemRole"],
+      committeeIds: [],
+      ...(result.user.roomId ? { roomId: result.user.roomId } : {}),
+    };
+
+    return { ok: true, user };
+  } catch (error) {
+    setAccessToken(null);
+    if (error instanceof ApiError) return { ok: false, reason: error.message };
+    return { ok: false, reason: "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้" };
   }
-
-  return { ok: true, user };
 }
 
 /** รายชื่ออีเมลที่ใช้ทดสอบได้ — แสดงในหน้า login ระหว่างที่ยังเป็น prototype */
