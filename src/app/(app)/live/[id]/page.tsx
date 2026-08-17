@@ -39,13 +39,16 @@ type Broadcast = ReturnType<typeof useRoomSignaling>["broadcast"];
  * doc_share_state (สถานะเอกสารที่กำลังแชร์ ณ ปัจจุบัน — server เป็นเจ้าของ),
  * และ signal_error (แจ้งเตือนเมื่อ server ปฏิเสธเจตนาที่ส่งไป — สัญญาณ vote_* ตอนนี้ VotePanel ฟังเอง)
  */
-function RoomSignalBridge({
+export function RoomSignalBridge({
   currentUserId,
   broadcastRef,
   setRaisedHands,
   setLatestSubtitle,
   setSharedFileId,
   setSharedViewerPage,
+  handSignalReceivedRef,
+  docShareSignalReceivedRef,
+  selfLoweredHandRef,
 }: {
   currentUserId: string;
   broadcastRef: React.MutableRefObject<Broadcast | null>;
@@ -53,6 +56,10 @@ function RoomSignalBridge({
   setLatestSubtitle: React.Dispatch<React.SetStateAction<RoomSignal<"subtitle_text"> | null>>;
   setSharedFileId: React.Dispatch<React.SetStateAction<string | null>>;
   setSharedViewerPage: React.Dispatch<React.SetStateAction<number>>;
+  // ธงบอกว่าได้รับสัญญาณสดแล้ว — กัน snapshot ที่มาช้ากว่ามาทับข้อมูลสด (ดู Fix 1 ของ code review รอบที่ 1)
+  handSignalReceivedRef: React.MutableRefObject<boolean>;
+  docShareSignalReceivedRef: React.MutableRefObject<boolean>;
+  selfLoweredHandRef: React.MutableRefObject<boolean>;
 }) {
   const { broadcast, useSignal } = useRoomSignaling();
 
@@ -61,7 +68,22 @@ function RoomSignalBridge({
   }, [broadcast, broadcastRef]);
 
   useSignal("hand_state", (signal) => {
-    setRaisedHands(signal.payload.raised);
+    // สัญญาณสดมาถึงแล้ว — ตั้งแต่นี้ snapshot effect ที่ยังค้าง fetch อยู่ (ถ้ามี) ต้องไม่ทับสถานะนี้อีก
+    // ห้ามลบธงนี้ทิ้งแม้จะดูเหมือนไม่มีอะไรอ่านซ้ำ เพราะ snapshot .then() อ่านมันก่อน setRaisedHands ทุกครั้ง
+    handSignalReceivedRef.current = true;
+    setRaisedHands((prev) => {
+      const wasRaised = prev.some((h) => h.userId === currentUserId);
+      const nowRaised = signal.payload.raised.some((h) => h.userId === currentUserId);
+      if (wasRaised && !nowRaised) {
+        if (selfLoweredHandRef.current) {
+          // ผู้ใช้กดลดมือตัวเอง ไม่ใช่โฮสต์ลดให้ — เคลียร์ธงแล้วไม่ต้อง toast
+          selfLoweredHandRef.current = false;
+        } else {
+          toast.info("โฮสต์ลดมือให้คุณแล้ว");
+        }
+      }
+      return signal.payload.raised;
+    });
   });
 
   useSignal("subtitle_text", (signal) => {
@@ -69,6 +91,8 @@ function RoomSignalBridge({
   });
 
   useSignal("doc_share_state", (signal) => {
+    // สัญญาณสดมาถึงแล้ว — เหตุผลเดียวกับ handSignalReceivedRef ด้านบน
+    docShareSignalReceivedRef.current = true;
     const share = signal.payload.share;
     setSharedFileId(share?.fileId ?? null);
     setSharedViewerPage(share?.page ?? 1);
@@ -105,6 +129,14 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const [raisedHands, setRaisedHands] = useState<RaisedHandDto[]>([]);
   const handRaised = raisedHands.some((h) => h.userId === currentUser.id);
   const broadcastRef = useRef<Broadcast | null>(null);
+  // Fix 1 (code review รอบที่ 1): snapshot fetch กับสัญญาณสด (hand_state/doc_share_state) แข่งกัน
+  // ได้โดยไม่มีการรับประกันลำดับ — ถ้าสัญญาณสดมาถึงก่อน snapshot ตอบกลับ ต้องไม่ให้ snapshot ที่เก่ากว่า
+  // มาทับ ธงนี้ตั้งเป็น true ใน useSignal handler ที่เกี่ยวข้อง แล้ว snapshot effect เช็คก่อนเซ็ตสเตท
+  const handSignalReceivedRef = useRef(false);
+  const docShareSignalReceivedRef = useRef(false);
+  // Fix 2: แยกกรณี "ผู้ใช้กดลดมือตัวเอง" ออกจาก "โฮสต์ลดมือให้" — ตั้งใน toggleMyHand(false)
+  // แล้วให้ hand_state handler เคลียร์ทิ้งเมื่อเจอ ไม่งั้นผู้ใช้จะได้ toast "โฮสต์ลดมือให้คุณแล้ว" ทุกครั้งที่ลดมือเอง
+  const selfLoweredHandRef = useRef(false);
   const [subtitleOn, setSubtitleOn] = useState(false);
   const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
   const meetingStartRef = useRef(Date.now());
@@ -120,11 +152,11 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const [lightboxPage, setLightboxPage] = useState(1);
   const [viewerZoom, setViewerZoom] = useState(100);
   const [sharedFileId, setSharedFileId] = useState<string | null>(null); // For simulated presentation share
-  // VotePanel อ่าน snapshot โหวตจาก server ตอน mount และทุกครั้งที่ meetingId เปลี่ยนเท่านั้น
-  // (ผ่าน listTopics -> GET /api/rooms/:meetingId/state) — การอัปเดตแบบ real-time มาทาง
-  // vote_state ที่ VotePanel ฟังเองโดยตรง ไม่ผ่านตัวนับนี้แล้ว
-  // ตัวนับนี้จึงตายแล้ว (setVoteRefreshToken ไม่มีใครเรียกอีกต่อไป) แต่คงไว้เพราะ props ของ
-  // VotePanel ถูกล็อกไม่ให้เปลี่ยนในงานนี้ — ดู task-10 brief
+  // VotePanel อ่าน snapshot โหวตจาก server ตอน mount และทุกครั้งที่ meetingId หรือตัวนับนี้เปลี่ยน
+  // (ผ่าน listTopics -> GET /api/rooms/:meetingId/state) — การอัปเดตแบบ real-time หลังจากนั้นมาทาง
+  // vote_state ที่ VotePanel ฟังเองโดยตรง ไม่ผ่านตัวนับนี้
+  // ตัวนับนี้ถูกเรียกจาก effect ที่ดึง room snapshot ตอนห้อง mount (ดูด้านล่าง) เพื่อให้คนที่เข้าห้องทีหลัง
+  // เห็นหัวข้อโหวตที่มีอยู่ก่อนหน้าด้วย ไม่ใช่แค่ที่ถูกสร้าง/ปิดหลังจากที่เข้ามาแล้ว
   const [voteRefreshToken, setVoteRefreshToken] = useState(0);
 
   // Credential สำหรับ engine ฝัง — null = เข้าห้องจริงไม่ได้ พร้อมเหตุผลใน credentialError
@@ -210,8 +242,10 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     let cancelled = false;
     fetchRoomSnapshot(meeting.id).then((snapshot) => {
       if (cancelled) return;
-      setRaisedHands(snapshot.raisedHands);
-      setSharedFileId(snapshot.docShare?.fileId ?? null);
+      // ถ้าสัญญาณสดมาถึงระหว่างที่ fetch นี้ยังค้างอยู่ ให้สัญญาณสดชนะ — ไม่งั้น snapshot ที่เก่ากว่า
+      // จะมาทับข้อมูลที่เพิ่งได้รับสดๆ อย่างเงียบๆ (ดู handSignalReceivedRef/docShareSignalReceivedRef)
+      if (!handSignalReceivedRef.current) setRaisedHands(snapshot.raisedHands);
+      if (!docShareSignalReceivedRef.current) setSharedFileId(snapshot.docShare?.fileId ?? null);
       setVoteRefreshToken((n) => n + 1);
     });
     return () => {
@@ -400,7 +434,11 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   };
 
   // server เป็นเจ้าของสถานะมือที่ยกอยู่: ส่งเจตนาไปเท่านั้น แล้วรอ hand_state กลับมาทับของเดิม
-  const toggleMyHand = (next: boolean) => broadcastRef.current?.({ type: "hand_raise", payload: { raised: next } });
+  const toggleMyHand = (next: boolean) => {
+    // กดลดมือตัวเอง (ไม่ใช่โฮสต์ลดให้) — ตั้งธงกันไม่ให้ hand_state ที่ตามมา toast "โฮสต์ลดมือให้คุณแล้ว"
+    if (!next) selfLoweredHandRef.current = true;
+    broadcastRef.current?.({ type: "hand_raise", payload: { raised: next } });
+  };
   const lowerOther = (targetUserId: string) => broadcastRef.current?.({ type: "hand_lower", payload: { targetUserId } });
 
   // แชร์เอกสารให้ผู้เข้าร่วมทั้งหมดในห้อง — broadcast แล้วให้ผู้เข้าร่วมคนอื่นตามหน้าจอโฮสต์อัตโนมัติ
@@ -476,6 +514,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       setLatestSubtitle={setLatestSubtitle}
       setSharedFileId={setSharedFileId}
       setSharedViewerPage={setSharedViewerPage}
+      handSignalReceivedRef={handSignalReceivedRef}
+      docShareSignalReceivedRef={docShareSignalReceivedRef}
+      selfLoweredHandRef={selfLoweredHandRef}
     />
     <div className="fixed inset-0 bg-background text-foreground flex flex-col font-sans overflow-hidden z-[1000]">
       {/* Top Header */}
