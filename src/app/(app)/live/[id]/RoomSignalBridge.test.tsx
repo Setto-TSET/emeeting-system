@@ -6,6 +6,10 @@
 //   2) hand_state ที่ทำให้ currentUser หลุดจากรายชื่อคนยกมือ ต้อง toast "โฮสต์ลดมือให้คุณแล้ว"
 //      เฉพาะตอนที่ "คนอื่น" ลดมือให้ — ไม่ toast ถ้าผู้ใช้กดลดมือตัวเอง (selfLoweredHandRef)
 //   3) doc_share_state อัปเดตไฟล์/หน้าที่แชร์ และเคลียร์ค่าเมื่อ share เป็น null
+//
+// Fix round 2 (code review): selfLoweredHandRef ต้องไม่ค้าง true ตลอดไปถ้า hand_state ที่คู่กันไม่มาถึง
+// (เช่น disconnect กลางทาง) — ไม่งั้นตอนโฮสต์มาลดมือให้จริงทีหลัง toast จะถูกกลืนทิ้งผิดๆ
+// ทดสอบด้วยการจำลอง connected: true -> false -> true ผ่าน setConnectedMock
 "use client";
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -34,25 +38,47 @@ const broadcastMock = vi.fn();
 type AnyHandler = (signal: RoomSignal) => void;
 let handlersByType: Map<string, Set<AnyHandler>> = new Map();
 
+// --- ควบคุม `connected` จากภายนอกได้ — จำลอง transport disconnect/reconnect ---
+// pub/sub ธรรมดา: useRoomSignaling() ผูก useState เข้ากับ listener set นี้ผ่าน useEffect
+// เพื่อให้ component ที่ใช้ useRoomSignaling() re-render เมื่อ setConnectedMock ถูกเรียก
+let connectedValue = true;
+const connectedListeners = new Set<() => void>();
+function setConnectedMock(value: boolean) {
+  connectedValue = value;
+  connectedListeners.forEach((fn) => fn());
+}
+
 vi.mock("@/context/RoomSignalingContext", () => ({
-  useRoomSignaling: () => ({
-    broadcast: broadcastMock,
-    connected: true,
-    useSignal: (type: string, handler: AnyHandler) => {
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      useEffect(() => {
-        let set = handlersByType.get(type);
-        if (!set) {
-          set = new Set();
-          handlersByType.set(type, set);
-        }
-        set.add(handler);
-        return () => {
-          set!.delete(handler);
-        };
-      }, [type, handler]);
-    },
-  }),
+  useRoomSignaling: () => {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [connected, setConnected] = useState(connectedValue);
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useEffect(() => {
+      const listener = () => setConnected(connectedValue);
+      connectedListeners.add(listener);
+      return () => {
+        connectedListeners.delete(listener);
+      };
+    }, []);
+    return {
+      broadcast: broadcastMock,
+      connected,
+      useSignal: (type: string, handler: AnyHandler) => {
+        // eslint-disable-next-line react-hooks/rules-of-hooks
+        useEffect(() => {
+          let set = handlersByType.get(type);
+          if (!set) {
+            set = new Set();
+            handlersByType.set(type, set);
+          }
+          set.add(handler);
+          return () => {
+            set!.delete(handler);
+          };
+        }, [type, handler]);
+      },
+    };
+  },
 }));
 
 function emit<T extends "hand_state" | "doc_share_state">(
@@ -143,6 +169,7 @@ describe("RoomSignalBridge", () => {
     broadcastMock.mockClear();
     toastInfoMock.mockClear();
     toastErrorMock.mockClear();
+    setConnectedMock(true);
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -258,5 +285,41 @@ describe("RoomSignalBridge", () => {
     });
     expect(container.querySelector('[data-testid="shared-file"]')?.textContent).toBe("");
     expect(container.querySelector('[data-testid="shared-page"]')?.textContent).toBe("1");
+  });
+
+  it("clears a stuck selfLoweredHandRef on disconnect so a later chair-lower still toasts", async () => {
+    const snap = deferred<RoomSnapshot>();
+    await act(async () => {
+      root.render(<Harness currentUserId="U-1" snapshotPromise={snap.promise} />);
+      snap.resolve(emptySnapshot());
+    });
+
+    // U-1 ถูกยกมืออยู่ก่อน
+    await act(async () => {
+      emit("hand_state", "server", { raised: [{ userId: "U-1", userName: "ผู้ใช้ทดสอบ", raisedAt: 1 }] });
+    });
+
+    // ผู้ใช้กดลดมือตัวเอง — ตั้งธง selfLoweredHandRef แล้วส่ง intent ไป แต่ hand_state ที่คาดว่าจะ
+    // ตอบกลับ "ไม่มาถึง" เลย (จำลองสาย disconnect กลางทาง)
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-testid="lower-self"]')!.click();
+    });
+
+    // สาย disconnect แล้ว reconnect — เจตนาที่ค้างอยู่ (ยกมือ) ไม่มีทางได้ hand_state คู่กันแล้ว
+    // ธงต้องถูกเคลียร์ตรงนี้ ไม่งั้นจะค้าง true ตลอดไป
+    await act(async () => {
+      setConnectedMock(false);
+    });
+    await act(async () => {
+      setConnectedMock(true);
+    });
+
+    // ทีนี้โฮสต์ลดมือให้ "จริงๆ" (เหตุการณ์ใหม่ ไม่เกี่ยวกับ intent ที่หลุดไปก่อนหน้า) — ต้องได้ toast
+    // เพราะธง selfLoweredHandRef ถูกเคลียร์ไปแล้วตอน disconnect ไม่ใช่ถูกกลืนทิ้งผิดๆ
+    await act(async () => {
+      emit("hand_state", "server", { raised: [] });
+    });
+
+    expect(toastInfoMock).toHaveBeenCalledWith("โฮสต์ลดมือให้คุณแล้ว");
   });
 });

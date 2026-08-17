@@ -61,11 +61,23 @@ export function RoomSignalBridge({
   docShareSignalReceivedRef: React.MutableRefObject<boolean>;
   selfLoweredHandRef: React.MutableRefObject<boolean>;
 }) {
-  const { broadcast, useSignal } = useRoomSignaling();
+  const { broadcast, useSignal, connected } = useRoomSignaling();
 
   useEffect(() => {
     broadcastRef.current = broadcast;
   }, [broadcast, broadcastRef]);
+
+  // Fix 2 (code review รอบที่ 2): selfLoweredHandRef ต้องไม่ค้างเป็น true ตลอดไปถ้า hand_state
+  // ที่คู่กับมันไม่มาถึง (สาย disconnect กลางทาง) — ถ้าไม่เคลียร์ ตอนที่โฮสต์มาลดมือให้จริงๆ ทีหลัง
+  // handler จะเข้าใจผิดว่าเป็นกรณีลดมือตัวเองแล้วกลืน toast ทิ้ง ที่นี่เคลียร์เมื่อขาดการเชื่อมต่อ
+  // เพราะเจตนาที่ส่งไปแล้วไม่มีทางได้รับ hand_state ตอบกลับอีกเมื่อ socket หลุด
+  // Fix 2 (code review รอบที่ 2): selfLoweredHandRef ต้องไม่ค้างเป็น true ตลอดไปถ้า hand_state
+  // ที่คู่กับมันไม่มาถึง (สาย disconnect กลางทาง) — ถ้าไม่เคลียร์ ตอนที่โฮสต์มาลดมือให้จริงๆ ทีหลัง
+  // handler จะเข้าใจผิดว่าเป็นกรณีลดมือตัวเองแล้วกลืน toast ทิ้ง ที่นี่เคลียร์เมื่อขาดการเชื่อมต่อ
+  // เพราะเจตนาที่ส่งไปแล้วไม่มีทางได้รับ hand_state ตอบกลับอีกเมื่อ socket หลุด
+  useEffect(() => {
+    if (!connected) selfLoweredHandRef.current = false;
+  }, [connected, selfLoweredHandRef]);
 
   useSignal("hand_state", (signal) => {
     // สัญญาณสดมาถึงแล้ว — ตั้งแต่นี้ snapshot effect ที่ยังค้าง fetch อยู่ (ถ้ามี) ต้องไม่ทับสถานะนี้อีก
