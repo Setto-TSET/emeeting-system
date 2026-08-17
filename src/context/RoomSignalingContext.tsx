@@ -3,8 +3,7 @@
 
 import { createContext, useContext, useEffect, useRef, useCallback, useState, ReactNode } from "react";
 import type { RoomSignal, SignalType } from "@/services/signaling/types";
-import { openChannel, postSignal, isRoomSignal } from "@/services/signaling/channel";
-import { useCurrentUser } from "./UserContext";
+import { openTransport, type RoomTransport } from "@/services/signaling/channel";
 
 type Ctx = {
   broadcast: <T extends SignalType>(signal: Omit<RoomSignal<T>, "senderId" | "senderName" | "timestamp">) => void;
@@ -17,44 +16,31 @@ const RoomSignalingContext = createContext<Ctx | null>(null);
 type Listener = (signal: RoomSignal) => void;
 
 export function RoomSignalingProvider({ meetingId, children }: { meetingId: string; children: ReactNode }) {
-  const { currentUser } = useCurrentUser();
-  const channelRef = useRef<BroadcastChannel | null>(null);
+  const transportRef = useRef<RoomTransport | null>(null);
   const listenersRef = useRef<Map<SignalType, Set<Listener>>>(new Map());
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const channel = openChannel(meetingId);
-    channelRef.current = channel;
-    setConnected(channel !== null);
-    if (!channel) return;
+    const transport = openTransport(meetingId, {
+      onMessage: (signal) => {
+        const set = listenersRef.current.get(signal.type);
+        set?.forEach((fn) => fn(signal));
+      },
+      onStatus: setConnected,
+    });
+    transportRef.current = transport;
 
-    const onMessage = (event: MessageEvent) => {
-      if (!isRoomSignal(event.data)) return;
-      const signal = event.data as RoomSignal;
-      const set = listenersRef.current.get(signal.type);
-      set?.forEach((fn) => fn(signal));
-    };
-    channel.addEventListener("message", onMessage);
     return () => {
-      channel.removeEventListener("message", onMessage);
-      channel.close();
-      channelRef.current = null;
+      transport.close();
+      transportRef.current = null;
       setConnected(false);
     };
   }, [meetingId]);
 
-  const broadcast = useCallback<Ctx["broadcast"]>(
-    (partial) => {
-      const signal: RoomSignal = {
-        ...partial,
-        senderId: currentUser.id,
-        senderName: currentUser.name,
-        timestamp: Date.now(),
-      };
-      postSignal(channelRef.current, signal);
-    },
-    [currentUser.id, currentUser.name]
-  );
+  // senderId/senderName ไม่ส่งไปแล้ว — server เติมจาก JWT เอง client ปลอมตัวไม่ได้
+  const broadcast = useCallback<Ctx["broadcast"]>((partial) => {
+    transportRef.current?.send(partial.type, partial.payload);
+  }, []);
 
   const useSignal = useCallback<Ctx["useSignal"]>((type, handler) => {
     // eslint-disable-next-line react-hooks/rules-of-hooks
