@@ -3,37 +3,41 @@
 // ═══════════════════════════════════════════
 
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from '../services/auth';
 
-// Extend Express Request ให้มี user property
 declare global {
   namespace Express {
     interface Request {
       user?: {
         id: string;
         email: string;
+        name: string;
         role: string;
+        meetingId?: string;
       };
     }
   }
 }
 
-// ─── Authentication Middleware ───
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing authorization header' });
-    }
-
-    const token = authHeader.slice(7);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-
-    req.user = decoded as any;
-    next();
-  } catch (error) {
-    res.status(401).json({ error: 'Invalid token' });
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing authorization header' });
   }
+
+  const claims = verifyAccessToken(authHeader.slice(7));
+  if (!claims) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+
+  req.user = {
+    id: claims.sub,
+    email: claims.email,
+    name: claims.name,
+    role: claims.role,
+    ...(claims.meetingId ? { meetingId: claims.meetingId } : {}),
+  };
+  next();
 }
 
 // ─── Error Handler ───
