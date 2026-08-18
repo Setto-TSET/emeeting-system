@@ -55,6 +55,7 @@ Vercel เดียว ลด operational surface ไม่ต้องดูแ
 | `POST /api/transcription/start` | เรียก ZegoCloud `StartRealtimeASRTask` ผูกกับ room ประชุม (room-level, ทุก stream) ตอน host เข้าห้อง |
 | `POST /api/transcription/stop` | เรียก `StopRealtimeASRTask` ตอน host ออกจากห้อง/จบประชุม |
 | `POST /api/transcription/callback` | Webhook รับผลถอดเสียงจาก ZegoCloud (public HTTPS ผ่าน Vercel, ต้องตั้งค่า URL นี้ฝั่ง ZegoCloud console — ดู "ข้อจำกัดที่ต้องรู้" ด้านล่าง) → map เป็น `TranscriptSegment[]` เก็บ store ชั่วคราวต่อ meetingId |
+| `GET /api/transcription/result?meetingId=` | อ่าน `MeetingTranscript` ที่สะสมไว้ในสโตร์สำหรับ meetingId นั้น — `zegoAsrProvider.getTranscript()` เรียก endpoint นี้ |
 | `POST /api/summarize` | รับ `MeetingTranscript` + `AgendaWindow[]` → เรียก Claude API (`@anthropic-ai/sdk`) สรุปทีละวาระ → คืน `MeetingSummary` (`isDraft: true` เสมอ) |
 
 ### Credentials (env vars ใหม่ ต่อแพทเทิร์น `ZEGO_APP_ID`/`ZEGO_SERVER_SECRET` ที่มีอยู่)
