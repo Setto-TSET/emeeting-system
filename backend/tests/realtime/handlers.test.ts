@@ -386,6 +386,57 @@ describe('signal handlers', () => {
     manager.close();
   });
 
+  it('lets anyone start a share when none is active, but blocks starting over someone else\'s active share unless a manager takes over', async () => {
+    const sharer = await openClient('U-001', 'นาย สมชาย ใจดี', 'staff');
+    const outsider = await openClient('U-003', 'นางสาว มาลี รักษาสัตย์', 'staff');
+    const manager = await openClient('U-999', 'IT Admin'); // role admin ∈ MANAGER_ROLES
+
+    // ไม่มีใครแชร์อยู่ — ใครก็เริ่มแชร์ได้
+    const started = Promise.all([nextMessage(outsider), nextMessage(manager)]);
+    sharer.send(JSON.stringify({ type: 'doc_share', payload: { fileId: 'F-A', fileName: 'A.pdf' } }));
+    await started;
+
+    let rows = (await query('SELECT file_id, shared_by FROM doc_shares WHERE meeting_id = ?', [
+      MEETING,
+    ])) as { file_id: string; shared_by: string }[];
+    expect(rows).toEqual([{ file_id: 'F-A', shared_by: 'U-001' }]);
+
+    // เจ้าของเดิมเปลี่ยนไปแชร์ไฟล์อื่นแทนได้ (ไปเอกสารถัดไป) — ไม่ใช่ "คนอื่น" ตามกฎ
+    const replaced = Promise.all([nextMessage(outsider), nextMessage(manager)]);
+    sharer.send(JSON.stringify({ type: 'doc_share', payload: { fileId: 'F-B', fileName: 'B.pdf' } }));
+    await replaced;
+
+    rows = (await query('SELECT file_id, shared_by FROM doc_shares WHERE meeting_id = ?', [
+      MEETING,
+    ])) as { file_id: string; shared_by: string }[];
+    expect(rows).toEqual([{ file_id: 'F-B', shared_by: 'U-001' }]);
+
+    // ผู้ใช้อื่นที่ไม่ใช่เจ้าของและไม่ใช่ manager เริ่มแชร์ทับไม่ได้ระหว่างที่คนอื่นแชร์อยู่ —
+    // เทสต์นี้จะจับได้ทันทีถ้าลบการเช็ค current && current.sharedBy !== client.userId ออก
+    const rejected = nextMessage(outsider);
+    outsider.send(JSON.stringify({ type: 'doc_share', payload: { fileId: 'F-C', fileName: 'C.pdf' } }));
+    expect((await rejected).type).toBe('signal_error');
+
+    rows = (await query('SELECT file_id, shared_by FROM doc_shares WHERE meeting_id = ?', [
+      MEETING,
+    ])) as { file_id: string; shared_by: string }[];
+    expect(rows).toEqual([{ file_id: 'F-B', shared_by: 'U-001' }]);
+
+    // manager แย่งแชร์แทนคนอื่นได้ — shared_by ต้องกลายเป็น manager
+    const takenOver = Promise.all([nextMessage(sharer), nextMessage(outsider)]);
+    manager.send(JSON.stringify({ type: 'doc_share', payload: { fileId: 'F-D', fileName: 'D.pdf' } }));
+    await takenOver;
+
+    rows = (await query('SELECT file_id, shared_by FROM doc_shares WHERE meeting_id = ?', [
+      MEETING,
+    ])) as { file_id: string; shared_by: string }[];
+    expect(rows).toEqual([{ file_id: 'F-D', shared_by: 'U-999' }]);
+
+    sharer.close();
+    outsider.close();
+    manager.close();
+  });
+
   it('rejects vote_create with no title, vote_cast with a missing optionId, and a non-object payload — without crashing or writing', async () => {
     const a = await openClient('U-999', 'IT Admin');
 

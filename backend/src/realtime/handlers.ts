@@ -141,6 +141,14 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
       const fileName = typeof data.fileName === 'string' ? data.fileName : '';
       if (!fileId || !fileName) return fail(client, 'ข้อมูลไฟล์ไม่ครบ');
 
+      // กติกาความเป็นเจ้าของเดียวกันกับ doc_share_page/doc_share_stop ด้านล่าง: ไม่มีคนแชร์อยู่ —
+      // ใครก็เริ่มแชร์ได้, มีคนแชร์อยู่แล้วแต่เป็นตัวเอง — เปลี่ยนไฟล์ได้ (ไปเอกสารถัดไป),
+      // มีคนอื่นแชร์อยู่ — เริ่มแชร์ทับไม่ได้เว้นแต่เป็น manager ห้ามแยกกฎนี้ออกจากกันอีก
+      const current = await docShare.getShare(client.meetingId);
+      if (current && current.sharedBy !== client.userId && !MANAGER_ROLES.has(client.role)) {
+        return fail(client, `ไม่มีสิทธิ์เริ่มแชร์ทับ — ${current.sharedName} กำลังแชร์เอกสารอยู่`);
+      }
+
       await docShare.setShare(client.meetingId, {
         fileId,
         fileName,
