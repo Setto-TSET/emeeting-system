@@ -7,7 +7,7 @@
 
 ```bash
 npm install
-cp .env.example .env.local   # ใส่ ZEGO_APP_ID / ZEGO_SERVER_SECRET / ZEGO_SERVER_URL จริง
+cp .env.example .env.local   # ใส่ ZEGO_APP_ID / ZEGO_SERVER_SECRET / ZEGO_SERVER_URL / CLAUDE_API_KEY จริง
 npm run dev
 # เปิด http://localhost:3000
 ```
