@@ -20,13 +20,13 @@
 - ✅ อัปโหลดเอกสารจริง (IndexedDB) + preview ด้วย PDF/Markdown viewer
 - ✅ การจำหน่ายเอกสารตามสิทธิ์ (4 ระดับการมองเห็น)
 - ✅ Guest Join — Magic Link flow (เชิญบุคคลภายนอกเข้าประชุมโดยไม่ต้องสร้างบัญชี, ใช้งานได้จริงแล้ว ไม่ใช่แค่ plan)
-- ✅ โหวตแบบ realtime, ยกมือแบบ realtime, ซับไตเติลสด (Web Speech API), ถอดคำพูด + แชร์เอกสารซิงค์ — ผ่าน `BroadcastChannel` signaling layer ⚠️ **sync ได้แค่ระหว่างแท็บของเบราว์เซอร์เดียวกันบนเครื่องเดียวกันเท่านั้น** ไม่ข้ามเครื่อง/ไม่ข้ามเบราว์เซอร์จริง (มีแค่วิดีโอ ZegoCloud ที่ sync ข้ามเครื่องได้จริงเพราะเป็น cloud service — ดู README.md)
+- ✅ โหวตแบบ realtime, ยกมือแบบ realtime, ซับไตเติลสด (Web Speech API), ถอดคำพูด + แชร์เอกสารซิงค์ — ผ่าน WebSocket backend ที่ authenticate ด้วย JWT แล้ว **sync ข้ามเครื่อง/ข้ามเบราว์เซอร์ได้จริง** state ทั้งหมดเก็บที่ server (MySQL) ไม่ใช่ per-tab อีกต่อไป, คนเข้าห้องทีหลังดึง snapshot ปัจจุบันผ่าน `GET /api/rooms/:meetingId/state` (ดู README.md)
 
 ### ⏳ ยังเลื่อน
-- ❌ Backend + API + Database (specification ทำสำเร็จ, ยังไม่ deploy จริง)
+- ❌ Backend deploy จริง (โค้ด + DB schema + auth + WebSocket realtime เขียนและเทสครบแล้ว รันได้บนเครื่อง dev, ยังไม่ได้ deploy ขึ้น host จริง — งานที่เหลือ)
 - ❌ Email service จริง (template พร้อม, รอเลือก Sendgrid/AWS SES)
 - ❌ Zoom Room enterprise SIP bridge (Phase E placeholder UI ทำแล้ว, ตัว SIP bridge จริงรอ ZegoCloud Enterprise Plan)
-- ❌ Server-side audit logging + signed URLs (Phase 2 security, ยังไม่ทำ)
+- ❌ Server-side audit logging + signed URLs (Phase 2 security, ยังไม่ทำ) — authentication (JWT + bcrypt) และ server-side authorization (ใครเข้าห้องไหนได้, ใครเป็น manager) ทำเสร็จแล้ว ไม่ใช่ "ยังไม่ทำ" อีกต่อไป
 
 ---
 
@@ -417,7 +417,7 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 - ❌ No email service (template only)
 - ❌ No audit logging (client-side only)
 - ❌ No database (mock data)
-- ❌ No authentication (password uncheckable)
+- ✅ Authentication จริง (`POST /api/auth/login` เช็ครหัสผ่านด้วย bcrypt ที่ server, ออก JWT, ทุก request/WebSocket แนบ token)
 
 ### Ready to Address (With Backend)
 - 🔄 Transcription API แม่นยำขึ้น (AssemblyAI/Azure STT — ปัจจุบันใช้ Web Speech API ฝั่ง client)
@@ -445,7 +445,7 @@ npm run dev
 # Open http://localhost:3000
 ```
 
-### Test Data Access (ไม่เช็ครหัสผ่าน — กดปุ่ม "บัญชีทดสอบ" หน้า login ได้เลย)
+### Test Data Access (ต้องล็อกอินจริงผ่าน backend แล้ว — รหัสผ่านมาจาก `SEED_PASSWORD` ตอนรัน `npm run seed`, ผู้ใช้ทดสอบทุกคนใช้รหัสเดียวกัน)
 - **Admin:** admin@e-office.cloud
 - **ผู้บริหาร:** prasert@e-office.cloud
 - **เลขานุการ:** malee.r@e-office.cloud
@@ -493,7 +493,7 @@ npm run dev
 
 ### 1️⃣ Short-term (1–2 weeks)
 - [x] **Deploy frontend** — Vercel production, ZegoCloud credential ตั้งเป็น env var บน Vercel แล้ว (ไม่ใช่แค่ dev `.env.local`)
-- [ ] **Setup Backend Project** — Node.js + Express boilerplate (สำหรับ transcription/summarize/guest เท่านั้น — video token ไม่ต้องใช้แล้ว)
+- [x] **Setup Backend Project** — Express + MySQL + JWT auth + WebSocket realtime server เขียนและเทสครบแล้ว (transcription/summarize/guest/rooms/realtime) — เหลือแค่ deploy ขึ้น host จริง
 - [ ] **Email Service Setup** — Sendgrid/AWS SES account
 
 ### 2️⃣ Medium-term (2–4 weeks)

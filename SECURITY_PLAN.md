@@ -17,6 +17,16 @@ Frontend Access Control
 ├─ Guest verification: magic token (24h expiry)
 └─ Session timeout: 30min idle
 
+Backend Access Control (ทำแล้ว — ไม่ใช่ Phase 2 อีกต่อไป)
+├─ Password authentication จริง: bcrypt hash เทียบที่ server, ไม่เช็คฝั่ง client
+│  └─ `POST /api/auth/login` → JWT ที่ frontend ใช้แนบทุก request ต่อจากนี้
+├─ REST: `authMiddleware` ตรวจ JWT ทุก route ที่ไม่ใช่ login/guest
+├─ WebSocket: token แนบ query string ตอน handshake, ปิดสาย 4401 (ไม่มี/token ผิด)
+│  หรือ 4403 (ไม่ใช่สมาชิกห้องนี้) ก่อนรับ signal ใดๆ
+├─ senderId ทุก signal มาจาก JWT ที่ server ถอดเอง — client ปลอมตัวเป็นคนอื่นไม่ได้
+└─ Manager-only actions (ลดมือคนอื่น, บังคับเปลี่ยนเอกสารที่แชร์, หยุดแชร์ของคนอื่น,
+   เริ่มแชร์ทับคนอื่น) เช็ค role ที่ server ทุกครั้ง ไม่ใช่แค่ซ่อนปุ่มฝั่ง UI
+
 Database Level (Phase 2)
 ├─ Audit log table: who+when+ip
 ├─ Rate limiting: max 100 views/min per user
@@ -91,6 +101,13 @@ Backend Audit & Control
    ├─ Sensitive data: AES-256 encryption
    └─ Keys: managed by HSM or vault
 ```
+
+**อัปเดต:** สอง item ด้านล่างนี้ทำเสร็จแล้วนอกแผน Phase 2 เดิม (มาพร้อมงาน realtime sync) —
+รายการอื่นใน Layer 3 (audit log, signed URL, single-active session, server-side watermark
+injection) ยังไม่ทำ, ⏳ ต่อไป:
+- One-vote-per-user บังคับด้วย primary key ของตาราง `vote_records` (`(topic_id, user_id)`)
+  ไม่ใช่แค่เช็คฝั่ง client — ส่งซ้ำจะ error ที่ database ไม่ใช่แค่ UI กันไว้
+- Passwords: bcrypt + salt ใช้งานจริงแล้วใน `backend/src/services/auth.ts` (ไม่ใช่แค่แผน)
 
 ### Layer 4: Policy & Legal ✓ (ต้องอยู่ในนโยบายองค์กร)
 **Goal:** Create accountability (strongest deterrent)
