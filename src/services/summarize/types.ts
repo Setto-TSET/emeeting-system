@@ -37,7 +37,7 @@ export type MeetingSummary = {
 export type AgendaWindow = { agendaId: string; startSec: number; endSec: number };
 
 export type Summarizer = {
-  id: "llm" | "mock";
+  id: "llm" | "mock" | "claude";
   summarizeByAgenda(
     transcript: MeetingTranscript,
     windows: AgendaWindow[]
