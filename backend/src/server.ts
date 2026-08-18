@@ -11,6 +11,7 @@ import { errorHandler } from './middleware';
 import authRoutes from './routes/auth';
 import transcriptionRoutes from './routes/transcription';
 import summarizeRoutes from './routes/summarize';
+import roomsRoutes from './routes/rooms';
 import { attachRealtime } from './realtime/server';
 
 dotenv.config();
@@ -45,6 +46,7 @@ export function createApp(): Express {
   app.use('/api/auth', authRoutes);
   app.use('/api/transcription', transcriptionRoutes);
   app.use('/api/summarize', summarizeRoutes);
+  app.use('/api/rooms', roomsRoutes);
 
   app.use(errorHandler);
   app.use((req: Request, res: Response) => {
