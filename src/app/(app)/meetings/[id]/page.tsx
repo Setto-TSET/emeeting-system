@@ -27,8 +27,8 @@ import { useCurrentUser } from "@/context/UserContext";
 import { useMeetings } from "@/context/MeetingContext";
 import { createInviteToken, getTokensForMeeting, revokeToken, buildJoinUrl, type InviteToken } from "@/lib/inviteTokens";
 import { downloadIcs } from "@/lib/calendar";
-import { generateMockTranscript } from "@/services/transcription/mockProvider";
-import { mockSummarizer } from "@/services/summarize/mockSummarizer";
+import { fetchRawTranscript, resolveSpeakerNames } from "@/services/transcription/zegoAsrProvider";
+import { claudeSummarizer } from "@/services/summarize/claudeSummarizer";
 import { buildReportMarkdown } from "@/services/summarize/reportBuilder";
 
 const iconSm = "material-symbols-outlined text-[16px]";
@@ -167,17 +167,31 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const requestTranscript = async () => {
     setTranscriptBusy(true);
     updateMeeting(meeting.id, { transcriptStatus: "processing" });
-    await new Promise(r => setTimeout(r, 2000));
-    updateMeeting(meeting.id, { transcriptStatus: "ready" });
-    setTranscriptBusy(false);
-    toast.success("ได้รับ Transcript แล้ว", { description: "สามารถสร้างร่างรายงานสรุปได้" });
+    try {
+      const raw = await fetchRawTranscript(meeting.id);
+      if (raw.status !== "ready" || raw.segments.length === 0) {
+        updateMeeting(meeting.id, { transcriptStatus: raw.status === "failed" ? "failed" : "processing" });
+        toast.info("ยังไม่มี Transcript พร้อมใช้งาน", { description: "ลองใหม่อีกครั้งหลังประชุมจบ" });
+        return;
+      }
+      updateMeeting(meeting.id, { transcriptStatus: "ready" });
+      toast.success("ได้รับ Transcript แล้ว", { description: "สามารถสร้างร่างรายงานสรุปได้" });
+    } catch (error) {
+      updateMeeting(meeting.id, { transcriptStatus: "failed" });
+      toast.error("ดึง Transcript ไม่สำเร็จ", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setTranscriptBusy(false);
+    }
   };
 
   const generateSummary = async () => {
     setSummaryBusy(true);
     try {
-      const transcript = generateMockTranscript(meeting);
-      const summary    = await mockSummarizer.summarizeByAgenda(transcript, []);
+      const rawTranscript = await fetchRawTranscript(meeting.id);
+      const transcript    = resolveSpeakerNames(rawTranscript, meeting);
+      const summary        = await claudeSummarizer.summarizeByAgenda(transcript, []);
       const mdContent  = buildReportMarkdown(meeting, summary);
       const mdBlob     = new Blob([mdContent], { type: "text/markdown; charset=utf-8" });
       const mdFile     = new File([mdBlob], "report_draft_summary.md", { type: "text/markdown" });
