@@ -33,7 +33,7 @@ export type MeetingTranscript = {
  * สัญญากลาง — หน้าจอ/ท่อสรุปเรียกผ่านนี้ ไม่ต้องรู้ว่าเสียงมาจาก STT ไหน
  */
 export type TranscriptionProvider = {
-  id: "web_speech" | "assemblyai" | "azure" | "mock";
+  id: "web_speech" | "assemblyai" | "azure" | "mock" | "zego_asr";
   /** ดึง/สร้าง transcript ของการประชุม (หลังประชุมจบ) */
   getTranscript(meetingId: string): Promise<MeetingTranscript>;
 };

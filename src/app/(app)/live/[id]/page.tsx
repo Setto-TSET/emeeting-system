@@ -266,6 +266,49 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   // Detect when meeting ends (organizer ended it) — show notification to guests
   // Can't use isManager here because it's after early returns, so compute inline
   const isHost = meeting ? can(currentUser, "meeting.host", meeting) : false;
+
+  // Phase D: ZegoCloud ASR — เฉพาะ host เป็นคน trigger start/stop กันเรียกซ้ำจากผู้เข้าร่วมหลายคน
+  useEffect(() => {
+    if (!meeting || !hasJoined || !isHost) return;
+    const surface = resolveVideoSurface(meeting);
+    if (surface.kind !== "embed") return;
+
+    const meetingId = meeting.id;
+    const roomId = meeting.conferenceRoomKey ?? meeting.id;
+    // จำ taskId จาก response ของ start ไว้ส่งกลับตอน stop — เผื่อ serverless instance ที่รับ stop
+    // เป็นคนละตัวกับที่รับ start แล้วหา taskId ใน in-memory store ไม่เจอ (ไม่งั้น ASR รันค้าง)
+    let taskId: string | undefined;
+
+    fetch("/api/transcription/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meetingId, roomId }),
+    })
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(typeof body?.error === "string" ? body.error : `HTTP ${res.status}`);
+        }
+        if (typeof body?.taskId === "string") taskId = body.taskId;
+      })
+      .catch((err) => {
+        console.error("[live] เริ่มถอดเสียงอัตโนมัติไม่สำเร็จ:", err);
+        toast.error("เริ่มถอดเสียงอัตโนมัติไม่สำเร็จ", {
+          description: err instanceof Error ? err.message : undefined,
+        });
+      });
+
+    return () => {
+      // best-effort เสมอ ไม่ผูกกับ flag ที่ตั้งแบบ async — ถ้า unmount ก่อน start resolve
+      // task อาจถูกสร้างไปแล้ว ต้องพยายามหยุดไว้ก่อน (ถ้าไม่มี task จริง stop คืน 404 เฉย ๆ)
+      fetch("/api/transcription/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId, taskId }),
+      }).catch((err) => console.error("[live] หยุดถอดเสียงไม่สำเร็จ:", err));
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meeting?.id, hasJoined, isHost]);
   useEffect(() => {
     if (!meeting || !hasJoined) return;
     if (meeting.status === "waiting_endorse" && !isHost) {
