@@ -9,8 +9,10 @@
 import type { TranscriptionProvider, MeetingTranscript } from "./types";
 import type { Meeting } from "@/data";
 
-export async function fetchRawTranscript(meetingId: string): Promise<MeetingTranscript> {
-  const res = await fetch(`/api/transcription/result?meetingId=${encodeURIComponent(meetingId)}`);
+// roomKey = meeting.conferenceRoomKey ?? meeting.id — server เก็บ transcript ด้วยคีย์นี้
+// (callback ของ ZegoCloud ส่ง RoomId มา ไม่ใช่ meetingId) ผู้เรียกต้องส่ง roomKey ไม่ใช่ meeting.id
+export async function fetchRawTranscript(roomKey: string): Promise<MeetingTranscript> {
+  const res = await fetch(`/api/transcription/result?roomKey=${encodeURIComponent(roomKey)}`);
   if (!res.ok) {
     throw new Error(`ดึง transcript ไม่สำเร็จ: HTTP ${res.status}`);
   }
@@ -29,6 +31,9 @@ export function resolveSpeakerNames(transcript: MeetingTranscript, meeting: Meet
 
 export const zegoAsrProvider: TranscriptionProvider = {
   id: "zego_asr",
+  // ⚠️ พารามิเตอร์ชื่อ meetingId ตาม type contract ของ TranscriptionProvider (ห้ามเปลี่ยน signature)
+  // แต่ค่าที่ต้องส่งเข้ามาจริง ๆ คือ roomKey (conferenceRoomKey ?? meeting.id) เพราะ server เก็บด้วย roomKey
+  // ปัจจุบัน UI ไม่ได้เรียกผ่านเมธอดนี้ — เรียก fetchRawTranscript() ตรง ๆ ด้วย roomKey
   async getTranscript(meetingId: string): Promise<MeetingTranscript> {
     return fetchRawTranscript(meetingId);
   },

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   initTranscript,
   appendSegments,
@@ -9,7 +9,7 @@ import {
 } from "./transcriptStore";
 
 describe("transcriptStore", () => {
-  it("meetingId ที่ไม่เคย init คืน status none, segments ว่าง", () => {
+  it("roomKey ที่ไม่เคย init คืน status none, segments ว่าง", () => {
     expect(getTranscript("never-seen")).toEqual({
       meetingId: "never-seen",
       status: "none",

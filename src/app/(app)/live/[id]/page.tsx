@@ -275,7 +275,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
 
     const meetingId = meeting.id;
     const roomId = meeting.conferenceRoomKey ?? meeting.id;
-    let started = false;
+    // จำ taskId จาก response ของ start ไว้ส่งกลับตอน stop — เผื่อ serverless instance ที่รับ stop
+    // เป็นคนละตัวกับที่รับ start แล้วหา taskId ใน in-memory store ไม่เจอ (ไม่งั้น ASR รันค้าง)
+    let taskId: string | undefined;
 
     fetch("/api/transcription/start", {
       method: "POST",
@@ -283,11 +285,11 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       body: JSON.stringify({ meetingId, roomId }),
     })
       .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
           throw new Error(typeof body?.error === "string" ? body.error : `HTTP ${res.status}`);
         }
-        started = true;
+        if (typeof body?.taskId === "string") taskId = body.taskId;
       })
       .catch((err) => {
         console.error("[live] เริ่มถอดเสียงอัตโนมัติไม่สำเร็จ:", err);
@@ -297,11 +299,12 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       });
 
     return () => {
-      if (!started) return;
+      // best-effort เสมอ ไม่ผูกกับ flag ที่ตั้งแบบ async — ถ้า unmount ก่อน start resolve
+      // task อาจถูกสร้างไปแล้ว ต้องพยายามหยุดไว้ก่อน (ถ้าไม่มี task จริง stop คืน 404 เฉย ๆ)
       fetch("/api/transcription/stop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meetingId }),
+        body: JSON.stringify({ roomId, taskId }),
       }).catch((err) => console.error("[live] หยุดถอดเสียงไม่สำเร็จ:", err));
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

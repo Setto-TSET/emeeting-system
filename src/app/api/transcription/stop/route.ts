@@ -22,22 +22,29 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => null);
-  const meetingId = body?.meetingId as string | undefined;
-  if (!meetingId) {
-    return NextResponse.json({ error: "Missing required field: meetingId" }, { status: 400 });
+  const roomId = body?.roomId as string | undefined;
+  const clientTaskId = body?.taskId as string | undefined;
+  if (!roomId) {
+    return NextResponse.json({ error: "Missing required field: roomId" }, { status: 400 });
   }
 
-  const taskId = getTaskId(meetingId);
+  // transcriptStore เป็น in-memory ต่อ serverless instance — instance ที่รับ stop อาจคนละตัวกับที่รับ start
+  // ถ้าหา taskId ใน store ไม่เจอ ใช้ taskId ที่ client จำไว้จาก response ของ start เป็น fallback
+  // ไม่งั้น ASR task จะรันค้างตลอดกาล (เสียเงินจริง)
+  const storedTaskId = getTaskId(roomId);
+  const fallbackTaskId =
+    typeof clientTaskId === "string" && clientTaskId.trim() !== "" ? clientTaskId.trim() : null;
+  const taskId = storedTaskId ?? fallbackTaskId;
   if (!taskId) {
     return NextResponse.json(
-      { error: `ไม่พบ ASR task ที่กำลังทำงานสำหรับ meetingId=${meetingId}` },
+      { error: `ไม่พบ ASR task ที่กำลังทำงานสำหรับ roomId=${roomId}` },
       { status: 404 }
     );
   }
 
   try {
     await stopAsrTask(appId, secret, taskId);
-    markReady(meetingId);
+    markReady(roomId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[/api/transcription/stop] failed:", error);

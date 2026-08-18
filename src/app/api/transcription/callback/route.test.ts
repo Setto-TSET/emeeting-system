@@ -12,20 +12,20 @@ function makeRequest(body: unknown): NextRequest {
 
 describe("POST /api/transcription/callback", () => {
   beforeEach(() => {
-    initTranscript("meeting-1", "task-1");
+    initTranscript("room-1", "task-1");
   });
 
-  it("event ASRResult ที่มี Text ต่อ segment เข้า store ของ meetingId (=RoomId)", async () => {
+  it("event ASRResult ที่มี Text ต่อ segment เข้า store ของ roomKey (=RoomId)", async () => {
     const res = await POST(
       makeRequest({
         Event: "ASRResult",
-        RoomId: "meeting-1",
+        RoomId: "room-1",
         Data: { UserId: "u1", Text: "สวัสดีครับ", StartTime: 1000, EndTime: 2000 },
       })
     );
     expect(res.status).toBe(200);
 
-    const transcript = getTranscript("meeting-1");
+    const transcript = getTranscript("room-1");
     expect(transcript.segments).toHaveLength(1);
     expect(transcript.segments[0]).toEqual({
       speakerId: "u1",
@@ -37,9 +37,9 @@ describe("POST /api/transcription/callback", () => {
   });
 
   it("event Exception ทำให้ status เป็น failed", async () => {
-    const res = await POST(makeRequest({ Event: "Exception", RoomId: "meeting-1" }));
+    const res = await POST(makeRequest({ Event: "Exception", RoomId: "room-1" }));
     expect(res.status).toBe(200);
-    expect(getTranscript("meeting-1").status).toBe("failed");
+    expect(getTranscript("room-1").status).toBe("failed");
   });
 
   it("ไม่มี RoomId → 400", async () => {

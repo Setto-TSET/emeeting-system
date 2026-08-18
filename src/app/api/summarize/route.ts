@@ -34,6 +34,13 @@ export async function POST(request: NextRequest) {
   if (!transcript) {
     return NextResponse.json({ error: "Missing required field: transcript" }, { status: 400 });
   }
+  // เช็ค shape ให้ลึกพอ — ถ้า segments ไม่ใช่ array จะไปพังที่ .map() แล้วโผล่ error ที่อ่านไม่รู้เรื่อง
+  if (!Array.isArray(transcript?.segments)) {
+    return NextResponse.json(
+      { error: "Missing/invalid field: transcript.segments" },
+      { status: 400 }
+    );
+  }
   const windows = (body?.windows ?? []) as AgendaWindow[];
 
   try {

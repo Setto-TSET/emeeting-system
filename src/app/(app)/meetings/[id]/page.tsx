@@ -168,7 +168,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     setTranscriptBusy(true);
     updateMeeting(meeting.id, { transcriptStatus: "processing" });
     try {
-      const raw = await fetchRawTranscript(meeting.id);
+      const raw = await fetchRawTranscript(meeting.conferenceRoomKey ?? meeting.id);
       if (raw.status !== "ready" || raw.segments.length === 0) {
         updateMeeting(meeting.id, { transcriptStatus: raw.status === "failed" ? "failed" : "processing" });
         toast.info("ยังไม่มี Transcript พร้อมใช้งาน", { description: "ลองใหม่อีกครั้งหลังประชุมจบ" });
@@ -189,7 +189,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const generateSummary = async () => {
     setSummaryBusy(true);
     try {
-      const rawTranscript = await fetchRawTranscript(meeting.id);
+      const rawTranscript = await fetchRawTranscript(meeting.conferenceRoomKey ?? meeting.id);
       const transcript    = resolveSpeakerNames(rawTranscript, meeting);
       const summary        = await claudeSummarizer.summarizeByAgenda(transcript, []);
       const mdContent  = buildReportMarkdown(meeting, summary);
