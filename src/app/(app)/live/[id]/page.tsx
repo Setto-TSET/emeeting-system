@@ -266,6 +266,46 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   // Detect when meeting ends (organizer ended it) — show notification to guests
   // Can't use isManager here because it's after early returns, so compute inline
   const isHost = meeting ? can(currentUser, "meeting.host", meeting) : false;
+
+  // Phase D: ZegoCloud ASR — เฉพาะ host เป็นคน trigger start/stop กันเรียกซ้ำจากผู้เข้าร่วมหลายคน
+  useEffect(() => {
+    if (!meeting || !hasJoined || !isHost) return;
+    const surface = resolveVideoSurface(meeting);
+    if (surface.kind !== "embed") return;
+
+    const meetingId = meeting.id;
+    const roomId = meeting.conferenceRoomKey ?? meeting.id;
+    let started = false;
+
+    fetch("/api/transcription/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meetingId, roomId }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(typeof body?.error === "string" ? body.error : `HTTP ${res.status}`);
+        }
+        started = true;
+      })
+      .catch((err) => {
+        console.error("[live] เริ่มถอดเสียงอัตโนมัติไม่สำเร็จ:", err);
+        toast.error("เริ่มถอดเสียงอัตโนมัติไม่สำเร็จ", {
+          description: err instanceof Error ? err.message : undefined,
+        });
+      });
+
+    return () => {
+      if (!started) return;
+      fetch("/api/transcription/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meetingId }),
+      }).catch((err) => console.error("[live] หยุดถอดเสียงไม่สำเร็จ:", err));
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meeting?.id, hasJoined, isHost]);
   useEffect(() => {
     if (!meeting || !hasJoined) return;
     if (meeting.status === "waiting_endorse" && !isHost) {
