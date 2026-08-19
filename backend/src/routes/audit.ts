@@ -33,8 +33,13 @@ router.post('/log-view', asyncHandler(async (req: Request, res: Response) => {
  */
 router.get('/logs', asyncHandler(async (req: Request, res: Response) => {
   const { meetingId, userId } = req.query;
-  const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), 200);
-  const offset = parseInt((req.query.offset as string) || '0', 10);
+
+  let limit = parseInt((req.query.limit as string) || '50', 10);
+  if (!Number.isFinite(limit) || limit < 0) limit = 50;
+  limit = Math.min(limit, 200);
+
+  let offset = parseInt((req.query.offset as string) || '0', 10);
+  if (!Number.isFinite(offset) || offset < 0) offset = 0;
 
   const conditions: string[] = [];
   const values: any[] = [];
