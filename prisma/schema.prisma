@@ -1,0 +1,474 @@
+// ═══════════════════════════════════════════
+// Prisma schema — e-Meeting & Room Booking System
+//
+// อ้างอิงโครงสร้างจาก docs/backend-design.md (Phase 1: Foundation)
+// ชนิดข้อมูลต้นทางคือ type ใน src/data/index.ts ที่เดิมเก็บเป็น object ซ้อนใน localStorage
+// — normalize ออกเป็นตารางแยกที่นี่
+//
+// Database: MySQL `emeeting_db` ตัวเดียวกับที่ backend/ ใช้อยู่ (transcriptions,
+// summaries, audit_logs ถูกสร้างด้วย raw SQL ใน backend/src/database/migrations.ts
+// จึงไม่ได้อยู่ในไฟล์นี้ — Prisma จะไม่แตะตารางเหล่านั้น)
+// ═══════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────── Enums ─────────
+
+enum SystemRole {
+  admin
+  executive
+  secretary
+  staff
+  external
+  room
+}
+
+enum RoomCategory {
+  small
+  medium
+  large
+  conference
+  board
+}
+
+enum RoomStatus {
+  available
+  occupied
+  maintenance
+}
+
+enum BookingStatus {
+  confirmed
+  pending
+  cancelled
+}
+
+enum MeetingStatus {
+  prepare
+  notified
+  in_progress
+  waiting_endorse
+  endorsed
+}
+
+enum ConferenceProvider {
+  mock
+  teams
+  zoom
+  google_meet
+  zegocloud
+  other
+}
+
+enum ConfidentialityLevel {
+  normal
+  restricted
+  top_secret
+}
+
+enum TranscriptStatus {
+  none
+  processing
+  ready
+  failed
+}
+
+enum AttendanceStatus {
+  attend
+  representative
+  absent
+  pending
+}
+
+enum MeetingFileType {
+  regulation
+  attachment
+  report_draft
+  report_final
+}
+
+enum FileVisibility {
+  public
+  committee
+  participants
+  restricted
+}
+
+enum PermissionType {
+  manager
+  reader
+}
+
+enum ZoomRoomDeviceStatus {
+  invited
+  connected
+  disconnected
+}
+
+enum VoteTopicStatus {
+  open
+  closed
+}
+
+// ───────── Core ─────────
+
+model User {
+  id           String     @id
+  name         String
+  position     String
+  department   String
+  email        String     @unique
+  passwordHash String
+  systemRole   SystemRole @default(staff)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // บัญชีห้องประชุม (systemRole = room) ผูกกับห้องผ่าน Room.accountId
+  // ฝั่ง AppUser.roomId ใน UI อ่านได้จาก roomAccount?.id — ไม่เก็บซ้ำสองที่
+  roomAccount Room? @relation("RoomAccount")
+
+  committees      UserCommittee[]
+  bookings        Booking[]
+  organizedMeetings Meeting[]           @relation("MeetingOrganizer")
+  participations  MeetingParticipant[]
+  permissions     MeetingPermission[]
+  createdInvites  InviteToken[]         @relation("InviteCreator")
+  createdTopics   VoteTopic[]           @relation("VoteCreator")
+  voteRecords     VoteRecord[]
+
+  @@index([systemRole])
+}
+
+model Committee {
+  id            String   @id
+  name          String
+  meetingsCount Int      @default(0)
+  members       Int      @default(0)
+
+  users    UserCommittee[]
+  meetings Meeting[]
+}
+
+model UserCommittee {
+  userId      String
+  committeeId String
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, committeeId])
+  @@index([committeeId])
+}
+
+model Room {
+  id               String       @id
+  name             String
+  category         RoomCategory @default(medium)
+  categoryLabel    String
+  capacity         Int
+  location         String
+  floor            String
+  amenities        Json
+  image            String?
+  status           RoomStatus   @default(available)
+  hasZoomRoom      Boolean      @default(false)
+  zoomRoomDeviceId String?
+  hasIpad          Boolean      @default(false)
+
+  // บัญชีผู้ใช้ role "room" ที่ล็อกอินค้างบนคอมประจำห้อง (kiosk)
+  accountId String? @unique
+  account   User?   @relation("RoomAccount", fields: [accountId], references: [id], onDelete: SetNull)
+
+  bookings        Booking[]
+  zoomRoomDevices ZoomRoomDevice[]
+}
+
+model Booking {
+  id         String        @id @default(cuid())
+  roomId     String
+  title      String
+  bookedById String
+  department String
+  date       String // YYYY-MM-DD — เก็บเป็น string เพื่อเทียบตรงกับ UI เดิม
+  startTime  String // HH:mm
+  endTime    String
+  attendees  Int
+  purpose    String        @db.Text
+  status     BookingStatus @default(pending)
+  extraRooms Json?
+  createdAt  DateTime      @default(now())
+
+  room     Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  bookedBy User @relation(fields: [bookedById], references: [id], onDelete: Cascade)
+
+  @@index([roomId, date])
+  @@index([bookedById])
+}
+
+// ───────── Meeting (entity ศูนย์กลาง) ─────────
+
+model Meeting {
+  id                   String               @id
+  name                 String
+  shortName            String
+  type                 String
+  committeeId          String
+  organizerId          String?
+  organizerEmail       String
+  emailSenderName      String
+  date                 String // YYYY-MM-DD
+  startTime            String
+  endTime              String
+  location             String
+  conferenceProvider   ConferenceProvider   @default(mock)
+  conferenceLink       String?              @db.Text
+  conferenceRoomKey    String?
+  zegoSipUri           String?
+  status               MeetingStatus        @default(prepare)
+  displayFormat        Int                  @default(1)
+  description          String?              @db.Text
+  savedToDrive         Boolean              @default(false)
+  allowGuestJoin       Boolean              @default(false)
+  transcriptStatus     TranscriptStatus     @default(none)
+  summaryDraftId       String?
+  activeAgendaId       String?
+  confidentialityLevel ConfidentialityLevel @default(normal)
+  notifiedAt           DateTime?
+  reminderSentAt       DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  committee Committee @relation(fields: [committeeId], references: [id])
+  organizer User?     @relation("MeetingOrganizer", fields: [organizerId], references: [id], onDelete: SetNull)
+
+  participants    MeetingParticipant[]
+  files           MeetingFile[]
+  agenda          MeetingAgendaItem[]
+  permissions     MeetingPermission[]
+  chatMessages    ChatMessage[]
+  inviteTokens    InviteToken[]
+  secretGroups    SecretGroup[]
+  zoomRoomDevices ZoomRoomDevice[]
+  voteTopics      VoteTopic[]
+
+  @@index([committeeId])
+  @@index([organizerId])
+  @@index([status])
+  @@index([date])
+}
+
+model MeetingParticipant {
+  id         String           @id @default(cuid())
+  meetingId  String
+  userId     String? // null = guest ภายนอกที่ไม่มีบัญชีในระบบ
+  name       String
+  position   String
+  role       String
+  department String
+  email      String
+  attendance AttendanceStatus @default(pending)
+  present    Boolean          @default(false)
+  inSystem   Boolean          @default(false)
+
+  meeting      Meeting             @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user         User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  secretGroups SecretGroupMember[]
+
+  @@index([meetingId])
+  @@index([userId])
+}
+
+model MeetingFile {
+  id               String          @id @default(cuid())
+  meetingId        String
+  name             String
+  description      String          @db.Text
+  size             String
+  uploadedAt       DateTime        @default(now())
+  uploadedBy       String
+  type             MeetingFileType @default(attachment)
+  visibility       FileVisibility  @default(participants)
+  allowedPositions Json?
+  allowedUserIds   Json?
+  storageKey       String?
+  mimeType         String?
+  sizeBytes        Int?
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+}
+
+model MeetingAgendaItem {
+  id            String  @id @default(cuid())
+  meetingId     String
+  no            String
+  title         String
+  detail        String? @db.Text
+  secretGroupId String?
+
+  meeting     Meeting        @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  secretGroup SecretGroup?   @relation(fields: [secretGroupId], references: [id], onDelete: SetNull)
+  comments    AgendaComment[]
+
+  @@index([meetingId])
+  @@index([secretGroupId])
+}
+
+model AgendaComment {
+  id           String   @id @default(cuid())
+  agendaItemId String
+  by           String
+  text         String   @db.Text
+  time         String
+  createdAt    DateTime @default(now())
+
+  agendaItem MeetingAgendaItem @relation(fields: [agendaItemId], references: [id], onDelete: Cascade)
+
+  @@index([agendaItemId])
+}
+
+model MeetingPermission {
+  id        String         @id @default(cuid())
+  meetingId String
+  userId    String
+  name      String
+  type      PermissionType @default(reader)
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  meetingId String
+  sender    String
+  text      String   @db.Text
+  time      String
+  createdAt DateTime @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+}
+
+model InviteToken {
+  token      String    @id
+  meetingId  String
+  guestEmail String
+  guestName  String?
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  used       Boolean   @default(false)
+  usedAt     DateTime?
+  createdBy  String
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  creator User    @relation("InviteCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([createdBy])
+}
+
+model SecretGroup {
+  id        String @id @default(cuid())
+  meetingId String
+  name      String
+
+  meeting     Meeting             @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  members     SecretGroupMember[]
+  agendaItems MeetingAgendaItem[]
+
+  @@index([meetingId])
+}
+
+model SecretGroupMember {
+  secretGroupId String
+  participantId String
+
+  secretGroup SecretGroup        @relation(fields: [secretGroupId], references: [id], onDelete: Cascade)
+  participant MeetingParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@id([secretGroupId, participantId])
+  @@index([participantId])
+}
+
+model ZoomRoomDevice {
+  id         String               @id @default(cuid())
+  meetingId  String
+  name       String
+  roomId     String
+  sipAddress String?
+  status     ZoomRoomDeviceStatus @default(invited)
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  room    Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([roomId])
+}
+
+// ───────── Voting ─────────
+// ย้ายมาจาก IndexedDB `emeeting_voting` (src/services/voting/store.ts)
+// จุดสำคัญ: VoteRecord มี @@unique([topicId, userId]) — ฐานข้อมูลบังคับ "1 คน 1 เสียง"
+// ทำให้ upsert แทน read-modify-write ได้ ปัญหา lost update ตอนสองแท็บโหวตพร้อมกันจึงหมดไป
+
+model VoteTopic {
+  id            String          @id @default(cuid())
+  meetingId     String
+  title         String
+  description   String?         @db.Text
+  createdBy     String
+  status        VoteTopicStatus @default(open)
+  createdAt     DateTime        @default(now())
+  closedAt      DateTime?
+  updatedAt     DateTime        @updatedAt
+
+  meeting Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  creator User         @relation("VoteCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  options VoteOption[]
+  votes   VoteRecord[]
+
+  @@index([meetingId])
+  @@index([createdBy])
+}
+
+model VoteOption {
+  id      String @id @default(cuid())
+  topicId   String
+  label     String
+  sortOrder Int    @default(0)
+
+  topic VoteTopic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  votes VoteRecord[]
+
+  @@index([topicId])
+}
+
+model VoteRecord {
+  id        String   @id @default(cuid())
+  topicId   String
+  optionId  String
+  userId    String
+  userName  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  topic  VoteTopic  @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  option VoteOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([topicId, userId]) // 1 คน 1 เสียงต่อหัวข้อ — บังคับที่ระดับฐานข้อมูล
+  @@index([optionId])
+  @@index([userId])
+}

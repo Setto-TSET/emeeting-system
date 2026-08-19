@@ -4,6 +4,7 @@ import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
+import { signInAsDemoUser } from "@/lib/session";
 import { notificationsData, systemRoleLabels, systemRoleColors, systemRoleDescriptions } from "@/data";
 import { useCurrentUser } from "@/context/UserContext";
 import {
@@ -126,8 +127,15 @@ export default function TopNav() {
                 return (
                   <button
                     key={u.id}
-                    onClick={() => {
-                      setCurrentUser(u);
+                    onClick={async () => {
+                      // ต้องล็อกอินใหม่จริง ไม่ใช่เปลี่ยนแค่ state — ไม่งั้น API ยังเห็นเป็นคนเดิม
+                      // แล้วคะแนนโหวต/การกระทำอื่นจะถูกบันทึกผิดคน
+                      const result = await signInAsDemoUser(u.email);
+                      if (!result.ok) {
+                        toast.error(`สลับเป็น ${u.name} ไม่สำเร็จ`, { description: result.reason });
+                        return;
+                      }
+                      setCurrentUser(result.user);
                       toast.success(`สลับเป็น ${u.name}`, { description: systemRoleDescriptions[u.systemRole] });
                     }}
                     className={`w-full text-left px-3 py-2 hover:bg-muted/50 flex items-start gap-2 border-l-2 transition-colors ${active ? "bg-primary/5 border-primary" : "border-transparent"}`}

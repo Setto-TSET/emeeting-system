@@ -6,13 +6,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { generateToken04 } from "@/lib/zegoToken";
+import { requireAuth, ApiError } from "@/lib/api/auth";
+import { requireMeetingAccess } from "@/lib/api/meetingGuard";
 
 const EXPIRY_SECONDS = 1800; // 30 minutes
 
 export async function POST(request: NextRequest) {
   try {
-    // ระบบนี้ไม่มี session ฝั่ง server (auth เป็น client-side mock ทั้งหมด) — เอ็นด์พอยต์นี้จึงไม่มีทาง
-    // เช็คว่าใครเรียก ด่านแรกที่ทำได้จริงคือกันสคริปต์/เว็บอื่นยิงตรงเข้ามาขอ token ข้าม origin
+    // กันสคริปต์/เว็บอื่นยิงตรงเข้ามาขอ token ข้าม origin
     // (เบราว์เซอร์แนบ Origin ให้เองเสมอสำหรับ POST แบบนี้ ปลอมจาก JS ฝั่ง client ไม่ได้)
     const origin = request.headers.get("origin");
     if (origin && origin !== request.nextUrl.origin) {
@@ -49,18 +50,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { roomId, userId, userName } = body as {
-      roomId?: string;
-      userId?: string;
-      userName?: string;
-    };
+    const { roomId, meetingId } = body as { roomId?: string; meetingId?: string };
 
-    if (!roomId || !userId || !userName) {
+    if (!roomId || !meetingId) {
       return NextResponse.json(
-        { error: "Missing required fields: roomId, userId, userName" },
+        { error: "Missing required fields: roomId, meetingId" },
         { status: 400 }
       );
     }
+
+    // ตัวตนมาจาก session เท่านั้น — เดิมรับ userId/userName ที่ client ส่งมาตรงๆ
+    // ใครก็ขอ token เข้าห้องไหนในนามใครก็ได้
+    const user = await requireAuth(request);
+    await requireMeetingAccess(user, meetingId, "meeting.join");
 
     // Privilege payload — allow login + publish
     const payload = JSON.stringify({
@@ -69,11 +71,16 @@ export async function POST(request: NextRequest) {
       stream_id_list: null,
     });
 
-    const token = generateToken04(appId, userId, secret, EXPIRY_SECONDS, payload);
+    const token = generateToken04(appId, user.id, secret, EXPIRY_SECONDS, payload);
     const expiresAt = Date.now() + EXPIRY_SECONDS * 1000;
 
-    return NextResponse.json({ token, appId, serverUrl, expiresAt });
+    // คืน userId ที่ token ผูกไว้ — client ต้อง login เข้า engine ด้วย id นี้เท่านั้น ไม่งั้น Zego ปฏิเสธ
+    return NextResponse.json({ token, appId, serverUrl, expiresAt, userId: user.id });
   } catch (error) {
+    // 401/403 จาก requireAuth/requireMeetingAccess ต้องไม่ถูกกลบเป็น 500
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error("[/api/video/token] Token generation failed:", error);
     const detail =
       error instanceof Error

@@ -15,6 +15,21 @@
 
 import { AppUser, Meeting } from "@/data";
 
+// ───────── รูปร่างข้อมูลขั้นต่ำที่ไฟล์นี้ต้องใช้ ─────────
+// รับเป็น subset แทน AppUser/Meeting เต็มใบ เพื่อให้ route handler ฝั่ง server
+// ส่ง row ที่ query มาจาก Prisma (ซึ่งไม่มีฟิลด์ UI อย่าง files/agenda/displayFormat)
+// เข้ามาได้โดยไม่ต้องประกอบ object ปลอมให้ครบทุกช่อง — ผู้เรียกฝั่ง UI ที่ส่ง
+// object เต็มใบมาเหมือนเดิมยังใช้ได้ตามปกติเพราะ superset ย่อมเข้ากับ subset ได้
+export type AuthzUser = Pick<AppUser, "id" | "name" | "systemRole" | "committeeIds">;
+
+export type AuthzMeeting = Pick<
+  Meeting,
+  "organizerId" | "committeeId" | "committee" | "location" | "status"
+> & {
+  participants: Pick<Meeting["participants"][number], "userId">[];
+  permissions: Pick<Meeting["permissions"][number], "userId" | "type">[];
+};
+
 /** สิ่งที่ผู้ใช้ทำกับการประชุมหนึ่งๆ ได้ */
 export type MeetingAction =
   | "meeting.view"              // เปิดดูรายละเอียด
@@ -30,40 +45,40 @@ export type MeetingAction =
 
 // ───────── ความสัมพันธ์ระหว่างคนกับประชุม (คำนวณจาก id เท่านั้น) ─────────
 
-export function isAdmin(user: AppUser): boolean {
+export function isAdmin(user: AuthzUser): boolean {
   return user.systemRole === "admin";
 }
 
-export function isOrganizer(user: AppUser, meeting: Meeting): boolean {
+export function isOrganizer(user: AuthzUser, meeting: AuthzMeeting): boolean {
   return meeting.organizerId === user.id;
 }
 
 /** ได้รับมอบสิทธิ์ผู้จัดการประชุมนี้โดยตรง */
-export function isDelegatedManager(user: AppUser, meeting: Meeting): boolean {
+export function isDelegatedManager(user: AuthzUser, meeting: AuthzMeeting): boolean {
   return meeting.permissions.some((p) => p.userId === user.id && p.type === "manager");
 }
 
-export function isParticipantOf(user: AppUser, meeting: Meeting): boolean {
+export function isParticipantOf(user: AuthzUser, meeting: AuthzMeeting): boolean {
   return meeting.participants.some((p) => p.userId !== null && p.userId === user.id);
 }
 
 /** อยู่ในคณะทำงานที่เป็นเจ้าของการประชุมนี้ */
-export function isInCommittee(user: AppUser, meeting: Meeting): boolean {
+export function isInCommittee(user: AuthzUser, meeting: AuthzMeeting): boolean {
   return user.committeeIds.includes(meeting.committeeId);
 }
 
 /** เลขานุการของคณะนี้ — ตามที่คำอธิบายบทบาทระบุว่า "จัดการคณะที่รับผิดชอบ" */
-export function isSecretaryOfCommittee(user: AppUser, meeting: Meeting): boolean {
+export function isSecretaryOfCommittee(user: AuthzUser, meeting: AuthzMeeting): boolean {
   return user.systemRole === "secretary" && isInCommittee(user, meeting);
 }
 
 /** ผู้บริหารที่ดูแลคณะนี้ */
-export function isExecutiveOfCommittee(user: AppUser, meeting: Meeting): boolean {
+export function isExecutiveOfCommittee(user: AuthzUser, meeting: AuthzMeeting): boolean {
   return user.systemRole === "executive" && isInCommittee(user, meeting);
 }
 
 /** มีสิทธิ์ระดับ "ผู้ดูแลการประชุมนี้" หรือไม่ — ใช้เป็นฐานของ action ส่วนใหญ่ */
-function isManagerOfMeeting(user: AppUser, meeting: Meeting): boolean {
+function isManagerOfMeeting(user: AuthzUser, meeting: AuthzMeeting): boolean {
   return (
     isAdmin(user) ||
     isOrganizer(user, meeting) ||
@@ -80,7 +95,7 @@ function isManagerOfMeeting(user: AppUser, meeting: Meeting): boolean {
  * หมายเหตุ: ฟังก์ชันนี้ไม่สนใจ "สถานะการประชุม" — ผู้เรียกต้องเช็คเองเพิ่ม
  * เช่น แก้ไขได้ก็จริง แต่ประชุมที่รับรองแล้วต้องล็อก (ดู canEditMeeting)
  */
-export function can(user: AppUser, action: MeetingAction, meeting: Meeting): boolean {
+export function can(user: AuthzUser, action: MeetingAction, meeting: AuthzMeeting): boolean {
   // admin ผ่านทุกอย่าง — รวมไว้จุดเดียว ไม่กระจายไปเช็คตามที่ต่างๆ
   if (isAdmin(user)) return true;
 
@@ -145,17 +160,17 @@ export function can(user: AppUser, action: MeetingAction, meeting: Meeting): boo
  * แก้ไขได้จริงไหม — รวมสิทธิ์ + สถานะเข้าด้วยกัน
  * ประชุมที่รับรองแล้วถือว่าปิดถาวร แม้แต่ admin ก็ไม่ควรแก้ย้อนหลัง
  */
-export function canEditMeeting(user: AppUser, meeting: Meeting): boolean {
+export function canEditMeeting(user: AuthzUser, meeting: AuthzMeeting): boolean {
   return can(user, "meeting.edit", meeting) && meeting.status !== "endorsed";
 }
 
 /** สร้างการประชุมใหม่ได้ไหม — ไม่ผูกกับประชุมใดประชุมหนึ่ง */
-export function canCreateMeeting(user: AppUser): boolean {
+export function canCreateMeeting(user: AuthzUser): boolean {
   return user.systemRole === "admin" || user.systemRole === "secretary" || user.systemRole === "executive";
 }
 
 /** ข้อความอธิบายว่าทำไมทำไม่ได้ — ใช้เป็น tooltip ให้ผู้ใช้เข้าใจ ไม่ใช่เดาเอง */
-export function denialReason(user: AppUser, action: MeetingAction, meeting: Meeting): string {
+export function denialReason(user: AuthzUser, action: MeetingAction, meeting: AuthzMeeting): string {
   if (meeting.status === "endorsed" && action === "meeting.edit") {
     return "การประชุมนี้รับรองแล้ว ไม่สามารถแก้ไขได้";
   }

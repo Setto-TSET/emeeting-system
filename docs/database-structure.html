@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Database Structure &amp; Flowchart — e-Meeting &amp; Room Booking System</title>
+<style>
+  :root{
+    --bg:#f6f7fb; --panel:#ffffff; --ink:#1b2030; --muted:#5b6478;
+    --line:#d8dce8; --accent:#3b5bdb; --accent2:#0ca678; --warn:#e8590c;
+    --danger:#e03131; --purple:#7048e8; --chip:#eef1f9;
+    --shadow:0 1px 2px rgba(20,25,45,.06),0 8px 24px rgba(20,25,45,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1219; --panel:#161b25; --ink:#e7ebf3; --muted:#9aa4ba;
+      --line:#28303f; --accent:#748ffc; --accent2:#38d9a9; --warn:#ff922b;
+      --danger:#ff6b6b; --purple:#b197fc; --chip:#1d2431;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI","Noto Sans Thai",system-ui,-apple-system,sans-serif;line-height:1.55}
+  header{padding:28px 24px 12px;max-width:1400px;margin:0 auto}
+  h1{margin:0 0 6px;font-size:26px;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:14px}
+  main{max-width:1400px;margin:0 auto;padding:0 24px 64px}
+  nav.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 18px;position:sticky;top:0;
+    background:var(--bg);padding:10px 0;z-index:20;border-bottom:1px solid var(--line)}
+  .tab{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;
+    padding:8px 16px;font-size:14px;cursor:pointer;font-family:inherit}
+  .tab[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+  section[hidden]{display:none}
+  h2{font-size:19px;margin:28px 0 6px}
+  h3{font-size:15px;margin:22px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  p.note{color:var(--muted);font-size:14px;margin:4px 0 14px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;
+    box-shadow:var(--shadow);margin-bottom:18px}
+  .canvas{position:relative}
+  .canvas svg.wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+  .grid{position:relative;display:grid;gap:18px 26px;z-index:1}
+  .er .grid{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  .ent{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    box-shadow:var(--shadow);font-size:12.5px;align-self:start}
+  .ent > .h{padding:8px 12px;font-weight:600;font-size:13.5px;color:#fff;background:var(--accent);
+    display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .ent.core > .h{background:var(--purple)}
+  .ent.join > .h{background:var(--muted)}
+  .ent.sql > .h{background:var(--accent2)}
+  .ent.client > .h{background:var(--warn)}
+  .ent .h small{font-weight:500;opacity:.9;font-size:11px;text-align:right}
+  .ent ul{list-style:none;margin:0;padding:6px 0}
+  .ent li{padding:3px 12px;display:flex;justify-content:space-between;gap:10px}
+  .ent li span.t{color:var(--muted);font-size:11.5px;white-space:nowrap}
+  .pk{color:var(--danger);font-weight:600}
+  .fk{color:var(--accent);font-weight:600}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted);margin:10px 0 0}
+  .legend b{color:var(--ink)}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:middle}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  code{background:var(--chip);padding:1px 6px;border-radius:6px;font-size:12.5px;
+    font-family:ui-monospace,"Cascadia Code",Consolas,monospace}
+  .scroll{overflow-x:auto}
+  .flow{display:flex;flex-direction:column;align-items:stretch;gap:0}
+  .row{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+  .node{background:var(--panel);border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;
+    min-width:180px;max-width:300px;font-size:13px;box-shadow:var(--shadow)}
+  .node b{display:block;font-size:13.5px;margin-bottom:2px}
+  .node small{color:var(--muted);font-size:11.5px;display:block}
+  .node.start{border-color:var(--accent2);border-left-width:5px}
+  .node.act{border-color:var(--accent);border-left-width:5px}
+  .node.dec{border-color:var(--warn);border-left-width:5px}
+  .node.store{border-color:var(--purple);border-left-width:5px}
+  .node.end{border-color:var(--danger);border-left-width:5px}
+  .arr{align-self:center;color:var(--muted);font-size:18px;line-height:1;padding:6px 0}
+  .arr small{font-size:11.5px;display:block;text-align:center}
+  .lane{border:1px dashed var(--line);border-radius:12px;padding:14px;margin:12px 0}
+  .lane > .lh{font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  .pill{display:inline-block;background:var(--chip);border:1px solid var(--line);border-radius:999px;
+    padding:2px 10px;font-size:12px;margin:2px 4px 2px 0}
+  .warnbox{border-left:4px solid var(--warn);background:var(--chip);padding:10px 14px;border-radius:8px;
+    font-size:13.5px;margin:12px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>Database Structure &amp; System Flowchart</h1>
+  <div class="sub">e-Meeting &amp; Room Booking System — Next.js 16 (App Router) + Express/MySQL backend<br>
+  สร้างจากโค้ดจริงใน <code>src/data/index.ts</code>, <code>docs/backend-design.md</code>,
+  <code>backend/src/database/migrations.ts</code> และ store ฝั่ง client</div>
+</header>
+<main>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-t="er">ER Diagram (เป้าหมาย)</button>
+    <button class="tab" role="tab" aria-selected="false" data-t="cur">Storage ปัจจุบัน</button>
+    <button class="tab" role="tab" aria-selected="false" data-t="dict">Data Dictionary</button>
+    <button class="tab" role="tab" aria-selected="false" data-t="flow">Flowchart ระบบ</button>
+    <button class="tab" role="tab" aria-selected="false" data-t="arch">Architecture</button>
+  </nav>
+
+  <section id="er" class="er">
+    <div class="panel">
+      <h2 style="margin-top:0">ความสัมพันธ์ของฐานข้อมูล (Target Schema — Prisma/MySQL)</h2>
+      <p class="note">Meeting เป็น entity ศูนย์กลาง ทุกอย่างในการประชุมแตกออกจากตารางนี้
+      เส้นแสดงความสัมพันธ์ โดยหัวลูกศรชี้ไปฝั่ง N (ฝั่งลูก)</p>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--purple)"></i><b>Core entity</b></span>
+        <span><i class="dot" style="background:var(--accent)"></i>ตารางลูกของ Meeting</span>
+        <span><i class="dot" style="background:var(--muted)"></i>Join table (M:N)</span>
+        <span><i class="dot" style="background:var(--accent2)"></i>ตาราง MySQL ที่ migrate แล้วจริง</span>
+        <span><span class="pk">PK 🔑</span> &nbsp; <span class="fk">FK ↗</span> &nbsp; ∅ = unique</span>
+      </div>
+    </div>
+
+    <div class="panel canvas" id="erCanvas">
+      <svg class="wires" id="erWires"></svg>
+      <div class="grid" id="erGrid"></div>
+    </div>
+
+    <div class="panel">
+      <h3>สรุปความสัมพันธ์</h3>
+      <div class="scroll">
+      <table>
+        <thead><tr><th>ความสัมพันธ์</th><th>ชนิด</th><th>ความหมาย</th></tr></thead>
+        <tbody id="relTable"></tbody>
+      </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="cur" hidden>
+    <div class="panel">
+      <h2 style="margin-top:0">ที่เก็บข้อมูลตามสถานะปัจจุบันของโปรเจค</h2>
+      <p class="note">ตอนนี้ระบบยังเป็น frontend-first — ข้อมูลหลักอยู่ในเบราว์เซอร์ผู้ใช้
+      (localStorage + IndexedDB) มี MySQL จริงเฉพาะฝั่ง backend transcription/summary</p>
+      <div class="warnbox"><b>ข้อจำกัดสำคัญ:</b> ข้อมูลใน localStorage/IndexedDB อยู่เฉพาะเครื่องนั้น
+      — เปิดคนละเครื่อง/คนละเบราว์เซอร์จะไม่เห็นข้อมูลเดียวกัน และเปิด DevTools อ่านได้
+      (ดูแผนแก้ใน <code>docs/superpowers/plans/2026-08-17-realtime-cross-device-sync.md</code>)</div>
+    </div>
+    <div class="panel canvas">
+      <div class="grid" id="curGrid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))"></div>
+    </div>
+    <div class="panel">
+      <h3>เส้นทางย้ายไป Backend (5 Phases จาก docs/backend-design.md)</h3>
+      <div class="flow">
+        <div class="row">
+          <div class="node start"><b>Phase 1 — Foundation</b><small>Prisma schema + seed จาก mock data ยังไม่แตะ UI</small></div>
+          <div class="node act"><b>Phase 2 — Auth + Video Token</b><small>login/session route, Zego token ออกจาก client</small></div>
+          <div class="node act"><b>Phase 3 — Read APIs</b><small>GET meetings/rooms/bookings + SWR</small></div>
+          <div class="node act"><b>Phase 4 — Write APIs</b><small>สร้าง/แก้ meeting, booking, files</small></div>
+          <div class="node end"><b>Phase 5 — Live + Cleanup</b><small>vote/transcript/signaling ขึ้น server, ลบ localStore</small></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="dict" hidden>
+    <div class="panel">
+      <h2 style="margin-top:0">Data Dictionary — ค่า enum ที่ใช้จริง</h2>
+      <div class="scroll">
+      <table>
+        <thead><tr><th>ฟิลด์</th><th>ตาราง / ไฟล์</th><th>ค่าที่เป็นไปได้</th></tr></thead>
+        <tbody id="enumTable"></tbody>
+      </table>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>ตาราง MySQL ที่ migrate แล้ว (backend/src/database/migrations.ts)</h3>
+      <div class="scroll">
+      <table>
+        <thead><tr><th>ตาราง</th><th>คอลัมน์</th><th>Index</th></tr></thead>
+        <tbody>
+          <tr><td><code>transcriptions</code></td>
+              <td><code>id</code> INT PK AI, <code>meeting_id</code> VARCHAR(50) UNIQUE,
+                  <code>transcript_status</code> ENUM(none|processing|ready|failed),
+                  <code>segments</code> JSON, <code>created_at</code>, <code>updated_at</code></td>
+              <td>idx_meeting_id, idx_status</td></tr>
+          <tr><td><code>summaries</code></td>
+              <td><code>id</code> INT PK AI, <code>meeting_id</code> VARCHAR(50) UNIQUE,
+                  <code>summary_json</code> JSON, <code>is_draft</code> BOOLEAN,
+                  <code>created_at</code>, <code>updated_at</code></td>
+              <td>idx_meeting_id, idx_is_draft</td></tr>
+          <tr><td><code>audit_logs</code></td>
+              <td><code>id</code> INT PK AI, <code>user_id</code>, <code>action</code>,
+                  <code>meeting_id</code>, <code>resource</code>, <code>ip_address</code>, <code>created_at</code></td>
+              <td>idx_user_id, idx_meeting_id, idx_created_at</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="note">Connection pool: <code>mysql2/promise</code>, database <code>emeeting_db</code>,
+      connectionLimit 10 (<code>backend/src/database/connection.ts</code>)</p>
+    </div>
+  </section>
+
+  <section id="flow" hidden>
+    <div class="panel">
+      <h2 style="margin-top:0">1. Login &amp; Routing (สิทธิ์การเข้าถึง)</h2>
+      <div class="flow" id="f1"></div>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">2. จองห้องประชุม (Room Booking)</h2>
+      <div class="flow" id="f2"></div>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">3. วงจรชีวิตการประชุม (Meeting Lifecycle)</h2>
+      <p class="note">ค่า <code>Meeting.status</code> เดินหน้าตามลำดับ 5 ขั้น</p>
+      <div class="flow" id="f3"></div>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">4. ห้องประชุมออนไลน์ (Live Meeting)</h2>
+      <div class="flow" id="f4"></div>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">5. Transcription → Summary → Report</h2>
+      <div class="flow" id="f5"></div>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">6. Guest Join ผ่าน Magic Link</h2>
+      <div class="flow" id="f6"></div>
+    </div>
+  </section>
+
+  <section id="arch" hidden>
+    <div class="panel">
+      <h2 style="margin-top:0">ภาพรวมสถาปัตยกรรม</h2>
+      <div class="lane"><div class="lh">Client — Browser</div>
+        <div class="row">
+          <div class="node act"><b>Next.js App Router</b><small>src/app/(app)/* — dashboard, meetings, booking, rooms, committees, documents, live, kiosk, portal, reports</small></div>
+          <div class="node act"><b>React Context</b><small>UserContext, MeetingContext, BookingContext, RoomSignalingContext</small></div>
+          <div class="node store"><b>localStorage / sessionStorage</b><small>meetings, bookings, current user, invite tokens</small></div>
+          <div class="node store"><b>IndexedDB</b><small>emeeting_files, emeeting_transcript, emeeting_voting</small></div>
+          <div class="node act"><b>BroadcastChannel signaling</b><small>hand raise / vote / subtitle / doc share</small></div>
+        </div>
+      </div>
+      <div class="arr">▼</div>
+      <div class="lane"><div class="lh">Next.js Server (route handlers)</div>
+        <div class="row">
+          <div class="node act"><b>POST /api/video/token</b><small>สร้าง ZegoCloud privilege token ฝั่ง server — secret ไม่หลุดถึง client</small></div>
+        </div>
+      </div>
+      <div class="arr">▼</div>
+      <div class="lane"><div class="lh">Express Backend (backend/)</div>
+        <div class="row">
+          <div class="node act"><b>POST /api/transcription/request</b><small>ส่งงานถอดเสียง</small></div>
+          <div class="node act"><b>GET /api/transcription/result</b><small>ดึงผลลัพธ์</small></div>
+          <div class="node act"><b>POST /api/transcription/poll</b><small>เช็คสถานะ</small></div>
+          <div class="node act"><b>POST /api/summarize</b><small>เรียก Claude สรุปการประชุม</small></div>
+          <div class="node dec"><b>GET /health</b><small>health check</small></div>
+        </div>
+      </div>
+      <div class="arr">▼</div>
+      <div class="lane"><div class="lh">External / Data</div>
+        <div class="row">
+          <div class="node store"><b>MySQL — emeeting_db</b><small>transcriptions, summaries, audit_logs</small></div>
+          <div class="node end"><b>ZegoCloud WebRTC</b><small>zego-express-engine-webrtc — video/audio</small></div>
+          <div class="node end"><b>Claude API</b><small>backend/src/services/claude.ts</small></div>
+          <div class="node end"><b>Web Speech API</b><small>subtitle realtime ในเบราว์เซอร์</small></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+var tabs = [].slice.call(document.querySelectorAll('.tab'));
+tabs.forEach(function (t) {
+  t.addEventListener('click', function () {
+    tabs.forEach(function (x) { x.setAttribute('aria-selected', x === t ? 'true' : 'false'); });
+    [].slice.call(document.querySelectorAll('main > section')).forEach(function (s) {
+      s.hidden = s.id !== t.dataset.t;
+    });
+    if (t.dataset.t === 'er') requestAnimationFrame(drawWires);
+  });
+});
+
+var P = 'pk', F = 'fk';
+var entities = [
+  { id:'User', cls:'core', note:'ผู้ใช้ระบบ', f:[['id','String',P],['name','String'],['position','String'],
+    ['department','String'],['email','String','uq'],['passwordHash','String'],
+    ['systemRole','enum'],['roomId?','String',F]] },
+  { id:'Committee', cls:'core', note:'คณะกรรมการ', f:[['id','String',P],['name','String'],
+    ['meetingsCount','Int'],['members','Int']] },
+  { id:'UserCommittee', cls:'join', note:'join M:N', f:[['userId','String',F],['committeeId','String',F]] },
+  { id:'Room', cls:'core', note:'ห้องประชุม', f:[['id','String',P],['name','String'],['category','enum'],
+    ['capacity','Int'],['location','String'],['floor','String'],['amenities','JSON'],
+    ['status','enum'],['hasZoomRoom','Bool'],['accountId?','String',F]] },
+  { id:'Booking', cls:'', note:'การจองห้อง', f:[['id','String',P],['roomId','String',F],['title','String'],
+    ['bookedById','String',F],['date','Date'],['startTime','String'],['endTime','String'],
+    ['attendees','Int'],['purpose','String'],['status','enum'],['extraRooms','JSON']] },
+  { id:'Meeting', cls:'core', note:'entity ศูนย์กลาง', f:[['id','String',P],['name','String'],
+    ['shortName','String'],['type','String'],['committeeId','String',F],['organizerId','String',F],
+    ['date','Date'],['startTime','String'],['endTime','String'],['location','String'],
+    ['conferenceProvider','enum'],['conferenceLink?','String'],['conferenceRoomKey?','String'],
+    ['status','enum'],['displayFormat','Int'],['savedToDrive','Bool'],['allowGuestJoin','Bool'],
+    ['transcriptStatus','enum'],['summaryDraftId?','String'],['activeAgendaId?','String'],
+    ['confidentialityLevel','enum'],['notifiedAt?','DateTime'],['reminderSentAt?','DateTime'],
+    ['createdAt','DateTime']] },
+  { id:'MeetingParticipant', cls:'', note:'ผู้เข้าร่วม', f:[['id','String',P],['meetingId','String',F],
+    ['userId?','String',F],['name','String'],['position','String'],['role','String'],
+    ['department','String'],['email','String'],['attendance','enum'],['present','Bool'],['inSystem','Bool']] },
+  { id:'MeetingFile', cls:'', note:'เอกสารประกอบ', f:[['id','String',P],['meetingId','String',F],
+    ['name','String'],['description','String'],['uploadedAt','DateTime'],['uploadedBy','String'],
+    ['type','enum'],['visibility','enum'],['allowedPositions','JSON'],['allowedUserIds','JSON'],
+    ['storageKey?','String'],['mimeType?','String'],['sizeBytes?','Int']] },
+  { id:'MeetingAgendaItem', cls:'', note:'วาระการประชุม', f:[['id','String',P],['meetingId','String',F],
+    ['no','String'],['title','String'],['detail?','String'],['secretGroupId?','String',F]] },
+  { id:'AgendaComment', cls:'', note:'ความเห็นในวาระ', f:[['id','String',P],['agendaItemId','String',F],
+    ['by','String'],['text','String'],['time','String']] },
+  { id:'MeetingPermission', cls:'', note:'manager / reader', f:[['id','String',P],['meetingId','String',F],
+    ['userId','String',F],['name','String'],['type','enum']] },
+  { id:'ChatMessage', cls:'', note:'แชทในห้อง', f:[['id','String',P],['meetingId','String',F],
+    ['sender','String'],['text','String'],['time','String']] },
+  { id:'InviteToken', cls:'', note:'magic link', f:[['token','String',P],['meetingId','String',F],
+    ['guestEmail','String'],['guestName?','String'],['createdAt','DateTime'],['expiresAt','DateTime'],
+    ['used','Bool'],['usedAt?','DateTime'],['createdBy','String',F]] },
+  { id:'SecretGroup', cls:'', note:'วาระลับ', f:[['id','String',P],['meetingId','String',F],['name','String']] },
+  { id:'SecretGroupMember', cls:'join', note:'join M:N', f:[['secretGroupId','String',F],['participantId','String',F]] },
+  { id:'ZoomRoomDevice', cls:'', note:'อุปกรณ์ประจำห้อง', f:[['id','String',P],['meetingId','String',F],
+    ['name','String'],['roomId','String',F],['sipAddress?','String'],['status','enum']] },
+  { id:'VoteTopic', cls:'sql', note:'ลงมติ — มีจริงแล้ว', f:[['id','String',P],['meetingId','String',F],
+    ['title','String'],['description?','Text'],['createdBy','String',F],
+    ['status','enum'],['createdAt','DateTime'],['closedAt?','DateTime']] },
+  { id:'VoteOption', cls:'sql', note:'ตัวเลือกของหัวข้อ', f:[['id','String',P],['topicId','String',F],
+    ['label','String'],['sortOrder','Int']] },
+  { id:'VoteRecord', cls:'sql', note:'1 คน 1 เสียง (unique)', f:[['id','String',P],['topicId','String',F],
+    ['optionId','String',F],['userId','String',F],['userName','String'],['createdAt','DateTime'],
+    ['updatedAt','DateTime']] },
+  { id:'transcriptions', cls:'sql', note:'MySQL — มีจริงแล้ว', f:[['id','INT AI',P],
+    ['meeting_id','VARCHAR(50)','uq'],['transcript_status','ENUM'],['segments','JSON'],
+    ['created_at','TIMESTAMP'],['updated_at','TIMESTAMP']] },
+  { id:'summaries', cls:'sql', note:'MySQL — มีจริงแล้ว', f:[['id','INT AI',P],
+    ['meeting_id','VARCHAR(50)','uq'],['summary_json','JSON'],['is_draft','BOOLEAN'],
+    ['created_at','TIMESTAMP'],['updated_at','TIMESTAMP']] },
+  { id:'audit_logs', cls:'sql', note:'MySQL — มีจริงแล้ว', f:[['id','INT AI',P],['user_id','VARCHAR(50)',F],
+    ['action','VARCHAR(100)'],['meeting_id','VARCHAR(50)',F],['resource','VARCHAR(100)'],
+    ['ip_address','VARCHAR(45)'],['created_at','TIMESTAMP']] }
+];
+
+var rels = [
+  ['Committee','UserCommittee','1:N','คณะหนึ่งมีสมาชิกหลายคน'],
+  ['User','UserCommittee','1:N','ผู้ใช้หนึ่งคนสังกัดได้หลายคณะ'],
+  ['Committee','Meeting','1:N','คณะหนึ่งมีได้หลายการประชุม'],
+  ['User','Meeting','1:N','organizerId — ผู้จัดการประชุม'],
+  ['User','Booking','1:N','bookedById — ผู้จอง'],
+  ['Room','Booking','1:N','ห้องหนึ่งถูกจองได้หลายครั้ง'],
+  ['User','Room','1:1','Room.accountId — บัญชี role "room" สำหรับ kiosk'],
+  ['Meeting','MeetingParticipant','1:N','รายชื่อผู้เข้าร่วม'],
+  ['User','MeetingParticipant','1:N','userId เป็น null ได้ (guest ภายนอก)'],
+  ['Meeting','MeetingFile','1:N','เอกสารแนบของการประชุม'],
+  ['Meeting','MeetingAgendaItem','1:N','วาระ 1, 1.1, 2 ...'],
+  ['MeetingAgendaItem','AgendaComment','1:N','ความเห็นต่อวาระ'],
+  ['Meeting','MeetingPermission','1:N','มอบสิทธิ์ manager / reader'],
+  ['Meeting','ChatMessage','1:N','ข้อความแชทในห้อง'],
+  ['Meeting','InviteToken','1:N','ลิงก์เชิญ guest'],
+  ['Meeting','SecretGroup','1:N','กลุ่มวาระลับ'],
+  ['SecretGroup','SecretGroupMember','1:N','สมาชิกที่เห็นวาระลับ'],
+  ['MeetingParticipant','SecretGroupMember','1:N','ผู้เข้าร่วมอยู่ได้หลายกลุ่มลับ'],
+  ['Meeting','ZoomRoomDevice','1:N','อุปกรณ์ที่ถูกเชิญเข้าประชุม'],
+  ['Room','ZoomRoomDevice','1:N','roomId — อุปกรณ์ประจำห้อง'],
+  ['Meeting','VoteTopic','1:N','หัวข้อลงมติ'],
+  ['User','VoteTopic','1:N','createdBy — ผู้เปิดโหวต'],
+  ['VoteTopic','VoteOption','1:N','ตัวเลือกในหัวข้อนั้น'],
+  ['VoteTopic','VoteRecord','1:N','เสียงที่ลงในหัวข้อนั้น'],
+  ['VoteOption','VoteRecord','1:N','เสียงที่เลือกตัวเลือกนี้'],
+  ['User','VoteRecord','1:N','unique (topicId, userId) — 1 คน 1 เสียง'],
+  ['Meeting','transcriptions','1:1','meeting_id UNIQUE'],
+  ['Meeting','summaries','1:1','meeting_id UNIQUE'],
+  ['Meeting','audit_logs','1:N','บันทึกการเข้าถึง']
+];
+
+var relLabel = { '1:N':'หนึ่งต่อกลุ่ม', '1:1':'หนึ่งต่อหนึ่ง' };
+
+var grid = document.getElementById('erGrid');
+entities.forEach(function (e) {
+  var d = document.createElement('div');
+  d.className = 'ent ' + e.cls;
+  d.id = 'ent-' + e.id;
+  d.innerHTML = '<div class="h"><span>' + e.id + '</span><small>' + (e.note || '') + '</small></div><ul>' +
+    e.f.map(function (f) {
+      var mark = f[2] === P ? ' 🔑' : f[2] === F ? ' ↗' : f[2] === 'uq' ? ' ∅' : '';
+      var cls = f[2] === P ? 'pk' : f[2] === F ? 'fk' : '';
+      return '<li><span class="' + cls + '">' + f[0] + mark + '</span><span class="t">' + f[1] + '</span></li>';
+    }).join('') + '</ul>';
+  grid.appendChild(d);
+});
+
+var rt = document.getElementById('relTable');
+rels.forEach(function (r) {
+  var tr = document.createElement('tr');
+  tr.innerHTML = '<td><code>' + r[0] + '</code> &nbsp;&mdash;&lt;&nbsp; <code>' + r[1] + '</code></td>' +
+    '<td>' + r[2] + ' — ' + (relLabel[r[2]] || '') + '</td><td>' + (r[3] || '') + '</td>';
+  rt.appendChild(tr);
+});
+
+var wires = document.getElementById('erWires');
+var canvas = document.getElementById('erCanvas');
+function drawWires() {
+  if (!canvas.offsetParent && canvas.offsetWidth === 0) return;
+  var cb = canvas.getBoundingClientRect();
+  wires.setAttribute('viewBox', '0 0 ' + cb.width + ' ' + cb.height);
+  var css = getComputedStyle(document.body);
+  var stroke = css.getPropertyValue('--line').trim();
+  var accent = css.getPropertyValue('--accent').trim();
+  var out = '<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" ' +
+    'markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="' + accent + '"/></marker></defs>';
+  rels.forEach(function (r) {
+    var a = document.getElementById('ent-' + r[0]), b = document.getElementById('ent-' + r[1]);
+    if (!a || !b) return;
+    var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+    var x1 = ra.left - cb.left + ra.width / 2, y1 = ra.top - cb.top + ra.height / 2;
+    var x2 = rb.left - cb.left + rb.width / 2, y2 = rb.top - cb.top + rb.height / 2;
+    var mx = (x1 + x2) / 2, my = (y1 + y2) / 2 + Math.min(70, Math.abs(x2 - x1) / 4);
+    var isMeeting = r[0] === 'Meeting';
+    out += '<path d="M' + x1 + ',' + y1 + ' Q' + mx + ',' + my + ' ' + x2 + ',' + y2 + '" fill="none" stroke="' +
+      (isMeeting ? accent : stroke) + '" stroke-width="' + (isMeeting ? 1.6 : 1.1) +
+      '" opacity="0.5" marker-end="url(#ar)"/>';
+  });
+  wires.innerHTML = out;
+}
+window.addEventListener('resize', function () { requestAnimationFrame(drawWires); });
+window.addEventListener('load', function () { requestAnimationFrame(drawWires); });
+// การ์ดสูงไม่เท่ากันจนกว่าฟอนต์จะโหลดเสร็จ — วาดซ้ำเมื่อ layout นิ่งแล้ว
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawWires);
+if (window.ResizeObserver) new ResizeObserver(function () { drawWires(); }).observe(grid);
+setTimeout(drawWires, 300);
+requestAnimationFrame(drawWires);
+
+var stores = [
+  { id:'localStorage · meeting_system_meetings_v9', cls:'client', note:'MeetingContext',
+    f:[['Meeting[]','object ซ้อน participants / files / agenda'],
+       ['sync','storage event ข้ามแท็บ'],['scope','เครื่องเดียวเท่านั้น']] },
+  { id:'localStorage · meeting_system_bookings_v3', cls:'client', note:'BookingContext',
+    f:[['Booking[]','seed จาก src/data/index.ts'],['sync','useSyncExternalStore']] },
+  { id:'sessionStorage + localStorage · meeting_system_current_user', cls:'client', note:'UserContext',
+    f:[['AppUser','ผู้ใช้ที่ล็อกอินอยู่'],['ลำดับอ่าน','session ก่อน แล้วค่อย local']] },
+  { id:'localStorage · meeting_system_invite_tokens', cls:'client', note:'lib/inviteTokens.ts',
+    f:[['InviteToken[]','token 32 ตัวจาก crypto.getRandomValues'],['expiresAt / used','หมดอายุ + ใช้ครั้งเดียว']] },
+  { id:'IndexedDB · emeeting_files / blobs', cls:'client', note:'services/fileStorage.ts',
+    f:[['key','storageKey'],['value','Blob ของไฟล์จริง'],['เหตุผล','localStorage เพดาน ~5MB เก็บ PDF ไม่ไหว']] },
+  { id:'IndexedDB · emeeting_transcript / segments', cls:'client', note:'services/transcript/store.ts',
+    f:[['keyPath','id (autoIncrement)'],['index','meetingId'],
+       ['fields','speakerId, speakerName, startSec, text']] },
+  { id:'(เลิกใช้แล้ว) IndexedDB · emeeting_voting', cls:'client', note:'ลบ services/voting/store.ts ออกแล้ว',
+    f:[['แทนที่ด้วย','ตาราง VoteTopic/VoteOption/VoteRecord ใน MySQL'],
+       ['client ใหม่','src/services/voting/api.ts เรียก REST API'],
+       ['ข้อมูลเก่า','ยังค้างในเบราว์เซอร์ที่เคยโหวต — ไม่ถูกอ่านอีก']] },
+  { id:'MySQL · emeeting_db', cls:'sql', note:'backend/ + Prisma',
+    f:[['transcriptions','meeting_id UNIQUE, segments JSON'],['summaries','summary_json, is_draft'],
+       ['audit_logs','user_id, action, meeting_id, ip_address'],
+       ['Prisma schema','User, Meeting, VoteTopic/VoteOption/VoteRecord ฯลฯ (prisma/schema.prisma)']] }
+];
+var cg = document.getElementById('curGrid');
+stores.forEach(function (e) {
+  var d = document.createElement('div');
+  d.className = 'ent ' + e.cls;
+  d.innerHTML = '<div class="h"><span>' + e.id + '</span><small>' + e.note + '</small></div><ul>' +
+    e.f.map(function (f) { return '<li><span>' + f[0] + '</span><span class="t">' + f[1] + '</span></li>'; }).join('') +
+    '</ul>';
+  cg.appendChild(d);
+});
+
+var enums = [
+  ['systemRole','User','admin · executive · secretary · staff · external · room'],
+  ['accessLevel (derived)','src/lib/access.ts','manager (admin/secretary/executive) · participant (staff/external) · kiosk (room)'],
+  ['status','Meeting','prepare · notified · in_progress · waiting_endorse · endorsed'],
+  ['status','Booking','confirmed · pending · cancelled'],
+  ['status','Room','available · occupied · maintenance'],
+  ['category','Room','small · medium · large · conference · board'],
+  ['attendance','MeetingParticipant','attend · representative · absent · pending'],
+  ['type','MeetingFile','regulation · attachment · report_draft · report_final'],
+  ['visibility','MeetingFile','public · committee · participants · restricted'],
+  ['type','MeetingPermission','manager · reader'],
+  ['confidentialityLevel','Meeting','normal · restricted · top_secret'],
+  ['transcriptStatus','Meeting / transcriptions','none · processing · ready · failed'],
+  ['conferenceProvider','Meeting','mock · teams · zoom · google_meet · zegocloud · other'],
+  ['launchMode','src/lib/conference.ts','simulated · external · embed · sdk'],
+  ['status','ZoomRoomDevice','invited · connected · disconnected'],
+  ['status','VoteTopic','open · closed'],
+  ['SignalType','src/services/signaling/types.ts','hand_raise · hand_lower · vote_create · vote_cast · vote_close · subtitle_text · doc_share · doc_share_page · doc_share_stop']
+];
+var et = document.getElementById('enumTable');
+enums.forEach(function (e) {
+  var tr = document.createElement('tr');
+  tr.innerHTML = '<td><code>' + e[0] + '</code></td><td>' + e[1] + '</td><td>' +
+    e[2].split(' · ').map(function (v) { return '<span class="pill">' + v + '</span>'; }).join('') + '</td>';
+  et.appendChild(tr);
+});
+
+function node(n) {
+  var d = document.createElement('div');
+  d.className = 'node ' + (n.k || 'act');
+  d.innerHTML = '<b>' + n.t + '</b>' + (n.d ? '<small>' + n.d + '</small>' : '');
+  return d;
+}
+function render(target, steps) {
+  var host = document.getElementById(target);
+  steps.forEach(function (s) {
+    if (Array.isArray(s)) {
+      var row = document.createElement('div'); row.className = 'row';
+      s.forEach(function (n) { row.appendChild(node(n)); });
+      host.appendChild(row);
+    } else if (s.arrow !== undefined) {
+      var a = document.createElement('div'); a.className = 'arr';
+      a.innerHTML = '▼' + (s.arrow ? '<small>' + s.arrow + '</small>' : '');
+      host.appendChild(a);
+    } else {
+      var r = document.createElement('div'); r.className = 'row';
+      r.appendChild(node(s)); host.appendChild(r);
+    }
+  });
+}
+
+render('f1', [
+  { k:'start', t:'เปิดหน้าแรก /', d:'src/app/page.tsx' },
+  { arrow:'' },
+  { k:'act', t:'กรอก email + password', d:'signIn() — src/lib/session.ts' },
+  { arrow:'สำเร็จ' },
+  { k:'store', t:'เก็บผู้ใช้ลง sessionStorage + localStorage', d:'key: meeting_system_current_user' },
+  { arrow:'' },
+  { k:'dec', t:'RouteGuard ตรวจระดับสิทธิ์', d:'getAccessLevel(systemRole) — src/lib/access.ts' },
+  { arrow:'' },
+  [{ k:'end', t:'manager', d:'admin / secretary / executive → เมนูครบ: meetings, booking, rooms, committees, documents, reports' },
+   { k:'end', t:'participant', d:'staff / external → dashboard, portal (การประชุมของฉัน), documents' },
+   { k:'end', t:'kiosk', d:'role room → /kiosk แสดงเฉพาะประชุมของห้องนั้น' }],
+  { arrow:'ตรวจซ้ำระดับเอกสาร' },
+  { k:'dec', t:'canViewFile() ต่อไฟล์', d:'visibility: public / committee / participants / restricted + allowedUserIds + allowedPositions' },
+  { arrow:'ตรวจซ้ำระดับการกระทำ' },
+  { k:'dec', t:'can(user, action, meeting)', d:'src/lib/authz.ts — organizer / delegated manager / committee / admin' }
+]);
+render('f2', [
+  { k:'start', t:'เข้าหน้า /booking' },
+  { arrow:'' },
+  { k:'act', t:'เลือกห้อง + วันที่ + ช่วงเวลา', d:'ห้องจริง: R-801, R-808, R-901' },
+  { arrow:'' },
+  { k:'dec', t:'เวลาชนกับ Booking เดิมหรือไม่', d:'กรองด้วย roomId + date แล้วเทียบ startTime–endTime' },
+  { arrow:'ไม่ชน' },
+  { k:'act', t:'สร้าง Booking', d:'status = pending / confirmed, bookedById = ผู้ใช้ปัจจุบัน' },
+  { arrow:'' },
+  { k:'store', t:'บันทึกผ่าน BookingContext', d:'localStorage meeting_system_bookings_v3 → อนาคตเป็น POST /api/bookings' },
+  { arrow:'' },
+  [{ k:'end', t:'/booking/my-bookings', d:'ผู้ใช้เห็นรายการจองของตัวเอง' },
+   { k:'end', t:'/rooms', d:'สถานะห้องแสดง occupied ตามช่วงเวลา' },
+   { k:'end', t:'/kiosk', d:'จอหน้าห้องแสดงคิวการใช้ห้องวันนี้' }]
+]);
+render('f3', [
+  { k:'start', t:'1. prepare — เตรียมวาระ', d:'สร้าง Meeting, เพิ่ม agenda, แนบไฟล์, กำหนดผู้เข้าร่วมและสิทธิ์' },
+  { arrow:'ผู้จัด / เลขา กดแจ้งวาระ' },
+  { k:'act', t:'2. notified — แจ้งวาระ', d:'ตั้ง notifiedAt, แจ้งเตือนผู้เข้าร่วม, ออก InviteToken ให้ guest' },
+  { arrow:'ถึงเวลาประชุม' },
+  { k:'act', t:'3. in_progress — ดำเนินการประชุม', d:'เข้าห้อง live, ตั้ง activeAgendaId, เช็คชื่อ present, ลงมติ, subtitle' },
+  { arrow:'ปิดประชุม' },
+  { k:'act', t:'4. waiting_endorse — รอรับรอง', d:'สร้างรายงาน (MeetingFile type = report_draft) ส่งให้ตรวจ' },
+  { arrow:'ที่ประชุมรับรอง' },
+  { k:'end', t:'5. endorsed — รับรองแล้ว', d:'รายงานเป็น report_final, savedToDrive = true' }
+]);
+render('f4', [
+  { k:'start', t:'เข้า /live/[id]' },
+  { arrow:'' },
+  { k:'dec', t:'resolveConference(meeting)', d:'src/lib/conference.ts — ดู conferenceProvider + conferenceLink' },
+  { arrow:'' },
+  [{ k:'act', t:'sdk — ZegoCloud', d:'ขอ token จาก POST /api/video/token แล้ว join ผ่าน zego-express-engine-webrtc' },
+   { k:'act', t:'external — Teams / Zoom / Meet', d:'เปิดลิงก์ภายนอกในแท็บใหม่' },
+   { k:'act', t:'embed / simulated', d:'ฝัง iframe หรือโหมดจำลอง (zegoMock)' }],
+  { arrow:'อยู่ในห้องแล้ว' },
+  { k:'act', t:'RoomSignalingContext', d:'src/services/signaling/channel.ts — broadcast สัญญาณในห้อง' },
+  { arrow:'' },
+  [{ k:'act', t:'ยกมือ', d:'hand_raise / hand_lower' },
+   { k:'act', t:'ลงมติ', d:'เรียก REST API แล้ว broadcast สัญญาณ + poll ทุก 5 วินาที (ข้ามเครื่องได้)' },
+   { k:'act', t:'คำบรรยาย', d:'subtitle_text (Web Speech API)' },
+   { k:'act', t:'แชร์เอกสาร', d:'doc_share / doc_share_page / doc_share_stop' }],
+  { arrow:'บันทึกผล' },
+  [{ k:'store', t:'MySQL — ตารางโหวต', d:'POST /api/meetings/[id]/votes/[topicId]/cast → upsert VoteRecord (unique topicId+userId)' },
+   { k:'store', t:'IndexedDB emeeting_transcript', d:'TranscriptSegment ต่อ meetingId (ยังอยู่ในเครื่อง)' }]
+]);
+render('f5', [
+  { k:'start', t:'เสียงในห้องประชุม' },
+  { arrow:'' },
+  [{ k:'act', t:'Web Speech API (client)', d:'subtitle realtime → transcript store' },
+   { k:'act', t:'POST /api/transcription/request', d:'ส่งงานถอดเสียงเข้า backend' }],
+  { arrow:'' },
+  { k:'store', t:'ตาราง transcriptions (MySQL)', d:'transcript_status: none → processing → ready | failed, segments JSON' },
+  { arrow:'poll จนสถานะ ready' },
+  { k:'act', t:'GET /api/transcription/result', d:'ดึง segments มาแสดงใน TranscriptTimeline' },
+  { arrow:'' },
+  { k:'act', t:'POST /api/summarize', d:'backend/src/services/claude.ts เรียก Claude API' },
+  { arrow:'' },
+  { k:'store', t:'ตาราง summaries', d:'summary_json + is_draft = true (Meeting.summaryDraftId ชี้กลับมา)' },
+  { arrow:'' },
+  { k:'end', t:'รายงานการประชุม', d:'reportBuilder → MeetingFile type report_draft → รับรอง → report_final' }
+]);
+render('f6', [
+  { k:'start', t:'ผู้จัดเปิด allowGuestJoin' },
+  { arrow:'' },
+  { k:'act', t:'สร้าง InviteToken', d:'token 32 ตัวจาก crypto.getRandomValues + expiresAt + guestEmail' },
+  { arrow:'ส่งลิงก์ทางอีเมล' },
+  { k:'act', t:'guest เปิด /join/[token]' },
+  { arrow:'' },
+  { k:'dec', t:'ตรวจ token', d:'มีอยู่จริง? ยังไม่หมดอายุ? ยังไม่ถูกใช้ (used = false)?' },
+  { arrow:'ผ่าน' },
+  { k:'act', t:'ทำเครื่องหมาย used + usedAt', d:'ใช้ได้ครั้งเดียว' },
+  { arrow:'' },
+  { k:'end', t:'เข้าห้องประชุมในฐานะ guest', d:'MeetingParticipant.userId = null, inSystem = false' }
+]);
+</script>
+</body>
+</html>

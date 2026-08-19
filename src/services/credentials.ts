@@ -9,6 +9,7 @@
 // ═══════════════════════════════════════════
 
 import type { EmbeddedEngineId } from "./video/types";
+import { authHeaders } from "@/lib/session";
 
 export type VideoCredential = {
   engineId: EmbeddedEngineId;
@@ -22,6 +23,8 @@ export type VideoCredential = {
   serverUrl: string;
   /** เวลาหมดอายุ (epoch ms) */
   expiresAt: number;
+  /** id ที่ token ผูกไว้ (มาจาก session ฝั่ง server) — ต้องใช้ id นี้ login เข้า engine */
+  userId: string;
 };
 
 /** ผลของการขอ credential — แยก error ออกมาเพื่อให้หน้าจอบอกผู้ใช้ได้ว่าทำไมถึงเป็นโหมดสาธิต */
@@ -38,14 +41,13 @@ export type VideoCredentialResult =
 export async function requestVideoCredential(
   engineId: EmbeddedEngineId,
   roomKey: string,
-  userId: string,
-  userName: string
+  meetingId: string
 ): Promise<VideoCredentialResult> {
   try {
     const response = await fetch("/api/video/token", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ roomId: roomKey, userId, userName }),
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ roomId: roomKey, meetingId }),
     });
 
     const data = await response.json().catch(() => null);
@@ -65,6 +67,7 @@ export async function requestVideoCredential(
         appId: data.appId,
         serverUrl: data.serverUrl,
         expiresAt: data.expiresAt,
+        userId: data.userId,
       },
     };
   } catch (error) {

@@ -22,7 +22,7 @@ import { resolveVideoSurface } from "@/services/video";
 import { requestVideoCredential, type VideoCredential } from "@/services/credentials";
 import { webSpeechProvider } from "@/services/speech/webSpeechProvider";
 import { appendSegment } from "@/services/transcript/store";
-import { getTopic } from "@/services/voting/store";
+import { getTopic } from "@/services/voting/api";
 import type { RoomSignal } from "@/services/signaling/types";
 import { can } from "@/lib/authz";
 import { MeetingParticipant, MeetingFile, canViewFile } from "@/data";
@@ -208,7 +208,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     // คู่กับ userId ใหม่ ไปพร้อมกัน — token ผูกกับ user_id เดิม ไม่ตรงกับที่ engine ใช้ login
     setVideoCredential(null);
     setCredentialError(null);
-    requestVideoCredential(surface.engineId, roomKey, roomIdentityId, roomIdentityName).then((result) => {
+    requestVideoCredential(surface.engineId, roomKey, meeting.id).then((result) => {
       if (cancelled) return;
       if (result.ok) {
         setVideoCredential(result.credential);
@@ -647,7 +647,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               isHost={isManager}
               credential={videoCredential}
               credentialError={credentialError}
-              userId={roomIdentityId}
+              userId={videoCredential?.userId ?? roomIdentityId}
               displayName={roomIdentityName}
               onLeave={() => {
                 if (raisedHands.has(currentUser.id)) {
