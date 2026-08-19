@@ -38,15 +38,11 @@ app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ─── API Routes (ต้องมี auth middleware ก่อน) ───
+// ─── API Routes (ทั้งหมดต้องผ่าน authMiddleware) ───
 // video token ไม่ผ่าน backend นี้แล้ว — ZegoCloud token ออกจาก Next.js API route โดยตรง
 // (src/app/api/video/token/route.ts) ดู backend/README.md
-// app.use('/api/transcription', authMiddleware, transcriptionRoutes);
-// app.use('/api/summarize', authMiddleware, summarizeRoutes);
-
-// Temporary: ยังไม่ต้อง auth ตอนทดสอบ
-app.use('/api/transcription', transcriptionRoutes);
-app.use('/api/summarize', summarizeRoutes);
+app.use('/api/transcription', authMiddleware, transcriptionRoutes);
+app.use('/api/summarize', authMiddleware, summarizeRoutes);
 
 // ─── Error Handler ───
 app.use(errorHandler);
