@@ -238,4 +238,21 @@ A: Check worker/cron job เรียก `/api/transcription/poll` หรือ�
 
 ---
 
+## Deploy to Railway
+
+1. Create a new Railway project, set root directory to `backend/` (Nixpacks auto-detects `npm run build && npm start` from `package.json` — no `railway.json` needed).
+2. Add the Railway MySQL plugin to the project. It injects `DATABASE_URL` automatically — do not set `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` on Railway; `src/database/connection.ts` prefers `DATABASE_URL` when present.
+3. Set these environment variables on the Railway service:
+   - `JWT_SECRET` — a strong random secret (not the local dev value)
+   - `CLAUDE_API_KEY` — real Anthropic API key
+   - `CORS_ORIGIN=https://meeting-system-features-40fa4d.vercel.app`
+   - `NODE_ENV=production`
+4. Deploy. After the first successful deploy, run the migration once via Railway's one-off command / shell:
+   ```bash
+   npm run migrate
+   ```
+5. Verify: `curl https://<railway-app-url>/health` returns `{"status":"ok",...}`.
+
+---
+
 **Happy coding! 🚀**
