@@ -16,6 +16,10 @@ dotenv.config();
 const app: Express = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust the first hop reverse proxy (Railway) so req.ip reflects the real
+// client IP (X-Forwarded-For) instead of the proxy's address.
+app.set('trust proxy', 1);
+
 // ─── Middleware ───
 app.use(cors({
   origin: process.env.CORS_ORIGIN?.split(',') || 'http://localhost:3000',

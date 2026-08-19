@@ -26,7 +26,7 @@
 - ❌ Backend + API + Database (specification ทำสำเร็จ, ยังไม่ deploy จริง)
 - ❌ Email service จริง (template พร้อม, รอเลือก Sendgrid/AWS SES)
 - ❌ Zoom Room enterprise SIP bridge (Phase E placeholder UI ทำแล้ว, ตัว SIP bridge จริงรอ ZegoCloud Enterprise Plan)
-- ❌ Server-side audit logging + signed URLs (Phase 2 security, ยังไม่ทำ)
+- ⏳ Server-side audit logging — `backend/` มี `POST /api/audit/log-view` + `GET /api/audit/logs` (admin-only) แล้ว แต่ frontend ยังไม่เรียกใช้จริง; signed URLs ยังไม่ทำ (Phase 2 security)
 
 ---
 
@@ -270,7 +270,7 @@ D:\Internship\meeting Porject/
 |-------|--------|-----------------|
 | **Layer 1: Access Control** | ✅ | JWT + session + `can()` capability model + guest magic token (24h) |
 | **Layer 2: Client-Side Deterrent** | ✅ | Watermark + blur-on-blur + right-click block + confidentiality levels |
-| **Layer 3: Server-Side Protection** | ⏳ | Audit logging + signed URLs (60s) + single-active session |
+| **Layer 3: Server-Side Protection** | ⏳ | Audit logging (backend routes exist in `backend/`, not yet wired to frontend) + signed URLs (60s) + single-active session |
 | **Layer 4: Policy & Legal** | 📋 | NDA template, data classification, incident response (org responsibility) |
 
 **Key Protections:**
@@ -352,9 +352,10 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 
 **Estimated:** 6 days
 
-### Phase 2: Server-Side Audit (Deferred)
-- [ ] POST `/api/audit/log-view`
-- [ ] GET `/api/audit/logs` (for forensics)
+### Phase 2: Server-Side Audit (Backend Done, Frontend Deferred)
+- [x] POST `/api/audit/log-view` (backend/, requires auth)
+- [x] GET `/api/audit/logs` (backend/, requires auth + admin role — for forensics)
+- [ ] Frontend integration — wire client actions to call these endpoints
 - [ ] Signed URL endpoint (60s expiry)
 - [ ] Single-active session enforcement
 - [ ] Server-side watermark injection (PDF)
@@ -415,7 +416,7 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 - ✅ ZegoCloud SDK จริง (ไม่ใช่ placeholder แล้ว — Webex ถูกตัดออกทั้งหมด)
 - ❌ No backend API (localStorage only, ยกเว้น video token ที่ผ่าน Next.js API route แล้ว)
 - ❌ No email service (template only)
-- ❌ No audit logging (client-side only)
+- ⏳ Audit logging — backend routes exist in `backend/` (`POST /api/audit/log-view`, `GET /api/audit/logs`), not yet wired to frontend
 - ❌ No database (mock data)
 - ❌ No authentication (password uncheckable)
 
@@ -423,7 +424,7 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 - 🔄 Transcription API แม่นยำขึ้น (AssemblyAI/Azure STT — ปัจจุบันใช้ Web Speech API ฝั่ง client)
 - 🔄 Claude AI summarization (API key ต้องมี)
 - 🔄 Email with .ics (Sendgrid/AWS SES)
-- 🔄 Signed URLs + audit trail
+- 🔄 Signed URLs + wiring frontend to the existing audit trail backend routes
 - 🔄 Session management (server-side)
 
 ### Nice-to-Have (Phase 2+)
@@ -499,7 +500,7 @@ npm run dev
 ### 2️⃣ Medium-term (2–4 weeks)
 - [ ] **Transcription Accuracy** — ประเมิน AssemblyAI/Azure STT เทียบกับ Web Speech API ปัจจุบัน
 - [ ] **Phase D Testing** — Email → calendar → join workflow
-- [ ] **Phase 2 Security** — Audit logging + signed URLs + session management
+- [ ] **Phase 2 Security** — Wire frontend to existing audit logging backend routes + signed URLs + session management
 
 ### 3️⃣ Long-term (Production)
 - [ ] **Deployment Setup** — Docker + Kubernetes + monitoring
