@@ -9,6 +9,7 @@ import { initDatabase } from './database/connection';
 import { errorHandler, authMiddleware } from './middleware';
 import transcriptionRoutes from './routes/transcription';
 import summarizeRoutes from './routes/summarize';
+import auditRoutes from './routes/audit';
 
 dotenv.config();
 
@@ -43,6 +44,7 @@ app.get('/health', (req: Request, res: Response) => {
 // (src/app/api/video/token/route.ts) ดู backend/README.md
 app.use('/api/transcription', authMiddleware, transcriptionRoutes);
 app.use('/api/summarize', authMiddleware, summarizeRoutes);
+app.use('/api/audit', authMiddleware, auditRoutes);
 
 // ─── Error Handler ───
 app.use(errorHandler);
