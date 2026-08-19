@@ -232,13 +232,14 @@
           <div class="node act"><b>React Context</b><small>UserContext, MeetingContext, BookingContext, RoomSignalingContext</small></div>
           <div class="node store"><b>localStorage / sessionStorage</b><small>meetings, bookings, current user, invite tokens</small></div>
           <div class="node store"><b>IndexedDB</b><small>emeeting_files, emeeting_transcript, emeeting_voting</small></div>
-          <div class="node act"><b>BroadcastChannel signaling</b><small>hand raise / vote / subtitle / doc share</small></div>
+          <div class="node act"><b>SSE signaling</b><small>hand raise / vote / subtitle / doc share — ผ่าน /api/meetings/[id]/events (ข้ามเครื่องได้)</small></div>
         </div>
       </div>
       <div class="arr">▼</div>
       <div class="lane"><div class="lh">Next.js Server (route handlers)</div>
         <div class="row">
-          <div class="node act"><b>POST /api/video/token</b><small>สร้าง ZegoCloud privilege token ฝั่ง server — secret ไม่หลุดถึง client</small></div>
+          <div class="node act"><b>POST /api/video/token</b><small>ต้องมี session + สิทธิ์ meeting.join — secret ไม่หลุดถึง client</small></div>
+          <div class="node act"><b>/api/auth/* · /api/meetings/* · /api/bookings/* · /api/invite/*</b><small>18 route — auth, ประชุม, จองห้อง, โหวต, ลิงก์เชิญ, สตรีมสัญญาณ</small></div>
         </div>
       </div>
       <div class="arr">▼</div>
@@ -565,7 +566,7 @@ render('f4', [
    { k:'act', t:'external — Teams / Zoom / Meet', d:'เปิดลิงก์ภายนอกในแท็บใหม่' },
    { k:'act', t:'embed / simulated', d:'ฝัง iframe หรือโหมดจำลอง (zegoMock)' }],
   { arrow:'อยู่ในห้องแล้ว' },
-  { k:'act', t:'RoomSignalingContext', d:'src/services/signaling/channel.ts — broadcast สัญญาณในห้อง' },
+  { k:'act', t:'RoomSignalingContext', d:'GET /api/meetings/[id]/events (SSE) รับ + POST เดียวกันส่ง — ศูนย์กระจายอยู่ในหน่วยความจำของ server' },
   { arrow:'' },
   [{ k:'act', t:'ยกมือ', d:'hand_raise / hand_lower' },
    { k:'act', t:'ลงมติ', d:'เรียก REST API แล้ว broadcast สัญญาณ + poll ทุก 5 วินาที (ข้ามเครื่องได้)' },

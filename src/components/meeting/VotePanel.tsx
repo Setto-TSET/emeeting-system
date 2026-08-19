@@ -16,11 +16,11 @@ import type { VoteTopic } from "@/services/voting/types";
 // ของแต่ละเครื่องอีกต่อไป — คนละเครื่องจึงเห็นหัวข้อและคะแนนชุดเดียวกันจริง
 //
 // การรู้ว่ามีคนโหวตใหม่มาจาก 3 ทางรวมกัน:
-//   1. `voteRefreshToken` — RoomSignalBridge เพิ่มค่านี้เมื่อได้สัญญาณ vote_* (เร็วที่สุด
-//      แต่ BroadcastChannel ไม่ข้ามเครื่อง จึงใช้ได้เฉพาะแท็บในเบราว์เซอร์เดียวกัน)
-//   2. poll ทุก 5 วินาที — ทางเดียวที่เครื่องอื่นจะรู้ ตราบใดที่ยังไม่มี SSE/WebSocket
+//   1. `voteRefreshToken` — RoomSignalBridge เพิ่มค่านี้เมื่อได้สัญญาณ vote_* ผ่าน SSE
+//      (เร็วที่สุด และข้ามเครื่องได้แล้ว)
+//   2. poll เป็นตาข่ายรับ — เผื่อสตรีมหลุดหรือเปิดไม่ได้ (เช่นไม่มี session cookie ในแท็บนั้น)
 //   3. ตอนกลับมาโฟกัสแท็บ — ให้เห็นของล่าสุดทันทีโดยไม่ต้องรอรอบ poll
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 15000;
 
 export function VotePanel({
   meetingId,

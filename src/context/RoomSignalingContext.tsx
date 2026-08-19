@@ -3,7 +3,7 @@
 
 import { createContext, useContext, useEffect, useRef, useCallback, useState, ReactNode } from "react";
 import type { RoomSignal, SignalType } from "@/services/signaling/types";
-import { openChannel, postSignal, isRoomSignal } from "@/services/signaling/channel";
+import { openStream, postSignal, isRoomSignal } from "@/services/signaling/channel";
 import { useCurrentUser } from "./UserContext";
 
 type Ctx = {
@@ -18,42 +18,44 @@ type Listener = (signal: RoomSignal) => void;
 
 export function RoomSignalingProvider({ meetingId, children }: { meetingId: string; children: ReactNode }) {
   const { currentUser } = useCurrentUser();
-  const channelRef = useRef<BroadcastChannel | null>(null);
   const listenersRef = useRef<Map<SignalType, Set<Listener>>>(new Map());
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const channel = openChannel(meetingId);
-    channelRef.current = channel;
-    setConnected(channel !== null);
-    if (!channel) return;
+    const stream = openStream(meetingId);
+    if (!stream) return;
 
+    // สัญญาณของตัวเองเด้งกลับมาจาก server ด้วย — ตัดทิ้งตรงนี้จุดเดียว
+    // ไม่งั้นผู้ส่งจะเห็น toast ของตัวเองซ้ำ และ handler ที่นับค่าจะนับสองรอบ
     const onMessage = (event: MessageEvent) => {
-      if (!isRoomSignal(event.data)) return;
-      const signal = event.data as RoomSignal;
-      const set = listenersRef.current.get(signal.type);
-      set?.forEach((fn) => fn(signal));
+      let data: unknown;
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (!isRoomSignal(data)) return;
+      if (data.senderId === currentUser.id) return;
+      listenersRef.current.get(data.type)?.forEach((fn) => fn(data));
     };
-    channel.addEventListener("message", onMessage);
+
+    stream.addEventListener("message", onMessage);
+    stream.addEventListener("open", () => setConnected(true));
+    // เบราว์เซอร์ต่อใหม่ให้เองเมื่อสายหลุด — แค่บอกสถานะให้ UI รู้
+    stream.addEventListener("error", () => setConnected(false));
+
     return () => {
-      channel.removeEventListener("message", onMessage);
-      channel.close();
-      channelRef.current = null;
+      stream.removeEventListener("message", onMessage);
+      stream.close();
       setConnected(false);
     };
-  }, [meetingId]);
+  }, [meetingId, currentUser.id]);
 
   const broadcast = useCallback<Ctx["broadcast"]>(
     (partial) => {
-      const signal: RoomSignal = {
-        ...partial,
-        senderId: currentUser.id,
-        senderName: currentUser.name,
-        timestamp: Date.now(),
-      };
-      postSignal(channelRef.current, signal);
+      postSignal(meetingId, partial);
     },
-    [currentUser.id, currentUser.name]
+    [meetingId]
   );
 
   const useSignal = useCallback<Ctx["useSignal"]>((type, handler) => {

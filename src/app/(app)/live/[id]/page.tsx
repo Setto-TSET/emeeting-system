@@ -168,6 +168,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const [raisedHands, setRaisedHands] = useState<Map<string, RaisedHand>>(new Map());
   const handRaised = raisedHands.has(currentUser.id);
   const broadcastRef = useRef<Broadcast | null>(null);
+  const lastSubtitleSentRef = useRef(0);
   const [subtitleOn, setSubtitleOn] = useState(false);
   const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
   const meetingStartRef = useRef(Date.now());
@@ -506,9 +507,15 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
           timestamp: Date.now(),
           payload: { text: result.text, isFinal: result.isFinal, lang: result.lang },
         };
-        broadcastRef.current?.({ type: "subtitle_text", payload: signal.payload });
-        // BroadcastChannel ไม่ส่งข้อความกลับมาหาผู้ส่งเอง — ต้องเซ็ต latestSubtitle ในเครื่องนี้เองด้วย
-        // ไม่งั้นคนที่พูดจะไม่เห็นซับไตเติลของตัวเอง (ดู Fix 1)
+        // ผลระหว่างพูด (interim) ออกมาหลายครั้งต่อวินาที — ตอนนี้สัญญาณวิ่งผ่าน HTTP
+        // จึงรูดให้เหลือ ~4 ครั้ง/วินาที ส่วนท่อนที่พูดจบแล้วส่งทันทีเสมอ
+        const now = Date.now();
+        if (result.isFinal || now - lastSubtitleSentRef.current >= 250) {
+          lastSubtitleSentRef.current = now;
+          broadcastRef.current?.({ type: "subtitle_text", payload: signal.payload });
+        }
+        // สัญญาณของตัวเองถูกกรองทิ้งตอนรับ — ต้องเซ็ต latestSubtitle ในเครื่องนี้เองด้วย
+        // ไม่งั้นคนที่พูดจะไม่เห็นซับไตเติลของตัวเอง
         setLatestSubtitle(signal);
         if (result.isFinal) {
           appendSegment(meeting.id, {
