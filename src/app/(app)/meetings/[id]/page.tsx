@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, use, useEffect } from "react";
+import { useState, useRef, use, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -129,17 +129,27 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [showEmailPreview, setShowEmailPreview] = useState<InviteToken | null>(null);
 
-  useEffect(() => {
-    setInviteTokens(getTokensForMeeting(meeting.id));
+  const reloadInvites = useCallback(() => {
+    getTokensForMeeting(meeting.id)
+      .then(setInviteTokens)
+      .catch(() => setInviteTokens([]));
   }, [meeting.id]);
 
-  const handleSendInvite = () => {
+  useEffect(reloadInvites, [reloadInvites]);
+
+  const handleSendInvite = async () => {
     if (!inviteEmail.trim()) {
       toast.error("กรุณาระบุ email ของผู้ได้รับเชิญ");
       return;
     }
-    const token = createInviteToken(meeting.id, inviteEmail.trim(), currentUser.name, inviteName.trim() || undefined);
-    setInviteTokens(getTokensForMeeting(meeting.id));
+    let token: InviteToken;
+    try {
+      token = await createInviteToken(meeting.id, inviteEmail.trim(), inviteName.trim() || undefined);
+    } catch (e) {
+      toast.error("สร้างลิงก์เชิญไม่สำเร็จ", { description: e instanceof Error ? e.message : undefined });
+      return;
+    }
+    reloadInvites();
     setInviteEmail("");
     setInviteName("");
     setShowEmailPreview(token);
@@ -154,9 +164,14 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     setTimeout(() => setCopiedToken(null), 2000);
   };
 
-  const handleRevokeToken = (tokenId: string) => {
-    revokeToken(tokenId);
-    setInviteTokens(getTokensForMeeting(meeting.id));
+  const handleRevokeToken = async (tokenId: string) => {
+    try {
+      await revokeToken(meeting.id, tokenId);
+    } catch (e) {
+      toast.error("ยกเลิกลิงก์ไม่สำเร็จ", { description: e instanceof Error ? e.message : undefined });
+      return;
+    }
+    reloadInvites();
     toast.success("ยกเลิกลิงก์เชิญแล้ว");
   };
 
@@ -230,11 +245,14 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     const now = new Date().toISOString();
     updateMeeting(meeting.id, { status: "notified", notifiedAt: now });
 
-    for (const ext of extList) {
-      if (ext.email && ext.email !== "-") {
-        createInviteToken(meeting.id, ext.email, currentUser.name, ext.name);
-      }
-    }
+    // สร้างลิงก์เชิญให้บุคคลภายนอกทุกคนพร้อมกัน — ล้มเหลวรายคนไม่ควรหยุดทั้งชุด
+    Promise.all(
+      extList
+        .filter((ext) => ext.email && ext.email !== "-")
+        .map((ext) => createInviteToken(meeting.id, ext.email, ext.name))
+    )
+      .then(reloadInvites)
+      .catch((e) => toast.error("สร้างลิงก์เชิญบางรายไม่สำเร็จ", { description: e?.message }));
 
     toast.success("ส่ง Email แจ้งวาระเรียบร้อย", {
       description: `แจ้งคนในระบบ ${sysCount} ราย, บุคคลภายนอก ${extCount} ราย`,

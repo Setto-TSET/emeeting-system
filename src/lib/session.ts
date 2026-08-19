@@ -42,7 +42,8 @@ export function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-function storeToken(token: string) {
+/** เก็บ token ของ session ที่ server เพิ่งออกให้ (ตอนล็อกอิน และตอนแขกเข้าผ่านลิงก์เชิญ) */
+export function storeSessionToken(token: string) {
   try {
     sessionStorage.setItem(TOKEN_KEY, token);
   } catch {
@@ -74,7 +75,7 @@ export async function signIn(email: string, password: string): Promise<SignInRes
     return { ok: false, reason: data?.error ?? "เข้าสู่ระบบไม่สำเร็จ" };
   }
 
-  storeToken(data.token);
+  storeSessionToken(data.token);
   return { ok: true, user: data.user };
 }
 

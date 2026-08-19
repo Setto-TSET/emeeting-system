@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { users, AppUser } from "@/data";
+import { authHeaders } from "@/lib/session";
 
 type Ctx = {
   currentUser: AppUser;
@@ -16,24 +17,44 @@ const UserContext = createContext<Ctx | null>(null);
 // (ทุกแท็บถูกดึงให้เป็นคนเดียวกันหมด) จึงทดสอบประชุมหลายคนบนเครื่องเดียวไม่ได้เลย
 const STORAGE_KEY = "meeting_system_current_user";
 
+function readStoredUser(): AppUser | null {
+  try {
+    const stored = sessionStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(STORAGE_KEY);
+    const parsed = stored ? (JSON.parse(stored) as AppUser) : null;
+    return parsed?.id ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function UserProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AppUser>(users[0]);
   const [initialized, setInitialized] = useState(false);
 
-  // Load on mount — แท็บใหม่หยิบผู้ใช้ล่าสุดจาก localStorage มาเป็นค่าตั้งต้นครั้งเดียว
-  // แล้วหลังจากนั้นแยกตัวตนของตัวเองอิสระ
+  // ตัวตนที่แท้จริงมาจาก session ฝั่ง server (/api/auth/me) — ไม่ใช่รายชื่อ mock อีกแล้ว
+  // สำคัญกับแขกที่เข้าผ่านลิงก์เชิญเป็นพิเศษ เพราะแขกไม่มีอยู่ในรายชื่อ mock เลย
+  // เรียก API ไม่สำเร็จ (ยังไม่ล็อกอิน) ค่อยถอยไปใช้ค่าที่จำไว้ในเครื่องเพื่อให้หน้า login ทำงานได้
   useEffect(() => {
-    try {
-      const stored =
-        sessionStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(STORAGE_KEY);
-      const parsed = stored ? JSON.parse(stored) : null;
-      const resolved = users.find((u) => u.id === parsed?.id) ?? users[0];
-      setCurrentUser(resolved);
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(resolved));
-    } catch (e) {
-      console.error("Failed to load user from storage", e);
-    }
-    setInitialized(true);
+    let cancelled = false;
+    fetch("/api/auth/me", { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { user?: AppUser } | null) => {
+        if (cancelled) return;
+        const resolved =
+          data?.user ?? readStoredUser() ?? users[0];
+        setCurrentUser(resolved);
+        try {
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(resolved));
+        } catch (e) {
+          console.error("Failed to save user to storage", e);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setInitialized(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const changeCurrentUser = (u: AppUser) => {

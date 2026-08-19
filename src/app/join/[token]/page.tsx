@@ -8,9 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { verifyToken, markTokenUsed, type InviteToken } from "@/lib/inviteTokens";
-import { useMeetings } from "@/context/MeetingContext";
-import type { Meeting } from "@/data";
+import {
+  verifyToken,
+  joinWithToken,
+  type InviteToken,
+  type InviteMeetingPreview,
+} from "@/lib/inviteTokens";
 
 const guestRoles = [
   "ผู้ทรงคุณวุฒิภายนอก",
@@ -21,38 +24,36 @@ const guestRoles = [
 
 type PageState =
   | { kind: "loading" }
-  | { kind: "valid"; invite: InviteToken; meeting: Meeting }
+  | { kind: "valid"; invite: InviteToken; meeting: InviteMeetingPreview }
   | { kind: "error"; reason: "not_found" | "expired" | "already_used" | "meeting_not_found" };
 
 export default function JoinByTokenPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const router = useRouter();
-  const { meetings, joinMeetingAsExternal } = useMeetings();
   const [state, setState] = useState<PageState>({ kind: "loading" });
   const [guestName, setGuestName] = useState("");
   const [guestRole, setGuestRole] = useState<string>(guestRoles[0]);
   const [joining, setJoining] = useState(false);
 
   useEffect(() => {
-    if (meetings.length === 0) return;
+    let cancelled = false;
+    // ตรวจลิงก์ที่ server — แขกยังไม่มี session จึงยังโหลดรายการประชุมไม่ได้
+    // endpoint นี้คืนข้อมูลประชุมเท่าที่ต้องแสดงมาให้พร้อมกันเลย
+    verifyToken(token).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setState({ kind: "error", reason: result.reason });
+        return;
+      }
+      setState({ kind: "valid", invite: result.invite, meeting: result.meeting });
+      if (result.invite.guestName) setGuestName(result.invite.guestName);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
-    const result = verifyToken(token);
-    if (!result.ok) {
-      setState({ kind: "error", reason: result.reason });
-      return;
-    }
-
-    const meeting = meetings.find((m) => m.id === result.invite.meetingId);
-    if (!meeting) {
-      setState({ kind: "error", reason: "meeting_not_found" });
-      return;
-    }
-
-    setState({ kind: "valid", invite: result.invite, meeting });
-    if (result.invite.guestName) setGuestName(result.invite.guestName);
-  }, [token, meetings]);
-
-  const handleJoin = (e: React.FormEvent) => {
+  const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (state.kind !== "valid") return;
     if (!guestName.trim()) {
@@ -61,8 +62,17 @@ export default function JoinByTokenPage({ params }: { params: Promise<{ token: s
     }
 
     setJoining(true);
-    markTokenUsed(token);
-    joinMeetingAsExternal(state.meeting.id, guestName.trim(), guestRole);
+    try {
+      // server ทำเครื่องหมายว่าลิงก์ถูกใช้ เพิ่มชื่อเข้าองค์ประชุม และเปิด session ให้แขก
+      // (ไม่มี session = แขกเรียก API โหวต/แชท/ขอ token วิดีโอไม่ได้เลย)
+      await joinWithToken(token, guestName.trim(), guestRole);
+    } catch (err) {
+      setJoining(false);
+      toast.error("เข้าร่วมประชุมไม่สำเร็จ", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+      return;
+    }
     toast.success("เข้าร่วมประชุมสำเร็จ!", { description: state.meeting.name });
 
     setTimeout(() => {
