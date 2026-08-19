@@ -239,6 +239,9 @@ model Meeting {
   transcriptStatus     TranscriptStatus     @default(none)
   summaryDraftId       String?
   activeAgendaId       String?
+  // กล่องข้อความอิสระที่ผู้จัดเพิ่มเองในหน้ารายละเอียด — ไม่มีความสัมพันธ์กับตารางอื่น
+  // ponytail: เก็บเป็น JSON ไปก่อน แยกตารางเมื่อไหร่ที่ต้อง query ทีละกล่อง
+  extraTextBoxes       Json?
   confidentialityLevel ConfidentialityLevel @default(normal)
   notifiedAt           DateTime?
   reminderSentAt       DateTime?

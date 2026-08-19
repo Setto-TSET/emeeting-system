@@ -23,8 +23,13 @@ export default function MyBookingsPage() {
     return true;
   }).sort((a, b) => a.date.localeCompare(b.date));
 
-  const cancel = (id: string) => {
-    cancelBooking(id);
+  const cancel = async (id: string) => {
+    try {
+      await cancelBooking(id);
+    } catch (e) {
+      toast.error("ยกเลิกการจองไม่สำเร็จ", { description: e instanceof Error ? e.message : undefined });
+      return;
+    }
     toast.success("ยกเลิกการจองแล้ว");
   };
 

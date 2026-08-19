@@ -1,49 +1,77 @@
 "use client";
 
-import { createContext, useContext, useCallback, useEffect, useSyncExternalStore, ReactNode } from "react";
-import { bookings as defaultBookings, Booking } from "@/data";
-import { subscribeToKey, readKey, writeKey, seedKey } from "@/lib/localStore";
+import { createContext, useContext, useCallback, useEffect, useState, ReactNode } from "react";
+import { Booking } from "@/data";
+import { apiCall } from "@/lib/api/client";
+
+// การจองอยู่ที่ server แล้ว (ตาราง Booking) ไม่ใช่ localStorage ของแต่ละเครื่อง
+// — คนอื่นจึงเห็นห้องที่ถูกจองไปแล้วจริง และเวลาชนถูกตรวจซ้ำที่ server
+//
+// ยังไม่มี realtime: โหลดใหม่ตอน mount และตอนกลับมาโฟกัสหน้าต่างเท่านั้น
+// ponytail: การจองไม่ได้เปลี่ยนทุกวินาทีเหมือนโหวต ถ้าเริ่มชนกันบ่อยค่อยเติม poll
 
 type BookingContextType = {
   bookings: Booking[];
-  addBooking: (booking: Booking) => void;
-  cancelBooking: (bookingId: string) => void;
+  /** โยน error ถ้าจองไม่ได้ (เวลาชน/ห้องไม่ว่าง) — ผู้เรียกเอาข้อความไปแสดง */
+  addBooking: (draft: NewBooking) => Promise<Booking>;
+  cancelBooking: (bookingId: string) => Promise<void>;
+  error: string | null;
+  reload: () => void;
 };
 
-/**
- * ขึ้นเลขเวอร์ชันท้ายคีย์เมื่อโครงสร้างข้อมูลเปลี่ยน
- * v2 — เพิ่ม bookedById (เดิมจับคู่เจ้าของการจองด้วยชื่อ ซึ่งพังเมื่อชื่อไม่ตรงกันเป๊ะ)
- * v3 — ตัดการจองห้องจำลองออกหมด (อ้างอิงห้องเก่า A-101 ฯลฯ ที่ไม่มีแล้ว) เหลือ array ว่าง
- */
-const STORAGE_KEY = "meeting_system_bookings_v3";
+export type NewBooking = {
+  roomId: string;
+  title: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  attendees: number;
+  purpose: string;
+  extraRooms?: string[];
+};
 
 const BookingContext = createContext<BookingContextType | null>(null);
 
 export function BookingProvider({ children }: { children: ReactNode }) {
-  // เขียนข้อมูลตั้งต้นลงเครื่องครั้งแรกที่เปิดระบบ
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const data = await apiCall<{ bookings: Booking[] }>("/api/bookings");
+      setBookings(data.bookings);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "โหลดข้อมูลการจองไม่สำเร็จ");
+    }
+  }, []);
+
   useEffect(() => {
-    seedKey(STORAGE_KEY, defaultBookings);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState เกิดหลัง await ไม่ใช่ระหว่าง render
+    reload();
+    const onFocus = () => reload();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [reload]);
+
+  const addBooking = useCallback(async (draft: NewBooking) => {
+    const data = await apiCall<{ booking: Booking }>("/api/bookings", {
+      method: "POST",
+      body: JSON.stringify(draft),
+    });
+    setBookings((prev) => [data.booking, ...prev]);
+    return data.booking;
   }, []);
 
-  const subscribe = useCallback((cb: () => void) => subscribeToKey(STORAGE_KEY, cb), []);
-  const getSnapshot = useCallback(() => readKey<Booking[]>(STORAGE_KEY, defaultBookings), []);
-
-  // getServerSnapshot คืนข้อมูลตั้งต้นเสมอ — ทำให้ผลลัพธ์ฝั่ง server กับ client แรกตรงกัน
-  const bookings = useSyncExternalStore(subscribe, getSnapshot, () => defaultBookings);
-
-  const addBooking = useCallback((booking: Booking) => {
-    writeKey(STORAGE_KEY, [booking, ...readKey<Booking[]>(STORAGE_KEY, defaultBookings)]);
-  }, []);
-
-  const cancelBooking = useCallback((bookingId: string) => {
-    const next = readKey<Booking[]>(STORAGE_KEY, defaultBookings).map((b) =>
-      b.id === bookingId ? { ...b, status: "cancelled" as const } : b
-    );
-    writeKey(STORAGE_KEY, next);
+  const cancelBooking = useCallback(async (bookingId: string) => {
+    const data = await apiCall<{ booking: Booking }>(`/api/bookings/${bookingId}`, {
+      method: "PATCH",
+    });
+    setBookings((prev) => prev.map((b) => (b.id === bookingId ? data.booking : b)));
   }, []);
 
   return (
-    <BookingContext.Provider value={{ bookings, addBooking, cancelBooking }}>
+    <BookingContext.Provider value={{ bookings, addBooking, cancelBooking, error, reload }}>
       {children}
     </BookingContext.Provider>
   );

@@ -11,7 +11,6 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { meetingRooms, roomCategoryOptions, Booking, Room } from "@/data";
 import { useBookings } from "@/context/BookingContext";
-import { useCurrentUser } from "@/context/UserContext";
 import { today } from "@/lib/clock";
 
 const iconClass = "material-symbols-outlined text-[18px]";
@@ -31,7 +30,6 @@ export default function BookingPage() {
   const [endTime, setEndTime] = useState("12:00");
   const [searched, setSearched] = useState(false);
   const { bookings, addBooking } = useBookings();
-  const { currentUser } = useCurrentUser();
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -78,24 +76,23 @@ export default function BookingPage() {
 
   const openForm = (r: Room) => { setSelectedRoom(r); setFormOpen(true); };
 
-  const submit = () => {
+  const submit = async () => {
     if (!selectedRoom || !title.trim()) { toast.error("กรุณากรอกหัวข้อการประชุม"); return; }
-    const newB: Booking = {
-      id: `BK-${Date.now()}`,
-      roomId: selectedRoom.id,
-      roomName: selectedRoom.name,
-      title: title.trim(),
-      bookedById: currentUser.id,
-      bookedBy: currentUser.name,
-      department: currentUser.department,
-      date: selectedDate,
-      startTime, endTime,
-      attendees: parseInt(attendees) || 1,
-      purpose: purpose.trim(),
-      status: "confirmed",
-      extraRooms: extraRoom ? [extraRoom] : undefined,
-    };
-    addBooking(newB);
+    try {
+      // server เป็นคนตัดสินว่าจองได้จริงไหม (เวลาชน/ห้องเต็ม) — ที่นี่แค่ส่งคำขอ
+      await addBooking({
+        roomId: selectedRoom.id,
+        title: title.trim(),
+        date: selectedDate,
+        startTime, endTime,
+        attendees: parseInt(attendees) || 1,
+        purpose: purpose.trim(),
+        extraRooms: extraRoom ? [extraRoom] : undefined,
+      });
+    } catch (e) {
+      toast.error("จองห้องไม่สำเร็จ", { description: e instanceof Error ? e.message : undefined });
+      return;
+    }
     toast.success("จองห้องประชุมสำเร็จ", { description: `${selectedRoom.name} · ${selectedDate} · ${startTime}-${endTime}` });
     setFormOpen(false);
     setTitle(""); setPurpose(""); setExtraRoom("");

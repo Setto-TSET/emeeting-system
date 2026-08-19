@@ -1,7 +1,18 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { meetings as defaultMeetings, Meeting, MeetingFile, MeetingParticipant } from "@/data";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { toast } from "sonner";
+import { Meeting, MeetingFile, MeetingParticipant } from "@/data";
+import { apiCall } from "@/lib/api/client";
+
+// การประชุมอยู่ที่ server แล้ว (ตาราง Meeting + ตารางลูก) ไม่ใช่ localStorage ของแต่ละเครื่อง
+//
+// รูปแบบการเขียน: อัปเดตในหน้าจอทันที (optimistic) แล้วยิง API ตามหลัง
+// ถ้า server ปฏิเสธ (หมดสิทธิ์ / ประชุมรับรองแล้ว) จะเด้ง toast แล้วดึงข้อมูลจริงมาทับ
+// — ทำแบบนี้เพื่อให้ call site เดิมทั้ง ~30 จุดเรียกเหมือนเดิมโดยไม่ต้องแก้เป็น async
+//
+// ponytail: ไม่มี realtime — โหลดใหม่ตอน mount และตอนกลับมาโฟกัสหน้าต่าง
+// ถ้าต้องเห็นการแก้ของคนอื่นทันทีค่อยเติม poll หรือ SSE เหมือนที่ทำกับโหวต
 
 type MeetingContextType = {
   meetings: Meeting[];
@@ -12,22 +23,8 @@ type MeetingContextType = {
   updateActiveAgenda: (meetingId: string, agendaId: string | null) => void;
   joinMeetingAsExternal: (meetingId: string, name: string, role: string) => MeetingParticipant;
   addChatMessage: (meetingId: string, message: { sender: string; text: string; time: string }) => void;
+  reload: () => void;
 };
-
-/**
- * ขึ้นเลขเวอร์ชันท้ายคีย์เมื่อโครงสร้าง mock data เปลี่ยน
- * เพื่อให้เบราว์เซอร์ที่เคยเปิดระบบมาก่อนโหลดข้อมูลชุดใหม่ แทนที่จะค้างข้อมูลเก่าใน localStorage
- * v2 — เพิ่ม conferenceProvider + ลิงก์ตัวอย่าง Teams/Zoom
- * v3 — เพิ่ม userId/committeeId/organizerId (เปลี่ยนการจับคู่จากอีเมล/ชื่อ มาเป็น id)
- * v4 — เพิ่ม conferenceRoomKey/transcriptStatus (เตรียม seam ระบบประชุมในเว็บ + ถอดเสียง)
- * v5 — ตัวอย่าง MT-2569-008 เปลี่ยนเป็น engine ที่ฝังในเว็บ (ZegoCloud)
- * v6 — ห้องทดสอบ ZegoCloud (MT-2569-010) ใช้ผู้ใช้จริงครบทุกบทบาท + เปิด allowGuestJoin
- * v7 — ตัด Cisco Webex ออกทั้งระบบ ประชุมในเว็บเหลือ ZegoCloud เจ้าเดียว
- * v8 — รวมงานสอง session (mock-data fix + merge conflict resolution)
- * v9 — ตัด mockup ห้องประชุม/การประชุมเก่าออกหมด เหลือห้องจริง 801/808/901 +
- *      ประชุมทดสอบ ZegoCloud รายการเดียว (เตรียม deploy)
- */
-const STORAGE_KEY = "meeting_system_meetings_v9";
 
 const MeetingContext = createContext<MeetingContextType | null>(null);
 
@@ -35,131 +32,175 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [initialized, setInitialized] = useState(false);
 
-  // Load from localStorage on mount
-  useEffect(() => {
+  const reload = useCallback(async () => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setMeetings(JSON.parse(stored));
-      } else {
-        setMeetings(defaultMeetings);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultMeetings));
-      }
+      const data = await apiCall<{ meetings: Meeting[] }>("/api/meetings");
+      setMeetings(data.meetings);
     } catch (e) {
-      console.error("Failed to load meetings from localStorage", e);
-      setMeetings(defaultMeetings);
+      // ยังไม่ได้ล็อกอินก็ไม่ต้องรบกวน — หน้า login จะพาไปเอง
+      if (!(e instanceof Error) || !e.message.includes("เข้าสู่ระบบ")) {
+        console.error("[meetings] load failed", e);
+      }
+    } finally {
+      setInitialized(true);
     }
-    setInitialized(true);
   }, []);
 
-  /**
-   * mutate ทุกอย่างต้องผ่านฟังก์ชันนี้ — รับ updater ที่ทำงานกับ prev ล่าสุด
-   * ห้ามอ่าน `meetings` จาก closure ตอน mutate เพราะ 2 call ในเทิร์นเดียวกันจะทับกัน
-   */
-  const mutate = (updater: (prev: Meeting[]) => Meeting[]) => {
-    setMeetings((prev) => {
-      const next = updater(prev);
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch (e) {
-        console.error("Failed to save meetings to localStorage", e);
-      }
-      return next;
-    });
-  };
-
-  // Listen to storage events to sync across tabs
   useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && e.newValue) {
-        try {
-          setMeetings(JSON.parse(e.newValue));
-        } catch (err) {
-          console.error(err);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState เกิดหลัง await ไม่ใช่ระหว่าง render
+    reload();
+    const onFocus = () => reload();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [reload]);
+
+  /** เขียนในหน้าจอก่อน แล้วซิงค์กับ server — ล้มเหลวเมื่อไหร่ดึงของจริงมาทับ */
+  const sync = useCallback(
+    (local: (prev: Meeting[]) => Meeting[], request: () => Promise<unknown>) => {
+      setMeetings(local);
+      request().catch((e) => {
+        toast.error("บันทึกไม่สำเร็จ", { description: e instanceof Error ? e.message : undefined });
+        reload();
+      });
+    },
+    [reload]
+  );
+
+  const addMeeting = useCallback(
+    (meeting: Meeting) => {
+      sync(
+        (prev) => [meeting, ...prev],
+        () => apiCall("/api/meetings", { method: "POST", body: JSON.stringify(meeting) })
+      );
+    },
+    [sync]
+  );
+
+  const updateMeeting = useCallback(
+    (meetingId: string, updated: Partial<Meeting>) => {
+      sync(
+        (prev) => prev.map((m) => (m.id === meetingId ? { ...m, ...updated } : m)),
+        () =>
+          apiCall(`/api/meetings/${meetingId}`, { method: "PATCH", body: JSON.stringify(updated) })
+      );
+    },
+    [sync]
+  );
+
+  const addMeetingFile = useCallback(
+    (meetingId: string, file: MeetingFile) => {
+      // ส่งรายการไฟล์ทั้งชุดไป เพราะ PATCH เขียนทับทั้ง array (ดูหมายเหตุใน route)
+      setMeetings((prev) => {
+        const next = prev.map((m) =>
+          m.id === meetingId ? { ...m, files: [...m.files, file] } : m
+        );
+        const target = next.find((m) => m.id === meetingId);
+        if (target) {
+          apiCall(`/api/meetings/${meetingId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ files: target.files }),
+          }).catch((e) => {
+            toast.error("อัปโหลดไฟล์ไม่สำเร็จ", {
+              description: e instanceof Error ? e.message : undefined,
+            });
+            reload();
+          });
         }
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, []);
+        return next;
+      });
+    },
+    [reload]
+  );
 
-  const addMeeting = (meeting: Meeting) => {
-    mutate((prev) => [meeting, ...prev]);
-  };
+  const addMeetingComment = useCallback(
+    (meetingId: string, agendaId: string, comment: { by: string; text: string; time: string }) => {
+      sync(
+        (prev) =>
+          prev.map((m) =>
+            m.id === meetingId
+              ? {
+                  ...m,
+                  agenda: m.agenda.map((a) =>
+                    a.id === agendaId ? { ...a, comments: [...a.comments, comment] } : a
+                  ),
+                }
+              : m
+          ),
+        () =>
+          apiCall(`/api/meetings/${meetingId}/agenda/${agendaId}/comments`, {
+            method: "POST",
+            body: JSON.stringify({ text: comment.text, time: comment.time }),
+          })
+      );
+    },
+    [sync]
+  );
 
-  const updateMeeting = (meetingId: string, updated: Partial<Meeting>) => {
-    mutate((prev) => prev.map((m) => (m.id === meetingId ? { ...m, ...updated } : m)));
-  };
+  const updateActiveAgenda = useCallback(
+    (meetingId: string, agendaId: string | null) => {
+      sync(
+        (prev) => prev.map((m) => (m.id === meetingId ? { ...m, activeAgendaId: agendaId } : m)),
+        () =>
+          apiCall(`/api/meetings/${meetingId}/active-agenda`, {
+            method: "PATCH",
+            body: JSON.stringify({ agendaId }),
+          })
+      );
+    },
+    [sync]
+  );
 
-  const addMeetingFile = (meetingId: string, file: MeetingFile) => {
-    mutate((prev) =>
-      prev.map((m) => (m.id === meetingId ? { ...m, files: [...m.files, file] } : m))
-    );
-  };
+  const addChatMessage = useCallback(
+    (meetingId: string, msg: { sender: string; text: string; time: string }) => {
+      sync(
+        (prev) =>
+          prev.map((m) =>
+            m.id === meetingId
+              ? {
+                  ...m,
+                  chatMessages: [
+                    ...(m.chatMessages || []),
+                    { id: `msg-${Date.now()}-${Math.random()}`, ...msg },
+                  ],
+                }
+              : m
+          ),
+        () =>
+          apiCall(`/api/meetings/${meetingId}/chat`, {
+            method: "POST",
+            body: JSON.stringify({ text: msg.text, time: msg.time }),
+          })
+      );
+    },
+    [sync]
+  );
 
-  const addMeetingComment = (
-    meetingId: string,
-    agendaId: string,
-    comment: { by: string; text: string; time: string }
-  ) => {
-    mutate((prev) =>
-      prev.map((m) =>
-        m.id === meetingId
-          ? {
-              ...m,
-              agenda: m.agenda.map((a) =>
-                a.id === agendaId ? { ...a, comments: [...a.comments, comment] } : a
-              ),
-            }
-          : m
-      )
-    );
-  };
-
-  const updateActiveAgenda = (meetingId: string, agendaId: string | null) => {
-    mutate((prev) =>
-      prev.map((m) => (m.id === meetingId ? { ...m, activeAgendaId: agendaId } : m))
-    );
-  };
-
-  const joinMeetingAsExternal = (meetingId: string, name: string, role: string) => {
-    // dedup ด้วย sessionId ไม่ใช่ชื่อ — คนสองคนที่ชื่อซ้ำต้องแยกกันได้
-    const sessionId = `P-EXT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const newParticipant: MeetingParticipant = {
-      id: sessionId,
-      userId: null, // แขกภายนอก ไม่มีบัญชีในระบบ
-      name,
-      position: "ผู้เข้าร่วมประชุม",
-      role,
-      department: "ภายนอกองค์กร",
-      email: `${name.toLowerCase().replace(/\s+/g, ".")}@guest.external`,
-      attendance: "attend",
-      present: true,
-      inSystem: false,
-    };
-    mutate((prev) =>
-      prev.map((m) =>
-        m.id === meetingId ? { ...m, participants: [...m.participants, newParticipant] } : m
-      )
-    );
-    return newParticipant;
-  };
-
-  const addChatMessage = (meetingId: string, msg: { sender: string; text: string; time: string }) => {
-    mutate((prev) =>
-      prev.map((m) =>
-        m.id === meetingId
-          ? {
-              ...m,
-              chatMessages: [
-                ...(m.chatMessages || []),
-                { id: `msg-${Date.now()}-${Math.random()}`, ...msg },
-              ],
-            }
-          : m
-      )
-    );
-  };
+  const joinMeetingAsExternal = useCallback(
+    (meetingId: string, name: string, role: string) => {
+      // ponytail: แขกภายนอกยังไม่มี session จึงยิง API ไม่ได้ — เพิ่มเฉพาะในหน้าจอตัวเองไปก่อน
+      // ตัวจริงต้องรอ endpoint ที่รับ invite token (ตาราง InviteToken มีใน schema แล้ว)
+      const sessionId = `P-EXT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const newParticipant: MeetingParticipant = {
+        id: sessionId,
+        userId: null,
+        name,
+        position: "ผู้เข้าร่วมประชุม",
+        role,
+        department: "ภายนอกองค์กร",
+        email: `${name.toLowerCase().replace(/\s+/g, ".")}@guest.external`,
+        attendance: "attend",
+        present: true,
+        inSystem: false,
+      };
+      setMeetings((prev) =>
+        prev.map((m) =>
+          m.id === meetingId ? { ...m, participants: [...m.participants, newParticipant] } : m
+        )
+      );
+      return newParticipant;
+    },
+    []
+  );
 
   return (
     <MeetingContext.Provider
@@ -172,6 +213,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
         updateActiveAgenda,
         joinMeetingAsExternal,
         addChatMessage,
+        reload,
       }}
     >
       {initialized ? children : <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground bg-background">กำลังโหลดข้อมูลการประชุม...</div>}

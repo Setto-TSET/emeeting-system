@@ -102,6 +102,7 @@ CREATE TABLE `Meeting` (
     `transcriptStatus` ENUM('none', 'processing', 'ready', 'failed') NOT NULL DEFAULT 'none',
     `summaryDraftId` VARCHAR(191) NULL,
     `activeAgendaId` VARCHAR(191) NULL,
+    `extraTextBoxes` JSON NULL,
     `confidentialityLevel` ENUM('normal', 'restricted', 'top_secret') NOT NULL DEFAULT 'normal',
     `notifiedAt` DATETIME(3) NULL,
     `reminderSentAt` DATETIME(3) NULL,
