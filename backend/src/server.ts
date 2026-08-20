@@ -9,11 +9,16 @@ import { initDatabase } from './database/connection';
 import { errorHandler, authMiddleware } from './middleware';
 import transcriptionRoutes from './routes/transcription';
 import summarizeRoutes from './routes/summarize';
+import auditRoutes from './routes/audit';
 
 dotenv.config();
 
 const app: Express = express();
 const PORT = process.env.PORT || 3001;
+
+// Trust the first hop reverse proxy (Railway) so req.ip reflects the real
+// client IP (X-Forwarded-For) instead of the proxy's address.
+app.set('trust proxy', 1);
 
 // ─── Middleware ───
 app.use(cors({
@@ -38,15 +43,12 @@ app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ─── API Routes (ต้องมี auth middleware ก่อน) ───
+// ─── API Routes (ทั้งหมดต้องผ่าน authMiddleware) ───
 // video token ไม่ผ่าน backend นี้แล้ว — ZegoCloud token ออกจาก Next.js API route โดยตรง
 // (src/app/api/video/token/route.ts) ดู backend/README.md
-// app.use('/api/transcription', authMiddleware, transcriptionRoutes);
-// app.use('/api/summarize', authMiddleware, summarizeRoutes);
-
-// Temporary: ยังไม่ต้อง auth ตอนทดสอบ
-app.use('/api/transcription', transcriptionRoutes);
-app.use('/api/summarize', summarizeRoutes);
+app.use('/api/transcription', authMiddleware, transcriptionRoutes);
+app.use('/api/summarize', authMiddleware, summarizeRoutes);
+app.use('/api/audit', authMiddleware, auditRoutes);
 
 // ─── Error Handler ───
 app.use(errorHandler);
