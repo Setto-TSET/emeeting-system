@@ -239,3 +239,40 @@ A: Check worker/cron job เรียก `/api/transcription/poll` หรือ�
 ---
 
 **Happy coding! 🚀**
+
+---
+
+## 🚢 Deploy (production)
+
+Vercel โฮสต์ backend นี้ไม่ได้ — serverless function เปิด WebSocket ค้างไว้ไม่ได้
+ต้องใช้โฮสต์ที่รัน long-lived process (Railway, Render, หรือ VM ขององค์กร) ส่วน frontend ยังอยู่บน Vercel ตามเดิม
+
+### 1. Build image
+
+Build context คือโฟลเดอร์ `backend/` เท่านั้น:
+
+```bash
+docker build -t emeeting-backend ./backend
+```
+
+`seed.ts` ถูก exclude จาก `tsc` build (มัน import mock data ของ frontend) จึงไม่ได้อยู่ในอิมเมจ —
+รัน seed จากเครื่อง dev ต่อเข้า production DB ครั้งเดียวแทน
+
+### 2. Provision + ตั้งค่า
+
+1. สร้าง MySQL 8 บนโฮสต์ จด credential ไว้
+2. Deploy อิมเมจ ตั้ง env ทุกตัวใน `.env.example` ยกเว้น `SEED_PASSWORD`
+3. รัน migration ครั้งเดียว: `npm run migrate` (ชี้ `DB_*` ไปที่ production DB)
+4. รัน seed ครั้งเดียว: `SEED_PASSWORD='<รหัสผ่านที่แข็งแรง>' npm run seed` แล้วล้างค่าทิ้ง
+5. ที่โปรเจกต์ Vercel ตั้ง `NEXT_PUBLIC_API_BASE_URL=https://<backend-host>` และ
+   `NEXT_PUBLIC_WS_URL=wss://<backend-host>/ws` แล้ว redeploy
+
+### 3. Verify
+
+```bash
+curl https://<backend-host>/health
+```
+
+ต้องได้ `{"status":"ok","timestamp":"..."}`
+
+ถ้า `https://` ผ่านแต่ `wss://` ไม่ผ่าน = โฮสต์ไม่ forward WebSocket upgrade ต้องแก้ที่ config ของโฮสต์ ไม่ใช่ที่โค้ด
