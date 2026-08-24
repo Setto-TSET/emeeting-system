@@ -1,0 +1,9 @@
+# SITE_ADDRESS = โดเมนจริง (Caddy ขอ TLS ให้เอง) เช่น api.example.com
+# ยังไม่มีโดเมน: ตั้ง SITE_ADDRESS=:80 เพื่อทดสอบแบบ http เท่านั้น
+# (production ต้องเป็นโดเมนจริง — frontend อยู่บน https ต่อ ws:// ธรรมดาไม่ได้ เบราว์เซอร์บล็อก)
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# reverse_proxy ส่งผ่าน WebSocket upgrade ที่ /ws ให้เองอยู่แล้ว ไม่ต้องตั้งเพิ่ม
+	reverse_proxy backend:3001
+}

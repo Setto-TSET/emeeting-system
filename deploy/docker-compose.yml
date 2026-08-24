@@ -1,0 +1,64 @@
+name: emeeting
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?ตั้ง DB_PASSWORD ใน deploy/.env ก่อน}
+      MYSQL_DATABASE: ${DB_NAME:-emeeting_db}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    # ไม่ publish port 3306 ออกนอกเครื่อง — เข้าถึงได้เฉพาะ network ภายในของ compose
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  backend:
+    build:
+      context: ../backend
+    restart: unless-stopped
+    # ponytail: replica เดียวเท่านั้น — room registry เก็บใน memory (backend/src/realtime/rooms.ts)
+    # ถ้าต้องสเกลหลาย instance ต้องย้าย fan-out ไป Redis pub/sub ก่อน
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD:?}
+      DB_NAME: ${DB_NAME:-emeeting_db}
+      JWT_SECRET: ${JWT_SECRET:?ตั้ง JWT_SECRET ใน deploy/.env ก่อน}
+      CORS_ORIGIN: ${CORS_ORIGIN:?ตั้ง CORS_ORIGIN ใน deploy/.env ก่อน}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    expose:
+      - "3001"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?ตั้ง SITE_ADDRESS ใน deploy/.env ก่อน}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - backend
+
+volumes:
+  mysql-data:
+  caddy-data:
+  caddy-config:

@@ -276,3 +276,30 @@ curl https://<backend-host>/health
 ต้องได้ `{"status":"ok","timestamp":"..."}`
 
 ถ้า `https://` ผ่านแต่ `wss://` ไม่ผ่าน = โฮสต์ไม่ forward WebSocket upgrade ต้องแก้ที่ config ของโฮสต์ ไม่ใช่ที่โค้ด
+
+### วิธีเร็วที่สุด: docker compose บน VM
+
+`deploy/` มี stack พร้อมใช้ — MySQL + backend + Caddy (ขอ TLS ให้อัตโนมัติ)
+
+```bash
+cp deploy/.env.example deploy/.env    # เติม SITE_ADDRESS, DB_PASSWORD, JWT_SECRET, CORS_ORIGIN
+docker compose -f deploy/docker-compose.yml up -d
+docker compose -f deploy/docker-compose.yml exec backend node dist/database/migrations.js
+```
+
+seed รันจากเครื่อง dev ครั้งเดียว (อิมเมจไม่มี `seed.ts` เพราะมัน import mock data ของ frontend)
+เปิด SSH tunnel ไปที่ MySQL ของ VM แทนการเปิด port 3306 ออกเน็ต:
+
+```bash
+ssh -L 3307:127.0.0.1:3306 user@vm-host    # ค้าง terminal นี้ไว้
+```
+
+อีก terminal ที่ repo:
+
+```bash
+cd backend && DB_HOST=127.0.0.1 DB_PORT=3307 DB_PASSWORD='<DB_PASSWORD>' \
+  SEED_PASSWORD='<รหัสผ่านผู้ใช้ที่แข็งแรง>' npm run seed
+```
+
+> MySQL ใน compose ไม่ publish port ออกนอกเครื่อง และ backend ตั้งใจให้รัน **replica เดียว** —
+> room registry อยู่ใน memory (`src/realtime/rooms.ts`) หลาย instance จะมองไม่เห็นกัน
