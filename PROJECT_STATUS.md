@@ -1,8 +1,8 @@
 # e-Meeting System — Project Status Report
 
 **Project:** ระบบประชุมออนไลน์พร้อมความลับ + สรุปประชุมอัตโนมัติ + ZegoCloud Integration  
-**Status:** Phase 0–C Complete + Guest Join Complete + ZegoCloud Real SDK Integrated + Phase E (Voting/Hand Raise/Subtitle/Doc-Share Sync) Complete + **Deployed to Vercel production** — Zoom Room SIP bridge still blocked on licensing  
-**Last Updated:** 2026-08-14  
+**Status:** Phase 0–C Complete + Guest Join Complete + ZegoCloud Real SDK Integrated + Phase E (Voting/Hand Raise/Subtitle/Doc-Share Sync) Complete + **Frontend deployed to Vercel production** + **Backend containerised พร้อม deploy (docker compose)** — Phase F (Server-Side Thai ASR) ออกแบบเสร็จแล้วแต่ยังไม่เริ่มเขียนโค้ด, Zoom Room SIP bridge still blocked on licensing  
+**Last Updated:** 2026-08-25  
 **Repository:** https://github.com/Setto-TSET/emeeting-system  
 **Production:** https://meeting-system-features-40fa4d.vercel.app
 
@@ -21,9 +21,12 @@
 - ✅ การจำหน่ายเอกสารตามสิทธิ์ (4 ระดับการมองเห็น)
 - ✅ Guest Join — Magic Link flow (เชิญบุคคลภายนอกเข้าประชุมโดยไม่ต้องสร้างบัญชี, ใช้งานได้จริงแล้ว ไม่ใช่แค่ plan)
 - ✅ โหวตแบบ realtime, ยกมือแบบ realtime, ซับไตเติลสด (Web Speech API), ถอดคำพูด + แชร์เอกสารซิงค์ — ผ่าน WebSocket backend ที่ authenticate ด้วย JWT แล้ว **sync ข้ามเครื่อง/ข้ามเบราว์เซอร์ได้จริง** state ทั้งหมดเก็บที่ server (MySQL) ไม่ใช่ per-tab อีกต่อไป, คนเข้าห้องทีหลังดึง snapshot ปัจจุบันผ่าน `GET /api/rooms/:meetingId/state` (ดู README.md)
+- ✅ Backend containerised แล้ว — `backend/Dockerfile` + `deploy/docker-compose.yml` (MySQL 8 + backend + Caddy reverse proxy พร้อม TLS อัตโนมัติ) + `deploy/.env.example` เหลือแค่ยกขึ้น host จริง
+- ✅ Design spec + implementation plan ของ **Server-Side Thai ASR (Typhoon self-host)** เขียนและอนุมัติแล้ว พร้อมผลวัด CER/latency จริง (ยังไม่ implement)
 
 ### ⏳ ยังเลื่อน
-- ❌ Backend deploy จริง (โค้ด + DB schema + auth + WebSocket realtime เขียนและเทสครบแล้ว รันได้บนเครื่อง dev, ยังไม่ได้ deploy ขึ้น host จริง — งานที่เหลือ)
+- ❌ Backend deploy จริง (โค้ด + DB schema + auth + WebSocket realtime เขียนและเทสครบแล้ว, containerise + compose stack พร้อมแล้ว — เหลือแค่ยกขึ้น host จริงกับตั้งโดเมน/TLS)
+- ❌ Server-Side Thai ASR (Phase F) — spec + plan เสร็จ 2026-08-24 แต่ยังไม่มีโค้ด: ยังไม่มี `asr/`, `backend/src/realtime/audio.ts`, `backend/src/realtime/asrClient.ts`, `src/services/speech/pcm.ts` คำบรรยายสดปัจจุบันยังใช้ Web Speech API ฝั่ง client (Chromium เท่านั้น)
 - ❌ Email service จริง (template พร้อม, รอเลือก Sendgrid/AWS SES)
 - ❌ Zoom Room enterprise SIP bridge (Phase E placeholder UI ทำแล้ว, ตัว SIP bridge จริงรอ ZegoCloud Enterprise Plan)
 - ❌ Server-side audit logging + signed URLs (Phase 2 security, ยังไม่ทำ) — authentication (JWT + bcrypt) และ server-side authorization (ใครเข้าห้องไหนได้, ใครเป็น manager) ทำเสร็จแล้ว ไม่ใช่ "ยังไม่ทำ" อีกต่อไป
@@ -178,6 +181,30 @@ Replaces the earlier Webex mock as the primary video engine seam.
 | Transcript capture + viewer | ✅ | `src/services/transcript/store.ts`, `src/components/meeting/TranscriptTimeline.tsx` |
 | Document sharing sync | ✅ | live room `doc_share`/`doc_share_page`/`doc_share_stop` wiring |
 | Zoom Room placeholder (needs enterprise plan for SIP bridge) | ⏳ | `src/components/meeting/ZoomRoomStatus.tsx` shows UI; SIP bridge not implemented, blocked on licensing |
+
+---
+
+### Deployment Packaging ✅ COMPLETE (2026-08-24)
+| Component | Status | File |
+|---|---|---|
+| Backend container image (multi-stage, Node 20) | ✅ | `backend/Dockerfile`, `backend/.dockerignore` |
+| Compose stack: MySQL 8 + backend + Caddy reverse proxy | ✅ | `deploy/docker-compose.yml` |
+| Reverse proxy + automatic TLS | ✅ | `deploy/Caddyfile` |
+| Environment template + เอกสาร backend env | ✅ | `deploy/.env.example`, `backend/.env.example`, `backend/README.md` |
+| ยกขึ้น host จริง + ตั้งโดเมน | ⏳ | ยังไม่ได้ทำ — งานถัดไปลำดับแรก |
+
+---
+
+### Phase F: Server-Side Thai ASR (Typhoon) 📝 DESIGN COMPLETE — NOT IMPLEMENTED
+| Component | Status | File |
+|---|---|---|
+| Design spec (พร้อมผลวัด CER/latency จริง) | ✅ | `docs/superpowers/specs/2026-08-24-server-side-thai-asr-design.md` |
+| Implementation plan (task-by-task) | ✅ | `docs/superpowers/plans/2026-08-24-server-side-thai-asr.md` |
+| ASR sidecar (Python + FastAPI + typhoon-asr) | ❌ | `asr/` ยังไม่มี |
+| Backend audio pipeline | ❌ | `backend/src/realtime/audio.ts`, `asrClient.ts` ยังไม่มี |
+| Frontend PCM capture (AudioWorklet) | ❌ | `src/services/speech/pcm.ts`, `public/pcm-worklet.js` ยังไม่มี |
+
+**เหตุผล:** Web Speech API มีเฉพาะ Chromium (Safari/Firefox/มือถือบางรุ่นไม่มีคำบรรยายเลย), คุณภาพภาษาไทยปรับแต่งไม่ได้ และเสียงออกนอกองค์กร (ส่งไปประมวลผลที่ Google) ซึ่งขัดกับจุดขายเรื่องความลับของระบบ — แผนคือ self-host Typhoon ASR บน VM เดียวกับ backend แล้วเข้าเส้นทาง `subtitle_text` เดิม
 
 ---
 
@@ -364,8 +391,9 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 - [x] ตั้ง ZegoCloud credential บน Vercel Environment Variables (Sensitive, ไม่ผ่านโค้ด)
 - [ ] Custom domain (ปัจจุบันใช้ *.vercel.app)
 - [ ] Setup email service (Sendgrid/AWS SES)
-- [ ] Deploy backend + database
-- [ ] SSL/TLS configuration
+- [x] Containerise backend + compose stack (MySQL + backend + Caddy) — `deploy/` (2026-08-24)
+- [ ] Deploy backend + database ขึ้น host จริง
+- [ ] SSL/TLS configuration (Caddy ออกให้อัตโนมัติเมื่อมีโดเมน)
 - [ ] Rate limiting + DDoS protection
 - [ ] Log aggregation (ELK/CloudWatch)
 - [ ] Monitoring + alerting
@@ -493,11 +521,13 @@ npm run dev
 
 ### 1️⃣ Short-term (1–2 weeks)
 - [x] **Deploy frontend** — Vercel production, ZegoCloud credential ตั้งเป็น env var บน Vercel แล้ว (ไม่ใช่แค่ dev `.env.local`)
-- [x] **Setup Backend Project** — Express + MySQL + JWT auth + WebSocket realtime server เขียนและเทสครบแล้ว (transcription/summarize/guest/rooms/realtime) — เหลือแค่ deploy ขึ้น host จริง
+- [x] **Setup Backend Project** — Express + MySQL + JWT auth + WebSocket realtime server เขียนและเทสครบแล้ว (transcription/summarize/guest/rooms/realtime)
+- [x] **Containerise backend** — Dockerfile + compose stack พร้อมใช้ (`deploy/`)
+- [ ] **Deploy backend ขึ้น host จริง** — งานถัดไปลำดับแรก: เช่า VM, ตั้งโดเมน, รัน compose, ชี้ frontend มาที่ backend จริง
 - [ ] **Email Service Setup** — Sendgrid/AWS SES account
 
 ### 2️⃣ Medium-term (2–4 weeks)
-- [ ] **Transcription Accuracy** — ประเมิน AssemblyAI/Azure STT เทียบกับ Web Speech API ปัจจุบัน
+- [ ] **Phase F: Server-Side Thai ASR** — implement ตาม `docs/superpowers/plans/2026-08-24-server-side-thai-asr.md` (แทนการประเมิน AssemblyAI/Azure STT — ตัดสินใจเลือก Typhoon self-host แล้ว)
 - [ ] **Phase D Testing** — Email → calendar → join workflow
 - [ ] **Phase 2 Security** — Audit logging + signed URLs + session management
 
@@ -522,6 +552,6 @@ npm run dev
 
 ---
 
-**Last Reviewed:** 2026-08-13  
+**Last Reviewed:** 2026-08-25 (ตรงกับ commit `a9515f9`)  
 **Prepared by:** Claude Code  
-**Next Review:** When Zoom Room enterprise SIP bridge (ZegoCloud Enterprise Plan) becomes available
+**Next Review:** เมื่อ backend ขึ้น host จริง หรือเริ่ม implement Phase F (Server-Side Thai ASR)
