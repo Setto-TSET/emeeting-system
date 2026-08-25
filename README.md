@@ -17,6 +17,10 @@ npm run dev
 — แต่โหวต, ยกมือ, ซับไตเติล, แชร์เอกสาร sync ข้ามเครื่องผ่าน backend จริงแล้ว (ต้องรัน backend
 ตามด้านล่างก่อนถึงจะใช้ฟีเจอร์เหล่านี้ได้)
 
+คำบรรยายสดถอดเสียงที่ server ด้วย Typhoon ASR ที่รัน self-host (`asr/`) เบราว์เซอร์ส่ง PCM 16 kHz
+ผ่าน WebSocket เส้นเดิม จึงใช้ได้ทุกเบราว์เซอร์ที่รองรับ AudioWorklet ไม่ใช่เฉพาะ Chrome และ
+**เสียงประชุมไม่ออกนอกองค์กร** ต่างจาก Web Speech API เดิมที่ส่งเสียงไปประมวลผลที่ Google
+
 ## สองระบบ, สอง deploy target
 
 ระบบนี้แยกเป็นสองส่วนที่ deploy คนละที่กัน:
@@ -46,6 +50,17 @@ npm run dev                   # http://localhost:3001
 ```
 
 ดูรายละเอียด endpoint/schema เต็มที่ `backend/README.md`
+
+## รัน ASR sidecar (จำเป็นสำหรับคำบรรยายสด)
+
+```bash
+cd asr
+python -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt   # Python 3.13
+.venv/Scripts/python -m uvicorn server:app --port 8000
+```
+
+แล้วตั้ง `ASR_URL=http://localhost:8000` ใน `backend/.env` ถ้ารันทั้งชุดด้วย
+`deploy/docker-compose.yml` service `asr` ขึ้นมาให้เองพร้อม weights ที่ฝังในอิมเมจแล้ว
 
 ## บัญชีทดสอบ
 
