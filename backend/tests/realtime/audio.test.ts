@@ -218,4 +218,71 @@ describe('audio frames', () => {
 
     speaker.close();
   });
+
+  test('DB ล้มระหว่างบันทึก ไม่ทำให้โปรเซสตาย และห้องยังใช้งานต่อได้', async () => {
+    const speaker = await openClient('U-001', 'สมชาย ใจดี');
+    const rejections: unknown[] = [];
+    const onUnhandled = (reason: unknown) => rejections.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+
+    // จำลอง DB ล้มด้วยการทิ้งตารางไปชั่วคราว — INSERT จะ reject จริงเหมือนตอน connection หลุด
+    await query('RENAME TABLE transcript_segments TO transcript_segments_hidden');
+    try {
+      mockTranscribe.mockResolvedValue('ล้มระหว่างบันทึก');
+      speaker.send(audioFrame(0));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } finally {
+      await query('RENAME TABLE transcript_segments_hidden TO transcript_segments');
+      process.off('unhandledRejection', onUnhandled);
+    }
+
+    expect(rejections).toHaveLength(0);
+
+    // socket เดิมยังใช้ได้ ก้อนถัดไปยังถอดและออกอากาศได้ตามปกติ
+    mockTranscribe.mockResolvedValue('กลับมาปกติ');
+    const echoed = nextMessage(speaker);
+    speaker.send(audioFrame(3_000));
+    expect((await echoed).payload.text).toBe('กลับมาปกติ');
+
+    speaker.close();
+  });
+
+  test('ยิงเฟรมรัวเกินเพดานที่ค้างได้ ถูกทิ้งก่อนถึง sidecar', async () => {
+    const speaker = await openClient('U-001', 'สมชาย ใจดี');
+
+    // ค้างทุกก้อนไว้ เพื่อให้เพดาน in-flight เต็มแล้ววัดว่ามีกี่ก้อนที่ถูกส่งต่อไป sidecar จริง
+    const release: ((value: string) => void)[] = [];
+    mockTranscribe.mockImplementation(
+      () => new Promise<string>((resolve) => { release.push(resolve); })
+    );
+
+    for (let i = 0; i < 10; i += 1) speaker.send(audioFrame(i * 2_500));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(mockTranscribe).toHaveBeenCalledTimes(2);
+
+    release.forEach((resolve) => resolve(''));
+    speaker.close();
+  });
+
+  test('ออกจากห้องแล้วสถานะผู้พูดถูกลืม ประโยคแรกของรอบใหม่ไม่ถูกตัดทิ้ง', async () => {
+    mockTranscribe.mockResolvedValue('เห็นชอบตามที่เสนอ');
+    const first = await openClient('U-001', 'สมชาย ใจดี');
+    const echoed = nextMessage(first);
+    first.send(audioFrame(0));
+    await echoed;
+
+    first.close();
+    // รอให้ server ประมวลผล close ก่อน ไม่งั้นยังไม่ทันลืมสถานะ
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // พูดประโยคเดิมซ้ำในรอบใหม่ ถ้าสถานะเก่ายังค้าง stripOverlap จะตัดจนเหลือสตริงว่าง
+    // แล้วจะไม่มีสัญญาณส่งกลับมาเลย เทสต์นี้จึงจะ timeout ถ้าการลืมสถานะพัง
+    const second = await openClient('U-001', 'สมชาย ใจดี');
+    const echoedAgain = nextMessage(second);
+    second.send(audioFrame(0));
+    expect((await echoedAgain).payload.text).toBe('เห็นชอบตามที่เสนอ');
+
+    second.close();
+  });
 });
