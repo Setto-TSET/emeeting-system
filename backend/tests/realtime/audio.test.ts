@@ -59,6 +59,9 @@ describe('audio frames', () => {
   });
 
   afterAll(async () => {
+    // ปิด socket ที่ยังค้างก่อน ไม่งั้น server.close() รอ WebSocket ที่เทสต์เปิดไว้ไปตลอด
+    // แล้ว jest ค้างไม่จบ (handlers.test ไม่เจอเพราะทุกเคสที่นั่นปิด socket ครบก่อน assert สุดท้าย)
+    server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await close();
   });
@@ -197,6 +200,11 @@ describe('audio frames', () => {
 
     const echoed = nextMessage(speaker);
     speaker.send(audioFrame(3_000));
+    // รอให้ server รับก้อนที่สองจริง ๆ ก่อนค่อยปล่อยก้อนแรก — ปล่อยเลยจะกลายเป็นว่าก้อนแรก
+    // ถอดเสร็จตั้งแต่ยังไม่มีก้อนใหม่มาแทนที่ ซึ่งไม่ใช่สถานการณ์ที่เทสต์นี้ต้องการวัด
+    while (mockTranscribe.mock.calls.length < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     releaseFirst('ก้อนที่หนึ่ง');
     const signal = await echoed;
 

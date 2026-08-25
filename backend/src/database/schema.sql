@@ -75,7 +75,9 @@ CREATE TABLE IF NOT EXISTS transcript_segments (
   meeting_id   VARCHAR(64)  NOT NULL,
   speaker_id   VARCHAR(64)  NOT NULL,
   speaker_name VARCHAR(255) NOT NULL,
-  start_sec    INT          NOT NULL,
+  -- ก้อนเสียงห่างกัน 2.5 วินาที offset จึงลงท้ายด้วย .5 เสมอ INT ตัดทศนิยมทิ้งแล้วคำบรรยาย
+  -- คลาดจากเสียงจริงได้ถึงครึ่งวินาที DOUBLE คืนค่าเป็น number ให้ mysql2 ต่างจาก DECIMAL ที่คืนสตริง
+  start_sec    DOUBLE       NOT NULL,
   text         TEXT         NOT NULL,
   created_at   BIGINT       NOT NULL,
   INDEX idx_transcript_meeting (meeting_id, start_sec)
