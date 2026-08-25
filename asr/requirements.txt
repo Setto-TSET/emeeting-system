@@ -1,0 +1,5 @@
+typhoon-asr==0.1.1
+fastapi==0.121.1
+uvicorn==0.42.0
+soundfile==0.14.0
+numpy==2.5.2
