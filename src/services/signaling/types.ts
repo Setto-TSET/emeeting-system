@@ -64,7 +64,15 @@ export interface SignalPayloadMap {
   doc_share: { fileId: string; fileName: string };
   doc_share_page: { fileId: string; page: number };
   doc_share_stop: Record<string, never>;
-  room_joined: { userId: string; userName: string; meetingId: string };
+  // serverTime/roomStartedAt ใช้ตั้งจุดอ้างอิงเวลาของคำบรรยายให้ทุกคนในห้องตรงกัน
+  // (ดู src/services/speech/audioCapture.ts) โดยไม่ต้องพึ่งนาฬิกาของเครื่องผู้ใช้
+  room_joined: {
+    userId: string;
+    userName: string;
+    meetingId: string;
+    serverTime: number;
+    roomStartedAt: number;
+  };
   signal_error: { reason: string };
   vote_state: { topic: VoteTopicDto };
   // lastAction: ใครเป็นคนทำให้เกิดการเปลี่ยนแปลงล่าสุด (ใครลด/ยกมือให้ใคร) — optional เพราะฝั่ง

@@ -100,6 +100,7 @@ function Harness({
   const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
   const broadcastRef = useRef<((signal: unknown) => void) | null>(null);
   const sendAudioRef = useRef<((frame: ArrayBuffer) => void) | null>(null);
+  const meetingStartRef = useRef(Date.now());
   const handSignalReceivedRef = useRef(false);
   const docShareSignalReceivedRef = useRef(false);
 
@@ -120,6 +121,7 @@ function Harness({
         currentUserId={currentUserId}
         broadcastRef={broadcastRef as React.MutableRefObject<((signal: unknown) => void) | null>}
         sendAudioRef={sendAudioRef}
+        meetingStartRef={meetingStartRef}
         setRaisedHands={setRaisedHands}
         setLatestSubtitle={setLatestSubtitle}
         setSharedFileId={setSharedFileId}

@@ -17,6 +17,15 @@ describe('downsampleTo16k', () => {
     expect(output[0]).toBeCloseTo(0.5, 5);
   });
 
+  test('อัตราสุ่มต่ำกว่าเป้าหมาย เพิ่มความถี่ด้วยการประมาณเชิงเส้น ไม่แทรกความเงียบ', () => {
+    const output = downsampleTo16k(new Float32Array([0.5, 0.6, 0.7, 0.8]), 8000);
+
+    expect(output).toHaveLength(8);
+    // ค่าที่แทรกต้องอยู่ระหว่างตัวอย่างสองตัวที่ขนาบ ไม่ใช่ศูนย์
+    expect(output[1]).toBeCloseTo(0.55, 5);
+    expect(Array.from(output).some((v) => v === 0)).toBe(false);
+  });
+
   test('อัตราสุ่มตรงกับเป้าหมายอยู่แล้ว คืนของเดิม', () => {
     const input = new Float32Array([0.1, -0.2, 0.3]);
     // เทียบตัวเดียวกันไปเลย แทนการเทียบค่าทีละตัวกับเลขทศนิยมที่เขียนในเทสต์

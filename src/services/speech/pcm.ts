@@ -15,6 +15,22 @@ export function downsampleTo16k(input: Float32Array, inputRate: number): Float32
   if (inputRate === TARGET_RATE) return input;
 
   const ratio = inputRate / TARGET_RATE;
+
+  // ไมค์บางตัว (เช่น Bluetooth โหมด SCO) ทำให้ AudioContext เดินที่ 8 kHz ซึ่งต่ำกว่าเป้าหมาย
+  // การเฉลี่ยช่วงด้านล่างใช้ไม่ได้กับกรณีนี้ เพราะช่วงที่ยุบสั้นกว่าหนึ่งตัวอย่าง ผลที่ได้จะเป็น
+  // ศูนย์สลับกับค่าจริง (เสียงแตกจนถอดไม่ออก) จึงต้องเพิ่มความถี่ด้วยการประมาณเชิงเส้นแทน
+  if (ratio < 1) {
+    const upLength = Math.floor(input.length / ratio);
+    const up = new Float32Array(upLength);
+    for (let i = 0; i < upLength; i += 1) {
+      const position = i * ratio;
+      const left = Math.floor(position);
+      const right = Math.min(left + 1, input.length - 1);
+      const fraction = position - left;
+      up[i] = input[left] * (1 - fraction) + input[right] * fraction;
+    }
+    return up;
+  }
   const length = Math.floor(input.length / ratio);
   const output = new Float32Array(length);
 

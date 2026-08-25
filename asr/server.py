@@ -6,17 +6,29 @@
 
 import os
 import tempfile
+from contextlib import asynccontextmanager
 
 import numpy as np
 import soundfile as sf
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 
 SAMPLE_RATE = 16000
 MODEL_NAME = os.environ.get("ASR_MODEL", "scb10x/typhoon-asr-realtime")
 DEVICE = os.environ.get("ASR_DEVICE", "cpu")
 
-app = FastAPI()
 _model = None
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # โหลดโมเดลตั้งแต่ตอนสตาร์ต ไม่ปล่อยให้ request แรกเป็นคนจ่ายค่าโหลดสามวินาที
+    # (คำบรรยายประโยคแรกของประชุมแรกหลัง deploy จะหายไปเงียบ ๆ ถ้ารอโหลดตอนนั้น)
+    await run_in_threadpool(get_model)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 def get_model():
@@ -46,6 +58,13 @@ async def transcribe(request: Request):
 
     samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
 
+    # ถอดเสียงเป็นงาน CPU ล้วนและกินเวลาราว 200 มิลลิวินาทีต่อก้อน ถ้ารันบน event loop ตรง ๆ
+    # ทั้งกระบวนการจะหยุดรอ รวมถึง /health ที่ตัวตรวจสุขภาพเรียก โยนเข้า threadpool แทน
+    text = await run_in_threadpool(_transcribe_samples, samples)
+    return {"text": text}
+
+
+def _transcribe_samples(samples: np.ndarray) -> str:
     # NeMo รับ path ของไฟล์ ไม่รับ array โดยตรงในเวอร์ชันนี้ จึงเขียนไฟล์ชั่วคราวแล้วลบทิ้ง
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         path = tmp.name
@@ -53,8 +72,6 @@ async def transcribe(request: Request):
         sf.write(path, samples, SAMPLE_RATE)
         hypotheses = get_model().transcribe(audio=[path])
         first = hypotheses[0]
-        text = first.text if hasattr(first, "text") else str(first)
+        return first.text if hasattr(first, "text") else str(first)
     finally:
         os.unlink(path)
-
-    return {"text": text}

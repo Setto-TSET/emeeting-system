@@ -7,6 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
+
+# ลง torch จาก index ของ CPU ก่อน ไม่งั้น wheel ปกติจาก PyPI ลากไลบรารี CUDA ของ NVIDIA
+# เข้ามาหลายกิกะไบต์ทั้งที่อิมเมจนี้รันบน CPU อย่างเดียว (ASR_DEVICE=cpu)
+RUN pip install --no-cache-dir torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY server.py ./

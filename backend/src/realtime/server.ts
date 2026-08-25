@@ -8,7 +8,7 @@ import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyAccessToken } from '../services/auth';
 import { isMeetingMember } from '../repositories/meetings';
-import { addClient, removeClient, clientsIn, RoomClient } from './rooms';
+import { addClient, removeClient, clientsIn, roomStartedAt, RoomClient } from './rooms';
 import { handleSignal } from './handlers';
 import { handleAudioFrame, forgetSpeaker } from './audio';
 
@@ -83,7 +83,15 @@ export function attachRealtime(server: http.Server): WebSocketServer {
       senderId: 'server',
       senderName: 'server',
       timestamp: Date.now(),
-      payload: { userId: client.userId, userName: client.userName, meetingId },
+      // serverTime กับ roomStartedAt ไปด้วยกันเสมอ client เอาผลต่างมาตั้งจุดอ้างอิงของตัวเอง
+      // จึงไม่ต้องให้นาฬิกาของเครื่องผู้ใช้ตรงกับของ server
+      payload: {
+        userId: client.userId,
+        userName: client.userName,
+        meetingId,
+        serverTime: Date.now(),
+        roomStartedAt: roomStartedAt(meetingId),
+      },
     });
 
     socket.on('message', async (raw, isBinary) => {

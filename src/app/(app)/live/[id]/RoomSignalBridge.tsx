@@ -25,6 +25,7 @@ export function RoomSignalBridge({
   currentUserId,
   broadcastRef,
   sendAudioRef,
+  meetingStartRef,
   setRaisedHands,
   setLatestSubtitle,
   setSharedFileId,
@@ -35,6 +36,8 @@ export function RoomSignalBridge({
   currentUserId: string;
   broadcastRef: React.MutableRefObject<Broadcast | null>;
   sendAudioRef: React.MutableRefObject<((frame: ArrayBuffer) => void) | null>;
+  // จุดอ้างอิงเวลาของคำบรรยาย — เขียนทับด้วยค่าที่ server บอกตอน room_joined
+  meetingStartRef: React.MutableRefObject<number>;
   setRaisedHands: React.Dispatch<React.SetStateAction<RaisedHandDto[]>>;
   setLatestSubtitle: React.Dispatch<React.SetStateAction<RoomSignal<"subtitle_text"> | null>>;
   setSharedFileId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -66,6 +69,16 @@ export function RoomSignalBridge({
       toast.info("โฮสต์ลดมือให้คุณแล้ว");
     }
     setRaisedHands(signal.payload.raised);
+  });
+
+  useSignal("room_joined", (signal) => {
+    // แปลงเวลาเริ่มห้องของ server มาเป็นเวลาบนนาฬิกาของเครื่องนี้ ทุกคนในห้องจึงได้จุดอ้างอิง
+    // เดียวกันโดยไม่ต้องให้นาฬิกาสองเครื่องตรงกัน — ถ้าใช้เวลาที่ตัวเองเปิดหน้าเว็บ คนเข้าทีหลัง
+    // จะติดเวลาน้อยกว่าความจริง แล้ว transcript ที่เรียงตาม startSec จะสลับลำดับกัน
+    const { serverTime, roomStartedAt } = signal.payload;
+    if (typeof serverTime === "number" && typeof roomStartedAt === "number") {
+      meetingStartRef.current = Date.now() - (serverTime - roomStartedAt);
+    }
   });
 
   useSignal("subtitle_text", (signal) => {

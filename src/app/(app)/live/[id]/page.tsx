@@ -55,10 +55,13 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const docShareSignalReceivedRef = useRef(false);
   const [subtitleOn, setSubtitleOn] = useState(false);
   const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
+  // ค่าเริ่มต้นใช้เวลาที่เปิดหน้านี้ไปก่อน แล้ว RoomSignalBridge เขียนทับด้วยเวลาเริ่มห้องจริง
+  // ที่ server ส่งมาตอน room_joined
   const meetingStartRef = useRef(Date.now());
   const sendAudioRef = useRef<((frame: ArrayBuffer) => void) | null>(null);
   // ฟังก์ชันหยุดจับเสียงที่ startCapture คืนมา — เก็บไว้เพื่อปิดไมค์ตอนกดปิดซับหรือออกจากห้อง
   const stopCaptureRef = useRef<(() => void) | null>(null);
+  const startingCaptureRef = useRef(false);
   const [activeTab, setActiveTab] = useState("agenda");
   const [chatInput, setChatInput] = useState("");
   
@@ -388,6 +391,12 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       return;
     }
 
+    // subtitleOn ยังไม่เป็น true จนกว่า startCapture จะเสร็จ ระหว่างนั้นหน้าต่างขอสิทธิ์ไมค์
+    // ค้างอยู่และปุ่มยังกดได้ ถ้ากดซ้ำจะได้ capture สองชุด แล้วชุดแรกไม่มีใครถือฟังก์ชันหยุดไว้
+    // ไมค์ตัวนั้นจะค้างเปิดไปทั้งประชุม
+    if (startingCaptureRef.current) return;
+    startingCaptureRef.current = true;
+
     if (!isCaptureSupported()) {
       toast.error("เบราว์เซอร์นี้ไม่รองรับการจับเสียงไมค์สำหรับคำบรรยาย");
       return;
@@ -403,6 +412,8 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       setSubtitleOn(true);
     } catch {
       toast.error("เปิดไมค์ไม่สำเร็จ กรุณาอนุญาตการใช้ไมโครโฟนในเบราว์เซอร์");
+    } finally {
+      startingCaptureRef.current = false;
     }
   };
 
@@ -412,6 +423,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       currentUserId={currentUser.id}
       broadcastRef={broadcastRef}
       sendAudioRef={sendAudioRef}
+      meetingStartRef={meetingStartRef}
       setRaisedHands={setRaisedHands}
       setLatestSubtitle={setLatestSubtitle}
       setSharedFileId={setSharedFileId}
