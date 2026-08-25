@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useEffect, useRef, useState } from "react";
-import { RoomSignalBridge } from "./page";
+import { RoomSignalBridge } from "./RoomSignalBridge";
 import type { RaisedHandDto, RoomSignal } from "@/services/signaling/types";
 import type { RoomSnapshot } from "@/services/rooms/snapshot";
 
@@ -35,12 +35,14 @@ vi.mock("sonner", () => ({
 // --- Mock useRoomSignaling: จำลอง useSignal จริงด้วย subscribe/unsubscribe ผ่าน useEffect
 // เหมือนของจริงใน RoomSignalingContext (ตามแพตเทิร์นของ VotePanel.test.tsx) ---
 const broadcastMock = vi.fn();
+const sendAudioMock = vi.fn();
 type AnyHandler = (signal: RoomSignal) => void;
 let handlersByType: Map<string, Set<AnyHandler>> = new Map();
 
 vi.mock("@/context/RoomSignalingContext", () => ({
   useRoomSignaling: () => ({
     broadcast: broadcastMock,
+    sendAudio: sendAudioMock,
     connected: true,
     useSignal: (type: string, handler: AnyHandler) => {
       // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -97,6 +99,7 @@ function Harness({
   const [sharedViewerPage, setSharedViewerPage] = useState(1);
   const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
   const broadcastRef = useRef<((signal: unknown) => void) | null>(null);
+  const sendAudioRef = useRef<((frame: ArrayBuffer) => void) | null>(null);
   const handSignalReceivedRef = useRef(false);
   const docShareSignalReceivedRef = useRef(false);
 
@@ -116,6 +119,7 @@ function Harness({
       <RoomSignalBridge
         currentUserId={currentUserId}
         broadcastRef={broadcastRef as React.MutableRefObject<((signal: unknown) => void) | null>}
+        sendAudioRef={sendAudioRef}
         setRaisedHands={setRaisedHands}
         setLatestSubtitle={setLatestSubtitle}
         setSharedFileId={setSharedFileId}
