@@ -29,6 +29,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      asr:
+        condition: service_started
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -40,8 +42,18 @@ services:
       JWT_SECRET: ${JWT_SECRET:?ตั้ง JWT_SECRET ใน deploy/.env ก่อน}
       CORS_ORIGIN: ${CORS_ORIGIN:?ตั้ง CORS_ORIGIN ใน deploy/.env ก่อน}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ASR_URL: ${ASR_URL:-http://asr:8000}
     expose:
       - "3001"
+
+  asr:
+    build:
+      context: ../asr
+    restart: unless-stopped
+    # ponytail: instance เดียว โมเดลกิน RAM ราว 2 GB และ CPU ทำได้ 23 เท่าของเวลาจริงอยู่แล้ว
+    # ถ้าห้องประชุมพร้อมกันเยอะจนถอดไม่ทัน ค่อยเพิ่ม replica แล้วใส่ load balancer หน้ามัน
+    expose:
+      - "8000"
 
   caddy:
     image: caddy:2-alpine
