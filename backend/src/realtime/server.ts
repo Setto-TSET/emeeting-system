@@ -10,6 +10,7 @@ import { verifyAccessToken } from '../services/auth';
 import { isMeetingMember } from '../repositories/meetings';
 import { addClient, removeClient, clientsIn, RoomClient } from './rooms';
 import { handleSignal } from './handlers';
+import { handleAudioFrame } from './audio';
 
 const CLOSE_UNAUTHORIZED = 4401;
 const CLOSE_FORBIDDEN = 4403;
@@ -28,7 +29,10 @@ export function broadcast(meetingId: string, message: unknown, exceptUserId?: st
 }
 
 export function attachRealtime(server: http.Server): WebSocketServer {
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  // ก้อนเสียง 3 วินาทีที่ 16 kHz 16-bit เท่ากับ 96 KB บวก header — 200 KB คือเผื่อไว้เท่าตัว
+  // เกินกว่านี้ไม่ใช่เสียงประชุม จำกัดที่ตัว WebSocketServer เลยเพื่อให้ ws ปิดการเชื่อมต่อ
+  // ก่อนโหลด payload เข้าหน่วยความจำ
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 200 * 1024 });
 
   wss.on('connection', async (socket, request) => {
     const url = new URL(request.url ?? '', 'http://localhost');
@@ -76,7 +80,11 @@ export function attachRealtime(server: http.Server): WebSocketServer {
       payload: { userId: client.userId, userName: client.userName, meetingId },
     });
 
-    socket.on('message', async (raw) => {
+    socket.on('message', async (raw, isBinary) => {
+      if (isBinary) {
+        return handleAudioFrame(client, Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer));
+      }
+
       let parsed: unknown;
       try {
         parsed = JSON.parse(raw.toString());
