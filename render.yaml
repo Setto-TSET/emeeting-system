@@ -1,0 +1,36 @@
+# Render Blueprint — ต้องอยู่ที่ราก repo เท่านั้น Render ถึงจะเห็น
+# วิธีใช้ครบขั้นตอนอยู่ใน deploy/RENDER.md
+#
+# MySQL ไม่ได้ประกาศไว้ที่นี่เพราะ Render ไม่มี managed MySQL (มีแต่ Postgres/Redis)
+# ฐานข้อมูลใช้ Aiven free MySQL แล้วส่งเข้ามาทาง DATABASE_URL
+
+services:
+  - type: web
+    name: emeeting-backend
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    autoDeploy: true
+
+    # ponytail: instance เดียวเท่านั้น — room registry ของ realtime เก็บใน memory
+    # (backend/src/realtime/rooms.ts) สองอินสแตนซ์จะ broadcast ไม่ถึงกัน
+    # ต้องย้าย fan-out ไป Redis pub/sub ก่อนถึงจะเพิ่มจำนวนได้
+    numInstances: 1
+
+    envVars:
+      # Aiven Service URI ที่แปลงแล้ว — ใส่เองในหน้า Render ไม่เก็บลง repo
+      - key: DATABASE_URL
+        sync: false
+      # ให้ Render สุ่มให้ครั้งเดียว — ไม่มีใครต้องเห็นค่านี้ รวมถึงเราเอง
+      # (เปลี่ยนค่านี้เมื่อไหร่ token ที่ออกไปแล้วใช้ไม่ได้ทันที ผู้ใช้ต้องล็อกอินใหม่)
+      - key: JWT_SECRET
+        generateValue: true
+      # โดเมน Vercel ของ frontend คั่นด้วยจุลภาค — ไม่ใส่ให้ถูก เบราว์เซอร์จะบล็อกทุก request
+      - key: CORS_ORIGIN
+        sync: false
+      # ใช้เฉพาะฟีเจอร์สรุปการประชุมด้วย AI — เว้นว่างได้ ระบบอื่นทำงานปกติ
+      - key: CLAUDE_API_KEY
+        sync: false
