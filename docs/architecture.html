@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สถาปัตยกรรม e-Meeting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #eaeeeb;
+    --surface: #f7faf8;
+    --sunken: #e2e8e4;
+    --ink: #16211d;
+    --muted: #57665f;
+    --line: #ced8d2;
+    --accent: #a8382a;
+    --accent-soft: #a8382a1a;
+    --ok: #2f6f4f;
+    --warn: #8a6512;
+    --shadow: 0 1px 2px #16211d12, 0 8px 24px #16211d0d;
+    --display: "Bai Jamjuree", "Segoe UI", sans-serif;
+    --body: "IBM Plex Sans Thai", "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f1513;
+      --surface: #171f1c;
+      --sunken: #121918;
+      --ink: #e7ede9;
+      --muted: #93a29b;
+      --line: #2a3531;
+      --accent: #e0705c;
+      --accent-soft: #e0705c1f;
+      --ok: #6bbb90;
+      --warn: #d2a44e;
+      --shadow: 0 1px 2px #0006, 0 8px 24px #0004;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f1513;
+    --surface: #171f1c;
+    --sunken: #121918;
+    --ink: #e7ede9;
+    --muted: #93a29b;
+    --line: #2a3531;
+    --accent: #e0705c;
+    --accent-soft: #e0705c1f;
+    --ok: #6bbb90;
+    --warn: #d2a44e;
+    --shadow: 0 1px 2px #0006, 0 8px 24px #0004;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 940px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── รางบนสุด ── */
+  .rail {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--ground) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .rail .wrap {
+    display: flex; align-items: center; gap: 20px;
+    min-height: 52px; flex-wrap: wrap;
+  }
+  .rail strong {
+    font-family: var(--display); font-weight: 600; font-size: 15px;
+    letter-spacing: .01em;
+  }
+  .rail nav { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
+  .rail a {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted); text-decoration: none;
+    padding: 4px 0; border-bottom: 1px solid transparent;
+  }
+  .rail a:hover, .rail a:focus-visible { color: var(--ink); border-bottom-color: var(--accent); }
+
+  /* ── หัวเรื่อง ── */
+  header.hero { padding: 72px 0 56px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 18px;
+  }
+  h1 {
+    font-family: var(--display); font-weight: 700;
+    font-size: clamp(34px, 6vw, 56px); line-height: 1.1;
+    letter-spacing: -.015em; margin: 0 0 20px; text-wrap: balance;
+  }
+  .lede {
+    font-size: clamp(17px, 2.2vw, 20px); color: var(--muted);
+    max-width: 60ch; margin: 0 0 32px;
+  }
+  .facts {
+    display: grid; gap: 1px; background: var(--line);
+    border: 1px solid var(--line); border-radius: 3px; overflow: hidden;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+  .facts div { background: var(--surface); padding: 14px 16px; }
+  .facts dt {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 4px;
+  }
+  .facts dd { margin: 0; font-weight: 500; font-size: 14.5px; }
+
+  /* ── หมวด ── */
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  section > .wrap > .label {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 10px;
+  }
+  h2 {
+    font-family: var(--display); font-weight: 600;
+    font-size: clamp(24px, 3.4vw, 32px); line-height: 1.2;
+    letter-spacing: -.01em; margin: 0 0 14px; text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--display); font-weight: 600; font-size: 18px;
+    margin: 32px 0 10px;
+  }
+  p { margin: 0 0 16px; max-width: 68ch; }
+  .muted { color: var(--muted); }
+
+  /* ── ไดอะแกรม ── */
+  figure { margin: 28px 0 0; }
+  figure svg {
+    /* min-width บังคับให้จอแคบเลื่อนดูแทนการย่อจนอ่านป้ายไม่ออก */
+    display: block; width: 100%; min-width: 640px; height: auto;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 3px; color: var(--ink);
+  }
+  .scroller { overflow-x: auto; }
+  figcaption {
+    font-size: 14px; color: var(--muted); margin-top: 12px; max-width: 68ch;
+  }
+  .svg-label { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .06em; }
+  .svg-title { font-family: "Bai Jamjuree", sans-serif; font-size: 13px; font-weight: 600; }
+  .svg-note { font-family: "IBM Plex Sans Thai", sans-serif; font-size: 11.5px; }
+
+  /* ── ตาราง ── */
+  .scroller table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); font-weight: 500;
+    border-bottom: 1px solid var(--ink);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  code {
+    font-family: var(--mono); font-size: .88em;
+    background: var(--sunken); padding: 1px 5px; border-radius: 2px;
+  }
+
+  /* ── การ์ด ── */
+  .cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-top: 24px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 3px; padding: 18px 18px 20px; box-shadow: var(--shadow);
+  }
+  .card h4 { font-family: var(--display); font-weight: 600; font-size: 16px; margin: 0 0 8px; }
+  .card p { font-size: 14px; margin: 0; color: var(--muted); }
+  .card ul { margin: 8px 0 0; padding-left: 18px; font-size: 14px; color: var(--muted); }
+  .card li { margin-bottom: 4px; }
+
+  /* ── ป้ายสถานะ ── */
+  .pill {
+    display: inline-block; font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .pill.done { color: var(--ok); }
+  .pill.todo { color: var(--accent); }
+  .pill.hold { color: var(--warn); }
+
+  /* ── ข้อจำกัด ── */
+  .limits { display: grid; gap: 0; margin-top: 24px; border-top: 1px solid var(--line); }
+  .limit {
+    display: grid; grid-template-columns: 120px 1fr; gap: 20px;
+    padding: 18px 0; border-bottom: 1px solid var(--line); align-items: start;
+  }
+  .limit h4 { font-family: var(--display); font-weight: 600; font-size: 16px; margin: 0 0 6px; }
+  .limit p { font-size: 14.5px; margin: 0; color: var(--muted); }
+  @media (max-width: 620px) {
+    .limit { grid-template-columns: 1fr; gap: 8px; }
+  }
+
+  footer {
+    border-top: 1px solid var(--line); padding: 32px 0 56px;
+    font-size: 13.5px; color: var(--muted);
+  }
+  footer a { color: var(--ink); }
+  a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+</style>
+</head>
+<body>
+
+<div class="rail">
+  <div class="wrap">
+    <strong>e-Meeting</strong>
+    <nav>
+      <a href="#planes">ภาพรวม</a>
+      <a href="#frontend">Frontend</a>
+      <a href="#backend">Backend</a>
+      <a href="#realtime">Realtime</a>
+      <a href="#data">ข้อมูล</a>
+      <a href="#deploy">Deploy</a>
+      <a href="#limits">ข้อจำกัด</a>
+    </nav>
+  </div>
+</div>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Architecture Overview</p>
+    <h1>สถาปัตยกรรมระบบประชุมออนไลน์</h1>
+    <p class="lede">
+      ระบบแยกเป็นสามระนาบที่ไม่ปนกัน — <strong>สื่อ</strong> วิ่งผ่าน ZegoCloud ตรงระหว่างผู้ใช้,
+      <strong>สถานะ</strong> ทุกอย่างเก็บที่ backend + MySQL, <strong>หน้าเว็บ</strong> เสิร์ฟจาก Vercel
+      การแยกแบบนี้ทำให้วิดีโอล่มไม่กระทบผลโหวต และผลโหวตยังตรงกันทุกเครื่องแม้คนเข้าห้องทีหลัง
+    </p>
+    <dl class="facts">
+      <div><dt>Frontend</dt><dd>Next.js 15 · Vercel</dd></div>
+      <div><dt>Backend</dt><dd>Express + ws · Node 20</dd></div>
+      <div><dt>Database</dt><dd>MySQL 8 · 9 ตาราง</dd></div>
+      <div><dt>Media</dt><dd>ZegoCloud SDK</dd></div>
+    </dl>
+  </div>
+</header>
+
+<section id="planes">
+  <div class="wrap">
+    <p class="label">System</p>
+    <h2>สามระนาบ กับเส้นทางที่ไม่ผ่าน backend</h2>
+    <p>
+      จุดสำคัญของแผนภาพนี้คือเส้นสีที่วิ่งอ้อม backend — วิดีโอและเสียงไม่เคยผ่านเซิร์ฟเวอร์ของเราเลย
+      backend รับผิดชอบเฉพาะ “ความจริงของห้องประชุม” คือใครโหวตอะไร ใครยกมือ เอกสารเปิดหน้าไหน
+    </p>
+    <figure>
+      <div class="scroller">
+      <svg viewBox="0 0 860 430" role="img" aria-label="แผนภาพสามระนาบ: browser เชื่อม Vercel สำหรับหน้าเว็บและ token, เชื่อม backend ผ่าน REST และ WebSocket ซึ่งเขียนลง MySQL ส่วนสื่อวิดีโอวิ่งตรงไป ZegoCloud โดยไม่ผ่าน backend" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="ar-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#a8382a"/>
+          </marker>
+        </defs>
+
+        <!-- browser -->
+        <rect x="24" y="150" width="150" height="110" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <text class="svg-title" x="99" y="196" text-anchor="middle" fill="currentColor">Browser</text>
+        <text class="svg-note" x="99" y="216" text-anchor="middle" fill="currentColor" opacity=".65">ผู้เข้าประชุม</text>
+
+        <!-- vercel -->
+        <rect x="300" y="34" width="230" height="90" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <text class="svg-title" x="415" y="64" text-anchor="middle" fill="currentColor">Vercel · Next.js 15</text>
+        <text class="svg-note" x="415" y="84" text-anchor="middle" fill="currentColor" opacity=".65">App Router · หน้าเว็บทั้งหมด</text>
+        <text class="svg-label" x="415" y="106" text-anchor="middle" fill="currentColor" opacity=".65">/api/video/token</text>
+
+        <!-- backend -->
+        <rect x="300" y="160" width="230" height="120" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <text class="svg-title" x="415" y="188" text-anchor="middle" fill="currentColor">Backend · Express + ws</text>
+        <line x1="300" y1="202" x2="530" y2="202" stroke="currentColor" stroke-width="1" opacity=".3"/>
+        <text class="svg-label" x="415" y="223" text-anchor="middle" fill="currentColor" opacity=".75">routes · repositories</text>
+        <text class="svg-label" x="415" y="243" text-anchor="middle" fill="currentColor" opacity=".75">realtime/rooms · handlers</text>
+        <text class="svg-label" x="415" y="263" text-anchor="middle" fill="currentColor" opacity=".75">services/auth · claude</text>
+
+        <!-- mysql -->
+        <rect x="656" y="180" width="180" height="80" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <text class="svg-title" x="746" y="212" text-anchor="middle" fill="currentColor">MySQL 8</text>
+        <text class="svg-note" x="746" y="232" text-anchor="middle" fill="currentColor" opacity=".65">สถานะห้องประชุมทั้งหมด</text>
+
+        <!-- zego -->
+        <rect x="300" y="326" width="230" height="80" rx="3" fill="none" stroke="#a8382a" stroke-width="1.5"/>
+        <text class="svg-title" x="415" y="356" text-anchor="middle" fill="#a8382a">ZegoCloud</text>
+        <text class="svg-note" x="415" y="376" text-anchor="middle" fill="#a8382a" opacity=".8">เสียง · วิดีโอ · แชร์จอ</text>
+
+        <!-- claude -->
+        <rect x="656" y="34" width="180" height="60" rx="3" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/>
+        <text class="svg-label" x="746" y="60" text-anchor="middle" fill="currentColor" opacity=".75">Claude API</text>
+        <text class="svg-label" x="746" y="78" text-anchor="middle" fill="currentColor" opacity=".55">สรุปประชุม</text>
+
+        <!-- edges -->
+        <line x1="174" y1="176" x2="298" y2="94" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)"/>
+        <text class="svg-label" x="205" y="126" fill="currentColor" opacity=".8">HTML + token</text>
+
+        <line x1="174" y1="196" x2="298" y2="196" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)"/>
+        <text class="svg-label" x="192" y="190" fill="currentColor" opacity=".8">REST /api/*</text>
+
+        <line x1="174" y1="228" x2="298" y2="240" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)"/>
+        <text class="svg-label" x="192" y="252" fill="currentColor" opacity=".8">WSS /ws · JWT</text>
+
+        <line x1="174" y1="252" x2="298" y2="366" stroke="#a8382a" stroke-width="1.6" marker-end="url(#ar-a)"/>
+        <text class="svg-label" x="150" y="330" fill="#a8382a">WebRTC ไม่ผ่าน backend</text>
+
+        <line x1="530" y1="220" x2="654" y2="220" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)"/>
+        <text class="svg-label" x="552" y="212" fill="currentColor" opacity=".8">อ่าน/เขียนทุก event</text>
+
+        <line x1="500" y1="160" x2="700" y2="96" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+        <text class="svg-label" x="546" y="140" fill="currentColor" opacity=".55">ถอดความ → สรุป</text>
+      </svg>
+      </div>
+      <figcaption>
+        เส้นทึบคือเส้นทางที่ backend ควบคุม เส้นสีคือสื่อที่วิ่งตรงระหว่างผู้ใช้กับ ZegoCloud
+        เส้นประคือส่วนที่เปิด/ปิดได้ตาม API key
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="frontend">
+  <div class="wrap">
+    <p class="label">Frontend</p>
+    <h2>ชั้นของ Next.js — แยก UI ออกจากผู้ให้บริการ</h2>
+    <p>
+      ทุกบริการภายนอกถูกหุ้มด้วย interface ของตัวเองก่อนเสมอ (<code>types.ts</code> คู่กับ implementation)
+      เปลี่ยนผู้ให้บริการวิดีโอหรือ ASR ได้โดยไม่ต้องแตะหน้าจอ
+    </p>
+    <div class="scroller">
+    <table>
+      <thead>
+        <tr><th>ชั้น</th><th>ที่อยู่</th><th>หน้าที่</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>หน้าเว็บ</td>
+          <td><code>src/app/(app)/</code></td>
+          <td>dashboard · meetings · live/[id] · booking · documents · committees · rooms · reports · kiosk · portal และ <code>src/app/join</code> สำหรับผู้เข้าร่วมภายนอก</td>
+        </tr>
+        <tr>
+          <td>API route</td>
+          <td><code>src/app/api/video/token/</code></td>
+          <td>ออก ZegoCloud token — เส้นทางเดียวที่ secret ของ Zego ถูกใช้ ไม่หลุดถึง browser</td>
+        </tr>
+        <tr>
+          <td>Service seam</td>
+          <td><code>src/services/</code></td>
+          <td><code>video/</code> (zego + mock) · <code>signaling/</code> (WebSocket client) · <code>voting/</code> · <code>rooms/snapshot</code> · <code>speech/</code> · <code>transcription/</code> · <code>summarize/</code> · <code>fileStorage</code> (IndexedDB)</td>
+        </tr>
+        <tr>
+          <td>ตรรกะบริสุทธิ์</td>
+          <td><code>src/lib/</code></td>
+          <td><code>authz.ts</code> · <code>access.ts</code> · <code>zegoToken.ts</code> · <code>inviteTokens.ts</code> — เป็น pure function ล้วน ตั้งใจให้ยกไปวางฝั่ง backend ได้ทั้งไฟล์</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <h4>สิทธิ์สองระดับ</h4>
+        <p><code>access.ts</code> คุมเมนูและ route แบบหยาบ · <code>authz.ts</code> คุมการกระทำรายชิ้น เช่น ใครเปิดโหวตได้ ใครรับรองรายงานได้</p>
+      </div>
+      <div class="card">
+        <h4>ความลับระดับการประชุม</h4>
+        <p>ลายน้ำตามผู้ใช้ · เบลอเมื่อสลับหน้าต่าง · บล็อกคลิกขวา — ป้องปรามการถ่ายจอ ไม่ใช่การป้องกันเชิงเทคนิค</p>
+      </div>
+      <div class="card">
+        <h4>เอกสาร 4 ระดับการมองเห็น</h4>
+        <p>ไฟล์เก็บใน IndexedDB พร้อม preview PDF/Markdown สิทธิ์ระดับไฟล์ตัดสินที่ <code>canViewFile()</code></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="backend">
+  <div class="wrap">
+    <p class="label">Backend</p>
+    <h2>เซิร์ฟเวอร์เดียว สองโปรโตคอล พอร์ตเดียว</h2>
+    <p>
+      <code>server.ts</code> สร้าง Express app แล้วยัดเข้า <code>http.createServer()</code> ก่อนเรียก
+      <code>attachRealtime()</code> ผูก WebSocket ทับ HTTP server ตัวเดียวกัน — REST กับ WSS จึงใช้พอร์ตและโดเมนเดียวกัน
+      ไม่ต้องตั้ง CORS หรือใบรับรองแยก
+    </p>
+    <div class="scroller">
+    <table>
+      <thead>
+        <tr><th>ชั้น</th><th>ไฟล์</th><th>หน้าที่</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Entry</td><td><code>server.ts</code></td><td>CORS · trust proxy · logging · <code>/health</code> · ผูก realtime</td></tr>
+        <tr><td>Routes</td><td><code>routes/</code></td><td><code>auth</code> (เข้าได้โดยไม่มี token) · <code>rooms</code> · <code>transcription</code> · <code>summarize</code> · <code>audit</code></td></tr>
+        <tr><td>Realtime</td><td><code>realtime/</code></td><td><code>server.ts</code> ตรวจ JWT ตอน handshake · <code>handlers.ts</code> แยกชนิดข้อความ · <code>rooms.ts</code> ทะเบียนห้องใน memory</td></tr>
+        <tr><td>Repositories</td><td><code>repositories/</code></td><td><code>meetings</code> · <code>votes</code> · <code>handRaises</code> · <code>transcript</code> · <code>docShare</code> — SQL อยู่ที่นี่ที่เดียว</td></tr>
+        <tr><td>Services</td><td><code>services/</code></td><td><code>auth</code> (JWT + bcrypt) · <code>claude</code> (สรุปประชุม)</td></tr>
+        <tr><td>Database</td><td><code>database/</code></td><td><code>connection.ts</code> รองรับทั้ง <code>DATABASE_URL</code> และตัวแปรแยก · <code>schema.sql</code> · <code>migrations.ts</code> · <code>seed.ts</code></td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</section>
+
+<section id="realtime">
+  <div class="wrap">
+    <p class="label">Realtime</p>
+    <h2>เขียนลงฐานข้อมูลก่อน แล้วค่อยกระจาย</h2>
+    <p>
+      ลำดับนี้คือเหตุผลที่คนเข้าห้องทีหลังเห็นผลตรงกับคนที่อยู่มาตั้งแต่ต้น
+      ทุก event ถูกยืนยันลง MySQL ก่อน broadcast ฐานข้อมูลจึงเป็นความจริงชุดเดียว ไม่ใช่ state ที่ค้างอยู่ในแท็บใคร
+    </p>
+    <figure>
+      <div class="scroller">
+      <svg viewBox="0 0 860 330" role="img" aria-label="ลำดับการโหวต: ผู้ใช้ส่ง vote_cast ผ่าน WebSocket, backend ตรวจสิทธิ์แล้วเขียนลง MySQL, จากนั้น broadcast กลับทุกคนในห้อง ส่วนคนเข้าห้องทีหลังดึงสถานะปัจจุบันผ่าน REST snapshot" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="ar2-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#a8382a"/>
+          </marker>
+        </defs>
+
+        <!-- lanes -->
+        <text class="svg-title" x="88" y="28" text-anchor="middle" fill="currentColor">ผู้โหวต</text>
+        <text class="svg-title" x="380" y="28" text-anchor="middle" fill="currentColor">Backend</text>
+        <text class="svg-title" x="620" y="28" text-anchor="middle" fill="currentColor">MySQL</text>
+        <text class="svg-title" x="790" y="28" text-anchor="middle" fill="currentColor">คนอื่นในห้อง</text>
+        <line x1="88" y1="42" x2="88" y2="300" stroke="currentColor" stroke-width="1" opacity=".25"/>
+        <line x1="380" y1="42" x2="380" y2="300" stroke="currentColor" stroke-width="1" opacity=".25"/>
+        <line x1="620" y1="42" x2="620" y2="300" stroke="currentColor" stroke-width="1" opacity=".25"/>
+        <line x1="790" y1="42" x2="790" y2="300" stroke="currentColor" stroke-width="1" opacity=".25"/>
+
+        <!-- steps -->
+        <line x1="88" y1="76" x2="378" y2="76" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar2)"/>
+        <text class="svg-label" x="110" y="68" fill="currentColor">vote_cast · topicId + optionId</text>
+
+        <rect x="300" y="94" width="160" height="26" rx="2" fill="none" stroke="currentColor" stroke-width="1" opacity=".6"/>
+        <text class="svg-label" x="380" y="111" text-anchor="middle" fill="currentColor" opacity=".8">ตรวจ JWT + สิทธิ์ในห้อง</text>
+
+        <line x1="380" y1="146" x2="618" y2="146" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar2)"/>
+        <text class="svg-label" x="400" y="138" fill="currentColor">INSERT vote_records</text>
+
+        <line x1="620" y1="180" x2="382" y2="180" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar2)"/>
+        <text class="svg-label" x="424" y="172" fill="currentColor">ผลรวมล่าสุด</text>
+
+        <line x1="380" y1="214" x2="788" y2="214" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar2)"/>
+        <line x1="380" y1="214" x2="90" y2="214" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar2)"/>
+        <text class="svg-label" x="400" y="206" fill="currentColor">broadcast ทุก client ในห้อง</text>
+
+        <!-- late joiner -->
+        <line x1="790" y1="262" x2="382" y2="262" stroke="#a8382a" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#ar2-a)"/>
+        <text class="svg-label" x="424" y="254" fill="#a8382a">คนเข้าทีหลัง: GET /api/rooms/:id/state</text>
+        <line x1="380" y1="288" x2="788" y2="288" stroke="#a8382a" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#ar2-a)"/>
+        <text class="svg-label" x="400" y="280" fill="#a8382a">snapshot สถานะปัจจุบันทั้งห้อง</text>
+      </svg>
+      </div>
+      <figcaption>
+        เส้นสีคือเส้นทางของคนที่เข้าห้องช้ากว่าเพื่อน — ดึงสถานะผ่าน REST ครั้งเดียวแล้วค่อยตามด้วย WebSocket ปกติ
+      </figcaption>
+    </figure>
+
+    <h3>ชนิดข้อความบน WebSocket</h3>
+    <div class="scroller">
+    <table>
+      <thead><tr><th>กลุ่ม</th><th>ข้อความ</th><th>ผลที่เกิด</th></tr></thead>
+      <tbody>
+        <tr><td>โหวต</td><td><code>vote_create</code> · <code>vote_cast</code> · <code>vote_close</code></td><td>เขียน <code>vote_topics</code> / <code>vote_records</code> แล้วกระจายผลรวม</td></tr>
+        <tr><td>ยกมือ</td><td><code>hand_raise</code> · <code>hand_lower</code></td><td>อัปเดต <code>hand_raises</code> พร้อมลำดับคิว</td></tr>
+        <tr><td>ซับไตเติล</td><td><code>subtitle_text</code></td><td>บันทึก <code>transcript_segments</code> ต่อผู้พูด</td></tr>
+        <tr><td>แชร์เอกสาร</td><td><code>doc_share</code> · <code>doc_share_page</code> · <code>doc_share_stop</code></td><td>ซิงค์เอกสารและเลขหน้าที่ทุกคนกำลังดู</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</section>
+
+<section id="data">
+  <div class="wrap">
+    <p class="label">Data</p>
+    <h2>เก้าตาราง สามกลุ่ม</h2>
+    <div class="cards">
+      <div class="card">
+        <h4>ตัวตนและการประชุม</h4>
+        <ul>
+          <li><code>app_users</code> — 5 บทบาท</li>
+          <li><code>meetings</code></li>
+          <li><code>meeting_participants</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>การลงมติ</h4>
+        <ul>
+          <li><code>vote_topics</code></li>
+          <li><code>vote_options</code></li>
+          <li><code>vote_records</code> — หนึ่งเสียงต่อคนต่อหัวข้อ</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>สิ่งที่เกิดในห้อง</h4>
+        <ul>
+          <li><code>hand_raises</code></li>
+          <li><code>transcript_segments</code></li>
+          <li><code>doc_shares</code></li>
+        </ul>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:24px">
+      ทุกคำสั่งใน <code>schema.sql</code> เป็น <code>CREATE TABLE IF NOT EXISTS</code> จึงรัน <code>npm run migrate</code> ซ้ำได้ปลอดภัย
+    </p>
+  </div>
+</section>
+
+<section id="deploy">
+  <div class="wrap">
+    <p class="label">Deployment</p>
+    <h2>สองเส้นทาง: ทดสอบเร็ว กับ ของจริง</h2>
+    <div class="scroller">
+    <table>
+      <thead><tr><th>ส่วน</th><th>เส้นทางทดสอบ (Koyeb)</th><th>เส้นทาง VM (compose)</th></tr></thead>
+      <tbody>
+        <tr><td>หน้าเว็บ</td><td colspan="2">Vercel production — เหมือนกันทั้งสองเส้นทาง</td></tr>
+        <tr><td>Backend</td><td>Koyeb build จาก <code>backend/Dockerfile</code> · โดเมน <code>*.koyeb.app</code> พร้อม TLS</td><td>container บน VM หลัง Caddy</td></tr>
+        <tr><td>ฐานข้อมูล</td><td>Aiven MySQL ภายนอก (Koyeb ไม่มี managed MySQL)</td><td>MySQL container พร้อม volume</td></tr>
+        <tr><td>TLS / โดเมน</td><td>Koyeb จัดให้ ไม่ต้องมีโดเมนเอง</td><td>Caddy ขอใบรับรองอัตโนมัติ</td></tr>
+        <tr><td>จำนวน instance</td><td colspan="2">หนึ่งเท่านั้น — ทะเบียนห้องอยู่ใน memory</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="muted" style="margin-top:20px">
+      ขั้นตอนเต็มของเส้นทางทดสอบอยู่ใน <code>deploy/KOYEB.md</code> · เส้นทาง VM อยู่ใน <code>deploy/docker-compose.yml</code>
+    </p>
+  </div>
+</section>
+
+<section id="limits">
+  <div class="wrap">
+    <p class="label">Constraints</p>
+    <h2>ข้อจำกัดที่รู้ตัว และทางแก้ที่วางไว้แล้ว</h2>
+    <div class="limits">
+      <div class="limit">
+        <div><span class="pill hold">ค้าง</span></div>
+        <div>
+          <h4>สเกลได้ instance เดียว</h4>
+          <p>ทะเบียนห้องของ realtime เก็บใน memory ที่ <code>realtime/rooms.ts</code> ถ้าจะรันหลาย instance ต้องย้ายการกระจาย event ไป Redis pub/sub ก่อน ตอนนี้ล็อก min/max scale ไว้ที่ 1</p>
+        </div>
+      </div>
+      <div class="limit">
+        <div><span class="pill todo">ยังไม่เริ่ม</span></div>
+        <div>
+          <h4>ซับไตเติลยังอยู่ฝั่ง client</h4>
+          <p>ใช้ Web Speech API จึงทำงานเฉพาะเบราว์เซอร์ตระกูล Chromium แผน Phase F ย้าย ASR ภาษาไทยไปฝั่งเซิร์ฟเวอร์ด้วย Typhoon ออกแบบเสร็จแล้วแต่ยังไม่มีโค้ด</p>
+        </div>
+      </div>
+      <div class="limit">
+        <div><span class="pill todo">ยังไม่เริ่ม</span></div>
+        <div>
+          <h4>audit log ยังไม่ถูกเรียกใช้</h4>
+          <p>route ฝั่ง backend พร้อมแล้ว แต่หน้าเว็บยังไม่ยิงเข้าไป การเช็คสิทธิ์ฝั่ง browser จึงยังเป็นแค่เครื่องสำอาง ของจริงบังคับที่ route ฝั่ง server</p>
+        </div>
+      </div>
+      <div class="limit">
+        <div><span class="pill hold">รอภายนอก</span></div>
+        <div>
+          <h4>Zoom Room SIP bridge</h4>
+          <p>UI ทำไว้แล้วในเฟส E แต่ตัว bridge จริงต้องรอ ZegoCloud Enterprise Plan</p>
+        </div>
+      </div>
+      <div class="limit">
+        <div><span class="pill done">ใช้งานได้</span></div>
+        <div>
+          <h4>โหวต · ยกมือ · แชร์เอกสาร ซิงค์ข้ามเครื่องจริง</h4>
+          <p>ผ่าน WebSocket ที่ตรวจ JWT แล้ว สถานะทั้งหมดอยู่ที่ MySQL ไม่ใช่ per-tab อีกต่อไป</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    เอกสารประกอบ: <code>backend/ARCHITECTURE.md</code> · <code>PROJECT_STATUS.md</code> · <code>SECURITY_PLAN.md</code> · <code>deploy/KOYEB.md</code><br>
+    repository: <a href="https://github.com/Setto-TSET/emeeting-system">github.com/Setto-TSET/emeeting-system</a>
+  </div>
+</footer>
+
+</body>
+</html>

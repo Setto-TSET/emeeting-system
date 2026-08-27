@@ -20,7 +20,29 @@ CREATE TABLE IF NOT EXISTS meetings (
   start_time    VARCHAR(8)   NOT NULL,
   end_time      VARCHAR(8)   NOT NULL,
   status        VARCHAR(32)  NOT NULL,
-  allow_guest_join TINYINT(1) NOT NULL DEFAULT 0
+  allow_guest_join TINYINT(1) NOT NULL DEFAULT 0,
+  committee_id  VARCHAR(64)  NULL,
+  created_at    BIGINT       NULL,
+  -- ฟิลด์ที่เหลือของ Meeting (วาระ ไฟล์ กลุ่มลับ สิทธิ์ ฯลฯ) เก็บทั้งก้อนตรงนี้
+  -- คอลัมน์ข้างบนมีไว้ query/เรียงเท่านั้น ค่าต้องตรงกับใน payload เสมอ
+  payload       JSON         NULL,
+  INDEX idx_meetings_organizer (organizer_id),
+  INDEX idx_meetings_date (meeting_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ไฟล์เอกสารประกอบการประชุม — เก็บตัวไฟล์ไว้ในฐานข้อมูลเพื่อให้ deploy เป็น container เดียวจบ
+-- ponytail: LONGBLOB ใน MySQL, ย้ายไป object storage เมื่อไฟล์รวมเกิน ~1GB
+CREATE TABLE IF NOT EXISTS meeting_files (
+  id          VARCHAR(64)  NOT NULL PRIMARY KEY,
+  meeting_id  VARCHAR(64)  NOT NULL,
+  name        VARCHAR(512) NOT NULL,
+  mime_type   VARCHAR(128) NOT NULL DEFAULT 'application/octet-stream',
+  size_bytes  BIGINT       NOT NULL,
+  visibility  VARCHAR(32)  NOT NULL DEFAULT 'all',
+  uploaded_by VARCHAR(64)  NOT NULL,
+  uploaded_at BIGINT       NOT NULL,
+  content     LONGBLOB     NOT NULL,
+  INDEX idx_meeting_files_meeting (meeting_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ใครเข้าประชุมไหนได้ — WebSocket ใช้ตารางนี้ตัดสินตอนต่อห้อง

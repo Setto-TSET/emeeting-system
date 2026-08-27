@@ -54,10 +54,13 @@ export async function seedFromMockData(defaultPassword: string): Promise<SeedRes
 
     // หมายเหตุ: mock data ฝั่งหน้าเว็บใช้ฟิลด์ `name` ไม่ใช่ `title` — ตาราง meetings ใช้คอลัมน์ title
     await query(
-      `INSERT INTO meetings (id, title, organizer_id, meeting_date, start_time, end_time, status, allow_guest_join)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      // payload ต้องใส่ด้วยเสมอ — หน้าเว็บอ่านการประชุมจากก้อนนี้ทั้งก้อน
+      // (วาระ ไฟล์ ผู้เข้าร่วม ฯลฯ) แถวที่ไม่มี payload จะเรนเดอร์ไม่ขึ้น
+      `INSERT INTO meetings (id, title, organizer_id, meeting_date, start_time, end_time, status, allow_guest_join, committee_id, created_at, payload)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE title = VALUES(title), status = VALUES(status),
-         allow_guest_join = VALUES(allow_guest_join)`,
+         allow_guest_join = VALUES(allow_guest_join), committee_id = VALUES(committee_id),
+         payload = VALUES(payload)`,
       [
         meeting.id,
         meeting.name,
@@ -67,6 +70,9 @@ export async function seedFromMockData(defaultPassword: string): Promise<SeedRes
         meeting.endTime,
         meeting.status,
         meeting.allowGuestJoin ? 1 : 0,
+        meeting.committeeId ?? null,
+        Date.now(),
+        JSON.stringify(meeting),
       ]
     );
     meetingCount += 1;

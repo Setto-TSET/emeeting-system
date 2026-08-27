@@ -181,7 +181,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
       const mdContent  = buildReportMarkdown(meeting, summary);
       const mdBlob     = new Blob([mdContent], { type: "text/markdown; charset=utf-8" });
       const mdFile     = new File([mdBlob], "report_draft_summary.md", { type: "text/markdown" });
-      const stored     = await putFile(mdFile);
+      const stored     = await putFile(mdFile, meeting.id);
 
       const draftFileId = `RF-${Date.now()}`;
       const now         = new Date();
@@ -303,10 +303,10 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
 
     setUploading(true);
     try {
-      // ถ้ามี File จริง → เก็บลง IndexedDB · ถ้าไม่มี (พิมพ์ชื่อเอง) → เก็บเฉพาะระเบียน
+      // ถ้ามี File จริง → อัปโหลดขึ้น server · ถ้าไม่มี (พิมพ์ชื่อเอง) → เก็บเฉพาะระเบียน
       let storageMeta: { storageKey?: string; mimeType?: string; sizeBytes?: number } = {};
       if (pendingFile) {
-        const stored = await putFile(pendingFile);
+        const stored = await putFile(pendingFile, meeting.id, fileVisibility);
         storageMeta = { storageKey: stored.storageKey, mimeType: stored.mimeType, sizeBytes: stored.sizeBytes };
       }
 

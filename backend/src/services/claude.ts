@@ -4,9 +4,10 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 
-const client = new Anthropic({
-  apiKey: process.env.CLAUDE_API_KEY
-});
+// รับได้ทั้งสองชื่อ — compose/koyeb ใช้ ANTHROPIC_API_KEY, dev เดิมใช้ CLAUDE_API_KEY
+const apiKey = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
+
+const client = new Anthropic({ apiKey });
 
 interface TranscriptSegment {
   speakerId: string;
@@ -35,7 +36,7 @@ export async function summarizeTranscript(
   agendas: Agenda[] = []
 ): Promise<SummaryResult> {
   try {
-    if (!process.env.CLAUDE_API_KEY) {
+    if (!apiKey) {
       throw new Error('CLAUDE_API_KEY not configured');
     }
 

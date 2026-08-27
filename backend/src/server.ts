@@ -12,6 +12,7 @@ import authRoutes from './routes/auth';
 import transcriptionRoutes from './routes/transcription';
 import summarizeRoutes from './routes/summarize';
 import roomsRoutes from './routes/rooms';
+import meetingsRoutes, { filesRouter } from './routes/meetings';
 import auditRoutes from './routes/audit';
 import { attachRealtime } from './realtime/server';
 
@@ -32,7 +33,8 @@ export function createApp(): Express {
       credentials: true,
     })
   );
-  app.use(express.json());
+  // 25mb รองรับไฟล์ 20MB ที่ถูกเข้ารหัส base64 (บวมขึ้น ~33%)
+  app.use(express.json({ limit: '25mb' }));
   app.use(express.urlencoded({ extended: true }));
 
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -58,6 +60,8 @@ export function createApp(): Express {
   app.use('/api/summarize', authMiddleware, summarizeRoutes);
   app.use('/api/audit', authMiddleware, auditRoutes);
   app.use('/api/rooms', roomsRoutes);
+  app.use('/api/meetings', meetingsRoutes);
+  app.use('/api/files', filesRouter);
 
   app.use(errorHandler);
   app.use((req: Request, res: Response) => {
