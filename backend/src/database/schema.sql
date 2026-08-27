@@ -113,3 +113,26 @@ CREATE TABLE IF NOT EXISTS doc_shares (
   shared_name VARCHAR(255) NOT NULL,
   updated_at  BIGINT       NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- จองห้องประชุม — normalize เต็มรูป (ทุกฟิลด์ถูก query จริง ไม่เหมือน meetings ที่เก็บเป็น JSON)
+-- booking_date เก็บเป็นสตริง 'YYYY-MM-DD' ไม่ใช่ DATE เพราะ driver แปลง DATE เป็น Date object
+-- แล้วเลื่อนวันตาม timezone ของ process — การจองวันที่ 1 กลายเป็นวันที่ 31 ของเดือนก่อน
+CREATE TABLE IF NOT EXISTS room_bookings (
+  id           VARCHAR(64)  NOT NULL PRIMARY KEY,
+  room_id      VARCHAR(64)  NOT NULL,
+  room_name    VARCHAR(255) NOT NULL,
+  title        VARCHAR(512) NOT NULL,
+  booked_by_id VARCHAR(64)  NOT NULL,
+  booked_by    VARCHAR(255) NOT NULL,
+  department   VARCHAR(255) NOT NULL DEFAULT '',
+  booking_date VARCHAR(10)  NOT NULL,
+  start_time   VARCHAR(5)   NOT NULL,
+  end_time     VARCHAR(5)   NOT NULL,
+  attendees    INT          NOT NULL DEFAULT 1,
+  purpose      TEXT         NOT NULL,
+  status       VARCHAR(16)  NOT NULL DEFAULT 'confirmed',
+  extra_rooms  JSON         NULL,
+  created_at   BIGINT       NOT NULL,
+  INDEX idx_bookings_room_date (room_id, booking_date, status),
+  INDEX idx_bookings_owner (booked_by_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

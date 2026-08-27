@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import Link from "next/link";
 import { useBookings } from "@/context/BookingContext";
+import { ApiError } from "@/services/api/client";
 import { useCurrentUser } from "@/context/UserContext";
 import { today } from "@/lib/clock";
 
@@ -23,9 +24,13 @@ export default function MyBookingsPage() {
     return true;
   }).sort((a, b) => a.date.localeCompare(b.date));
 
-  const cancel = (id: string) => {
-    cancelBooking(id);
-    toast.success("ยกเลิกการจองแล้ว");
+  const cancel = async (id: string) => {
+    try {
+      await cancelBooking(id);
+      toast.success("ยกเลิกการจองแล้ว");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "ยกเลิกการจองไม่สำเร็จ");
+    }
   };
 
   const statusInfo = {

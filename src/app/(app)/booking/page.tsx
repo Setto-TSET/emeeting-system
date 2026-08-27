@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { meetingRooms, roomCategoryOptions, Booking, Room } from "@/data";
 import { useBookings } from "@/context/BookingContext";
+import { ApiError } from "@/services/api/client";
 import { useCurrentUser } from "@/context/UserContext";
 import { today } from "@/lib/clock";
 
@@ -37,6 +38,7 @@ export default function BookingPage() {
   const [title, setTitle] = useState("");
   const [purpose, setPurpose] = useState("");
   const [extraRoom, setExtraRoom] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const days = useMemo(() => {
     const y = current.getFullYear(), m = current.getMonth();
@@ -78,7 +80,7 @@ export default function BookingPage() {
 
   const openForm = (r: Room) => { setSelectedRoom(r); setFormOpen(true); };
 
-  const submit = () => {
+  const submit = async () => {
     if (!selectedRoom || !title.trim()) { toast.error("กรุณากรอกหัวข้อการประชุม"); return; }
     const newB: Booking = {
       id: `BK-${Date.now()}`,
@@ -95,11 +97,21 @@ export default function BookingPage() {
       status: "confirmed",
       extraRooms: extraRoom ? [extraRoom] : undefined,
     };
-    addBooking(newB);
-    toast.success("จองห้องประชุมสำเร็จ", { description: `${selectedRoom.name} · ${selectedDate} · ${startTime}-${endTime}` });
-    setFormOpen(false);
-    setTitle(""); setPurpose(""); setExtraRoom("");
-    setSelectedRoom(null);
+    // server เป็นผู้ตัดสินการชนเวลาขั้นสุดท้าย — รายการห้องว่างที่แสดงอยู่อาจเก่าไปแล้ว
+    // ถ้ามีคนอื่นจองแทรกระหว่างที่กรอกฟอร์ม จะได้ 409 กลับมาตรงนี้
+    setSubmitting(true);
+    try {
+      await addBooking(newB);
+      toast.success("จองห้องประชุมสำเร็จ", { description: `${selectedRoom.name} · ${selectedDate} · ${startTime}-${endTime}` });
+      setFormOpen(false);
+      setTitle(""); setPurpose(""); setExtraRoom("");
+      setSelectedRoom(null);
+      setSearched(false);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "จองห้องประชุมไม่สำเร็จ");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -342,7 +354,7 @@ export default function BookingPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFormOpen(false)}>ยกเลิก</Button>
-            <Button onClick={submit}>ยืนยันการจอง</Button>
+            <Button onClick={submit} disabled={submitting}>{submitting ? "กำลังจอง..." : "ยืนยันการจอง"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

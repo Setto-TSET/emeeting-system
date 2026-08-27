@@ -14,6 +14,7 @@ import summarizeRoutes from './routes/summarize';
 import roomsRoutes from './routes/rooms';
 import meetingsRoutes, { filesRouter } from './routes/meetings';
 import auditRoutes from './routes/audit';
+import bookingsRoutes from './routes/bookings';
 import { attachRealtime } from './realtime/server';
 
 dotenv.config();
@@ -62,6 +63,7 @@ export function createApp(): Express {
   app.use('/api/rooms', roomsRoutes);
   app.use('/api/meetings', meetingsRoutes);
   app.use('/api/files', filesRouter);
+  app.use('/api/bookings', bookingsRoutes);
 
   app.use(errorHandler);
   app.use((req: Request, res: Response) => {
