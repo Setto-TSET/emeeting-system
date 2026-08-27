@@ -15,7 +15,7 @@ class FakeWebSocket {
   static CLOSED = 3;
 
   readyState = 0;
-  sent: string[] = [];
+  sent: (string | ArrayBuffer)[] = [];
   url: string;
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
@@ -27,7 +27,7 @@ class FakeWebSocket {
     FakeWebSocket.instances.push(this);
   }
 
-  send(data: string) {
+  send(data: string | ArrayBuffer) {
     this.sent.push(data);
   }
 
@@ -87,7 +87,7 @@ describe('openTransport', () => {
 
     FakeWebSocket.instances[0].simulateOpen();
     expect(FakeWebSocket.instances[0].sent).toHaveLength(1);
-    expect(JSON.parse(FakeWebSocket.instances[0].sent[0])).toEqual({
+    expect(JSON.parse(FakeWebSocket.instances[0].sent[0] as string)).toEqual({
       type: 'hand_raise',
       payload: { raised: true },
     });
@@ -199,7 +199,7 @@ describe('openTransport', () => {
     }
 
     FakeWebSocket.instances[0].simulateOpen();
-    const sent = FakeWebSocket.instances[0].sent.map((raw) => JSON.parse(raw));
+    const sent = FakeWebSocket.instances[0].sent.map((raw) => JSON.parse(raw as string));
 
     const docSharePages = sent.filter((s) => s.type === 'doc_share_page');
     expect(docSharePages).toHaveLength(1);
@@ -270,5 +270,30 @@ describe('openTransport', () => {
 
     vi.advanceTimersByTime(RECONNECT_BASE_MS);
     expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it('sends an audio frame immediately once the socket is open', () => {
+    const transport = openTransport('MT-2569-007', { onMessage: vi.fn(), onStatus: vi.fn() });
+    FakeWebSocket.instances[0].simulateOpen();
+
+    const frame = new ArrayBuffer(8);
+    transport.sendAudio(frame);
+
+    expect(FakeWebSocket.instances[0].sent).toContain(frame);
+    transport.close();
+  });
+
+  it('drops audio frames while disconnected instead of queueing them', () => {
+    const transport = openTransport('MT-2569-007', { onMessage: vi.fn(), onStatus: vi.fn() });
+
+    transport.sendAudio(new ArrayBuffer(8));
+
+    expect(FakeWebSocket.instances[0].sent).toHaveLength(0);
+
+    // ต่อได้แล้วก็ยังต้องไม่มีเสียงเก่าหลุดออกไป — ต่างจาก send() ที่ flush คิวตอน open
+    FakeWebSocket.instances[0].simulateOpen();
+    expect(FakeWebSocket.instances[0].sent).toHaveLength(0);
+
+    transport.close();
   });
 });

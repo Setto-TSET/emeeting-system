@@ -9,6 +9,7 @@ import { getAccessToken } from "@/services/api/client";
 
 export type RoomTransport = {
   send: (type: SignalType, payload: unknown) => void;
+  sendAudio: (frame: ArrayBuffer) => void;
   close: () => void;
 };
 
@@ -149,6 +150,12 @@ export function openTransport(meetingId: string, handlers: TransportHandlers): R
       }
       queue.push({ type, body });
       if (queue.length > MAX_QUEUE_SIZE) queue.shift();
+    },
+    // ก้อนเสียงไม่เข้าคิวและไม่ retry — เสียงที่ค้างไว้ตอนหลุดการเชื่อมต่อ พอกลับมาต่อได้ก็สายเกิน
+    // จะเป็นคำบรรยายที่มีประโยชน์แล้ว หลักการเดียวกับ DISCARD_WHEN_OFFLINE ของ subtitle_text
+    sendAudio(frame: ArrayBuffer) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) return;
+      socket.send(frame);
     },
     close() {
       closedByCaller = true;

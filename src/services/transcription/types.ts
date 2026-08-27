@@ -1,9 +1,9 @@
 // ═══════════════════════════════════════════
 // Transcription Service — สัญญาของ "ตัวถอดเสียงเป็นข้อความ"
 //
-// ตอนนี้ใช้ Web Speech API ฝั่ง client จริงแล้ว (src/services/speech/webSpeechProvider.ts
-// + src/services/transcript/store.ts) — ไฟล์นี้เป็นสัญญาเก่าสำหรับ post-meeting transcript
-// pipeline ที่ยังเป็น mock อยู่ (assemblyai/azure เป็นตัวเลือกในอนาคตถ้าต้องการความแม่นยำสูงขึ้น)
+// คำบรรยายสดถอดที่ server แล้ว (src/services/speech/audioCapture.ts ส่ง PCM ไปให้
+// backend/src/realtime/audio.ts ซึ่งเรียก Typhoon ASR sidecar) — ไฟล์นี้เป็นสัญญาเก่าสำหรับ
+// post-meeting transcript pipeline ที่ยังเป็น mock อยู่
 //
 // Webex ถูกตัดออกจากตัวเลือกแล้ว — ไม่มี license/backend และไม่ได้ใช้ ZegoCloud ทำ transcript
 // ═══════════════════════════════════════════

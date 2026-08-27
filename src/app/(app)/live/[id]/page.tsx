@@ -10,7 +10,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
-import { RoomSignalingProvider, useRoomSignaling } from "@/context/RoomSignalingContext";
+import { RoomSignalingProvider } from "@/context/RoomSignalingContext";
+import { RoomSignalBridge, type Broadcast } from "./RoomSignalBridge";
 import { HandRaiseList } from "@/components/meeting/HandRaiseList";
 import { SimulatedDocumentViewer, DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { ExternalConferenceStage } from "@/components/meeting/ExternalConferenceStage";
@@ -20,87 +21,11 @@ import { VotePanel } from "@/components/meeting/VotePanel";
 import { resolveConference } from "@/lib/conference";
 import { resolveVideoSurface } from "@/services/video";
 import { requestVideoCredential, type VideoCredential } from "@/services/credentials";
-import { webSpeechProvider } from "@/services/speech/webSpeechProvider";
+import { isCaptureSupported, startCapture } from "@/services/speech/audioCapture";
 import { fetchRoomSnapshot } from "@/services/rooms/snapshot";
 import type { RoomSignal, RaisedHandDto } from "@/services/signaling/types";
 import { can } from "@/lib/authz";
 import { MeetingParticipant, MeetingFile, canViewFile } from "@/data";
-
-type Broadcast = ReturnType<typeof useRoomSignaling>["broadcast"];
-
-/**
- * ต้องเป็นคอมโพเนนต์ลูกที่ render อยู่ใต้ RoomSignalingProvider เพราะ useRoomSignaling()
- * ใช้ไม่ได้ในตัว LiveMeetingRoomPage เอง (มันเป็นคนสร้าง Provider ขึ้นมา ไม่ได้อยู่ใต้ Provider)
- * — ส่ง broadcast กลับขึ้นไปให้ parent ผ่าน ref แทนการยกทั้งหน้าเข้าไปอยู่ใต้ Provider
- *
- * คอมโพเนนต์นี้ mount อยู่ตลอดอายุห้องประชุม (ไม่ผูกกับแท็บที่เปิดอยู่) จึงเป็นที่รวมของทุกสัญญาณ
- * ที่ต้องทำงานได้ไม่ว่าผู้ใช้จะเปิดแท็บไหนอยู่: hand_state (สถานะมือที่ยกอยู่ ณ ปัจจุบัน — server เป็นเจ้าของ),
- * subtitle_text (คำบรรยายที่ผู้พูดคนอื่นส่งมา — server เป็นคนบันทึกลง transcript เมื่อ isFinal, ฝั่งนี้แค่แสดงผล),
- * doc_share_state (สถานะเอกสารที่กำลังแชร์ ณ ปัจจุบัน — server เป็นเจ้าของ),
- * และ signal_error (แจ้งเตือนเมื่อ server ปฏิเสธเจตนาที่ส่งไป — สัญญาณ vote_* ตอนนี้ VotePanel ฟังเอง)
- */
-export function RoomSignalBridge({
-  currentUserId,
-  broadcastRef,
-  setRaisedHands,
-  setLatestSubtitle,
-  setSharedFileId,
-  setSharedViewerPage,
-  handSignalReceivedRef,
-  docShareSignalReceivedRef,
-}: {
-  currentUserId: string;
-  broadcastRef: React.MutableRefObject<Broadcast | null>;
-  setRaisedHands: React.Dispatch<React.SetStateAction<RaisedHandDto[]>>;
-  setLatestSubtitle: React.Dispatch<React.SetStateAction<RoomSignal<"subtitle_text"> | null>>;
-  setSharedFileId: React.Dispatch<React.SetStateAction<string | null>>;
-  setSharedViewerPage: React.Dispatch<React.SetStateAction<number>>;
-  // ธงบอกว่าได้รับสัญญาณสดแล้ว — กัน snapshot ที่มาช้ากว่ามาทับข้อมูลสด (ดู Fix 1 ของ code review รอบที่ 1)
-  handSignalReceivedRef: React.MutableRefObject<boolean>;
-  docShareSignalReceivedRef: React.MutableRefObject<boolean>;
-}) {
-  const { broadcast, useSignal } = useRoomSignaling();
-
-  useEffect(() => {
-    broadcastRef.current = broadcast;
-  }, [broadcast, broadcastRef]);
-
-  useSignal("hand_state", (signal) => {
-    // สัญญาณสดมาถึงแล้ว — ตั้งแต่นี้ snapshot effect ที่ยังค้าง fetch อยู่ (ถ้ามี) ต้องไม่ทับสถานะนี้อีก
-    // ห้ามลบธงนี้ทิ้งแม้จะดูเหมือนไม่มีอะไรอ่านซ้ำ เพราะ snapshot .then() อ่านมันก่อน setRaisedHands ทุกครั้ง
-    handSignalReceivedRef.current = true;
-    // Fix 2 (code review รอบที่ 3): เดา "ใครทำให้มือลด" จาก diff ของ raised list ในเครื่องไม่ได้ —
-    // payload เหมือนกันทุกประการไม่ว่าจะเป็นผู้ใช้กดลดมือเองหรือโฮสต์ลดให้ (ดูรอบที่ 2 ที่พังเพราะเดาผิด
-    // ตอน hand_state เก่าที่ค้างมาถึงหลัง reconnect) ต้องรอ server ส่ง lastAction มาบอกตรงๆ เท่านั้น —
-    // ตอนนี้ server ยังไม่ส่ง (ดู Task 7) ธงนี้จึงเงียบเสมอจนกว่า server จะเติม lastAction มาให้
-    const action = signal.payload.lastAction;
-    if (action && action.userId === currentUserId && action.byUserId !== currentUserId) {
-      toast.info("โฮสต์ลดมือให้คุณแล้ว");
-    }
-    setRaisedHands(signal.payload.raised);
-  });
-
-  useSignal("subtitle_text", (signal) => {
-    setLatestSubtitle(signal);
-  });
-
-  useSignal("doc_share_state", (signal) => {
-    // สัญญาณสดมาถึงแล้ว — เหตุผลเดียวกับ handSignalReceivedRef ด้านบน
-    docShareSignalReceivedRef.current = true;
-    const share = signal.payload.share;
-    setSharedFileId(share?.fileId ?? null);
-    setSharedViewerPage(share?.page ?? 1);
-    if (share && signal.senderId !== currentUserId) {
-      toast.info(`${share.sharedName} กำลังแชร์เอกสาร: ${share.fileName}`);
-    }
-  });
-
-  useSignal("signal_error", (signal) => {
-    toast.error(signal.payload.reason);
-  });
-
-  return null;
-}
 
 export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -130,7 +55,13 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const docShareSignalReceivedRef = useRef(false);
   const [subtitleOn, setSubtitleOn] = useState(false);
   const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
+  // ค่าเริ่มต้นใช้เวลาที่เปิดหน้านี้ไปก่อน แล้ว RoomSignalBridge เขียนทับด้วยเวลาเริ่มห้องจริง
+  // ที่ server ส่งมาตอน room_joined
   const meetingStartRef = useRef(Date.now());
+  const sendAudioRef = useRef<((frame: ArrayBuffer) => void) | null>(null);
+  // ฟังก์ชันหยุดจับเสียงที่ startCapture คืนมา — เก็บไว้เพื่อปิดไมค์ตอนกดปิดซับหรือออกจากห้อง
+  const stopCaptureRef = useRef<(() => void) | null>(null);
+  const startingCaptureRef = useRef(false);
   const [activeTab, setActiveTab] = useState("agenda");
   const [chatInput, setChatInput] = useState("");
   
@@ -272,10 +203,11 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     toast.success("เข้าร่วมประชุมสำเร็จ", { description: "คุณได้เข้าร่วมในฐานะบุคคลภายนอก" });
   };
 
-  // หยุดจดจำเสียงเมื่อออกจากคอมโพเนนต์ — กันไมค์ค้างฟังหลัง unmount
+  // หยุดจับเสียงเมื่อออกจากคอมโพเนนต์ — กันไมค์ค้างฟังหลัง unmount
   useEffect(() => {
     return () => {
-      webSpeechProvider.stop();
+      stopCaptureRef.current?.();
+      stopCaptureRef.current = null;
     };
   }, []);
 
@@ -451,45 +383,38 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     }
   };
 
-  const handleToggleSubtitle = () => {
+  const handleToggleSubtitle = async () => {
     if (subtitleOn) {
-      webSpeechProvider.stop();
+      stopCaptureRef.current?.();
+      stopCaptureRef.current = null;
       setSubtitleOn(false);
       return;
     }
-    if (!webSpeechProvider.isSupported()) {
-      toast.error("เบราว์เซอร์ไม่รองรับ กรุณาใช้ Chrome");
+
+    // subtitleOn ยังไม่เป็น true จนกว่า startCapture จะเสร็จ ระหว่างนั้นหน้าต่างขอสิทธิ์ไมค์
+    // ค้างอยู่และปุ่มยังกดได้ ถ้ากดซ้ำจะได้ capture สองชุด แล้วชุดแรกไม่มีใครถือฟังก์ชันหยุดไว้
+    // ไมค์ตัวนั้นจะค้างเปิดไปทั้งประชุม
+    if (startingCaptureRef.current) return;
+    startingCaptureRef.current = true;
+
+    if (!isCaptureSupported()) {
+      toast.error("เบราว์เซอร์นี้ไม่รองรับการจับเสียงไมค์สำหรับคำบรรยาย");
       return;
     }
-    webSpeechProvider.start(
-      "th-TH",
-      (result) => {
-        // เวลาที่ผ่านไปนับจากเริ่มห้อง — ส่งไปเป็น startSec ให้ server บันทึก offset ที่ถูกต้อง
-        // ตอนได้รับ subtitle_text ที่ isFinal (ฝั่งนี้ไม่บันทึกเองแล้ว ดู transcript/store.ts)
-        const elapsedSeconds = (Date.now() - meetingStartRef.current) / 1000;
-        const signal: RoomSignal<"subtitle_text"> = {
-          type: "subtitle_text",
-          senderId: currentUser.id,
-          senderName: currentUser.name,
-          timestamp: Date.now(),
-          payload: { text: result.text, isFinal: result.isFinal, lang: result.lang, startSec: elapsedSeconds },
-        };
-        broadcastRef.current?.({ type: "subtitle_text", payload: signal.payload });
-        // BroadcastChannel ไม่ส่งข้อความกลับมาหาผู้ส่งเอง — ต้องเซ็ต latestSubtitle ในเครื่องนี้เองด้วย
-        // ไม่งั้นคนที่พูดจะไม่เห็นซับไตเติลของตัวเอง (ดู Fix 1)
-        setLatestSubtitle(signal);
-      },
-      (reason) => {
-        // recognition หยุดทำงานเอง — ทำให้ปุ่ม CC สะท้อนสถานะจริงแทนที่จะค้างเป็น "on" เฉย ๆ (ดู Fix 5)
-        setSubtitleOn(false);
-        if (reason === "not-allowed") {
-          toast.error("ไม่ได้รับอนุญาตให้ใช้ไมโครโฟน");
-        } else {
-          toast.error("ซับไตเติลหยุดทำงาน");
-        }
-      }
-    );
-    setSubtitleOn(true);
+
+    try {
+      // เสียงถูกถอดที่ server แล้วส่ง subtitle_text กลับมาให้ทุกคนรวมทั้งผู้พูดเอง
+      // หน้านี้จึงไม่เซ็ต latestSubtitle ของตัวเองอีก ไม่งั้นจะเห็นข้อความซ้ำสองรอบ
+      stopCaptureRef.current = await startCapture({
+        sendAudio: (frame) => sendAudioRef.current?.(frame),
+        startedAt: meetingStartRef.current,
+      });
+      setSubtitleOn(true);
+    } catch {
+      toast.error("เปิดไมค์ไม่สำเร็จ กรุณาอนุญาตการใช้ไมโครโฟนในเบราว์เซอร์");
+    } finally {
+      startingCaptureRef.current = false;
+    }
   };
 
   return (
@@ -497,6 +422,8 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     <RoomSignalBridge
       currentUserId={currentUser.id}
       broadcastRef={broadcastRef}
+      sendAudioRef={sendAudioRef}
+      meetingStartRef={meetingStartRef}
       setRaisedHands={setRaisedHands}
       setLatestSubtitle={setLatestSubtitle}
       setSharedFileId={setSharedFileId}

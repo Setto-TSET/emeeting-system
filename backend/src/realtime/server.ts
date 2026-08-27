@@ -8,8 +8,9 @@ import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyAccessToken } from '../services/auth';
 import { isMeetingMember } from '../repositories/meetings';
-import { addClient, removeClient, clientsIn, RoomClient } from './rooms';
+import { addClient, removeClient, clientsIn, roomStartedAt, RoomClient } from './rooms';
 import { handleSignal } from './handlers';
+import { handleAudioFrame, forgetSpeaker } from './audio';
 
 const CLOSE_UNAUTHORIZED = 4401;
 const CLOSE_FORBIDDEN = 4403;
@@ -28,7 +29,10 @@ export function broadcast(meetingId: string, message: unknown, exceptUserId?: st
 }
 
 export function attachRealtime(server: http.Server): WebSocketServer {
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  // ก้อนเสียง 3 วินาทีที่ 16 kHz 16-bit เท่ากับ 96 KB บวก header — 200 KB คือเผื่อไว้เท่าตัว
+  // เกินกว่านี้ไม่ใช่เสียงประชุม จำกัดที่ตัว WebSocketServer เลยเพื่อให้ ws ปิดการเชื่อมต่อ
+  // ก่อนโหลด payload เข้าหน่วยความจำ
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 200 * 1024 });
 
   wss.on('connection', async (socket, request) => {
     const url = new URL(request.url ?? '', 'http://localhost');
@@ -52,8 +56,14 @@ export function attachRealtime(server: http.Server): WebSocketServer {
     // ผูก listener ก่อน await ใดๆ — ถ้า client หลุดระหว่างรอ query membership
     // (ยังไม่ถูก addClient) removeClient จะเป็น no-op ปลอดภัย ไม่ผูกทีหลังเพราะ
     // ถ้าหลุดระหว่างรอ query จะไม่มีใครมาถอดทะเบียนออก กลายเป็น client ค้างตลอดไป
-    socket.on('close', () => removeClient(client));
-    socket.on('error', () => removeClient(client));
+    socket.on('close', () => {
+      removeClient(client);
+      forgetSpeaker(client);
+    });
+    socket.on('error', () => {
+      removeClient(client);
+      forgetSpeaker(client);
+    });
 
     // guest token ผูกกับการประชุมเดียวตอนออก token — เข้าห้องอื่นไม่ได้
     if (claims.role === 'guest') {
@@ -73,17 +83,42 @@ export function attachRealtime(server: http.Server): WebSocketServer {
       senderId: 'server',
       senderName: 'server',
       timestamp: Date.now(),
-      payload: { userId: client.userId, userName: client.userName, meetingId },
+      // serverTime กับ roomStartedAt ไปด้วยกันเสมอ client เอาผลต่างมาตั้งจุดอ้างอิงของตัวเอง
+      // จึงไม่ต้องให้นาฬิกาของเครื่องผู้ใช้ตรงกับของ server
+      payload: {
+        userId: client.userId,
+        userName: client.userName,
+        meetingId,
+        serverTime: Date.now(),
+        roomStartedAt: roomStartedAt(meetingId),
+      },
     });
 
-    socket.on('message', async (raw) => {
-      let parsed: unknown;
+    socket.on('message', async (raw, isBinary) => {
+      // ไม่มีใคร await listener ตัวนี้ ถ้าปล่อยให้ reject หลุดออกไป Node 20 จะจบโปรเซสทิ้ง
+      // (ค่าเริ่มต้นของ --unhandled-rejections คือ throw) แล้วทุกห้องประชุมหลุดพร้อมกัน
+      // เพราะ DB สะดุดครั้งเดียว จับไว้ตรงนี้ที่เดียวคุมได้ทั้งเส้นเสียงและเส้นสัญญาณ JSON
       try {
-        parsed = JSON.parse(raw.toString());
-      } catch {
-        return;
+        if (isBinary) {
+          await handleAudioFrame(client, Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer));
+          return;
+        }
+
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw.toString());
+        } catch {
+          return;
+        }
+        await handleSignal(client, parsed);
+      } catch (error) {
+        console.error('[realtime] จัดการข้อความจาก client ไม่สำเร็จ', {
+          meetingId: client.meetingId,
+          userId: client.userId,
+          isBinary,
+          error,
+        });
       }
-      await handleSignal(client, parsed);
     });
   });
 

@@ -20,13 +20,13 @@
 - ✅ อัปโหลดเอกสารจริง (IndexedDB) + preview ด้วย PDF/Markdown viewer
 - ✅ การจำหน่ายเอกสารตามสิทธิ์ (4 ระดับการมองเห็น)
 - ✅ Guest Join — Magic Link flow (เชิญบุคคลภายนอกเข้าประชุมโดยไม่ต้องสร้างบัญชี, ใช้งานได้จริงแล้ว ไม่ใช่แค่ plan)
-- ✅ โหวตแบบ realtime, ยกมือแบบ realtime, ซับไตเติลสด (Web Speech API), ถอดคำพูด + แชร์เอกสารซิงค์ — ผ่าน WebSocket backend ที่ authenticate ด้วย JWT แล้ว **sync ข้ามเครื่อง/ข้ามเบราว์เซอร์ได้จริง** state ทั้งหมดเก็บที่ server (MySQL) ไม่ใช่ per-tab อีกต่อไป, คนเข้าห้องทีหลังดึง snapshot ปัจจุบันผ่าน `GET /api/rooms/:meetingId/state` (ดู README.md)
+- ✅ โหวตแบบ realtime, ยกมือแบบ realtime, ซับไตเติลสด (ถอดเสียงที่ server ด้วย Typhoon ASR self-host ใช้ได้ทุกเบราว์เซอร์ที่รองรับ AudioWorklet), ถอดคำพูด + แชร์เอกสารซิงค์ — ผ่าน WebSocket backend ที่ authenticate ด้วย JWT แล้ว **sync ข้ามเครื่อง/ข้ามเบราว์เซอร์ได้จริง** state ทั้งหมดเก็บที่ server (MySQL) ไม่ใช่ per-tab อีกต่อไป, คนเข้าห้องทีหลังดึง snapshot ปัจจุบันผ่าน `GET /api/rooms/:meetingId/state` (ดู README.md)
 - ✅ Backend containerised แล้ว — `backend/Dockerfile` + `deploy/docker-compose.yml` (MySQL 8 + backend + Caddy reverse proxy พร้อม TLS อัตโนมัติ) + `deploy/.env.example` เหลือแค่ยกขึ้น host จริง
 - ✅ Design spec + implementation plan ของ **Server-Side Thai ASR (Typhoon self-host)** เขียนและอนุมัติแล้ว พร้อมผลวัด CER/latency จริง (ยังไม่ implement)
 
 ### ⏳ ยังเลื่อน
 - ❌ Backend deploy จริง (โค้ด + DB schema + auth + WebSocket realtime เขียนและเทสครบแล้ว, containerise + compose stack พร้อมแล้ว — เหลือแค่ยกขึ้น host จริงกับตั้งโดเมน/TLS)
-- ❌ Server-Side Thai ASR (Phase F) — spec + plan เสร็จ 2026-08-24 แต่ยังไม่มีโค้ด: ยังไม่มี `asr/`, `backend/src/realtime/audio.ts`, `backend/src/realtime/asrClient.ts`, `src/services/speech/pcm.ts` คำบรรยายสดปัจจุบันยังใช้ Web Speech API ฝั่ง client (Chromium เท่านั้น)
+- ⏳ Server-Side Thai ASR (Phase F) — โค้ดครบทุกชั้นแล้ว (sidecar, backend pipeline, การจับเสียงในเบราว์เซอร์) เหลือการทดสอบสองเครื่องจริงกับการวัด CER จากเสียงประชุมจริง
 - ❌ Email service จริง (template พร้อม, รอเลือก Sendgrid/AWS SES)
 - ❌ Zoom Room enterprise SIP bridge (Phase E placeholder UI ทำแล้ว, ตัว SIP bridge จริงรอ ZegoCloud Enterprise Plan)
 - ⏳ Server-side audit logging — `backend/` มี `POST /api/audit/log-view` + `GET /api/audit/logs` (admin-only) แล้ว แต่ frontend ยังไม่เรียกใช้จริง; signed URLs ยังไม่ทำ (Phase 2 security) — ส่วน authentication (JWT + bcrypt) และ server-side authorization (ใครเข้าห้องไหนได้, ใครเป็น manager) ทำเสร็จแล้ว
@@ -53,7 +53,7 @@
 |------|--------|---------|
 | ทดสอบถอดเสียงภาษาไทยจริง | ✅ | ไทยเล็กน้อยแต่ใช้ได้ สำคัญพอสำหรับ proof-of-concept |
 | Go/No-Go decision | ✅ | **GO:** Webex + Claude AI → implement (ภายหลังเปลี่ยนเป็น ZegoCloud — ดูหมายเหตุ Phase B) |
-| เลือก STT provider | ✅ | **Webex Transcript API** (ถ้าจัดซื้อ) — ภายหลังใช้ **Web Speech API** จริงแทน (ไม่ต้องซื้อ license) |
+| เลือก STT provider | ✅ | **Webex Transcript API** (ถ้าจัดซื้อ) → **Web Speech API** → ปัจจุบัน **Typhoon ASR self-host** ฝั่ง server (ไม่มีค่าใช้จ่ายต่อนาที เสียงไม่ออกนอกองค์กร) |
 | เลือก LLM provider | ✅ | **Claude API** (สำเร็จได้ดี) |
 
 ---
@@ -177,7 +177,7 @@ Replaces the earlier Webex mock as the primary video engine seam.
 | Realtime signaling layer (BroadcastChannel) | ✅ | `src/services/signaling/`, `src/context/RoomSignalingContext.tsx` |
 | Voting system | ✅ | `src/services/voting/`, `src/components/meeting/Vote*.tsx` |
 | Realtime hand raise | ✅ | `src/components/meeting/HandRaiseList.tsx` + live room wiring |
-| Web Speech API subtitles | ✅ | `src/services/speech/webSpeechProvider.ts`, `src/components/meeting/SubtitleBar.tsx` |
+| ซับไตเติลสด | ✅ | เดิม `webSpeechProvider.ts` (ลบแล้ว) ปัจจุบัน `src/services/speech/audioCapture.ts` + `src/components/meeting/SubtitleBar.tsx` |
 | Transcript capture + viewer | ✅ | `src/services/transcript/store.ts`, `src/components/meeting/TranscriptTimeline.tsx` |
 | Document sharing sync | ✅ | live room `doc_share`/`doc_share_page`/`doc_share_stop` wiring |
 | Zoom Room placeholder (needs enterprise plan for SIP bridge) | ⏳ | `src/components/meeting/ZoomRoomStatus.tsx` shows UI; SIP bridge not implemented, blocked on licensing |
@@ -449,7 +449,7 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 - ✅ Authentication จริง (`POST /api/auth/login` เช็ครหัสผ่านด้วย bcrypt ที่ server, ออก JWT, ทุก request/WebSocket แนบ token)
 
 ### Ready to Address (With Backend)
-- 🔄 Transcription API แม่นยำขึ้น (AssemblyAI/Azure STT — ปัจจุบันใช้ Web Speech API ฝั่ง client)
+- ✅ ถอดเสียงไทยฝั่ง server ด้วย Typhoon ASR self-host (แทน Web Speech API ฝั่ง client)
 - 🔄 Claude AI summarization (API key ต้องมี)
 - 🔄 Email with .ics (Sendgrid/AWS SES)
 - 🔄 Signed URLs + wiring frontend to the existing audit trail backend routes

@@ -8,6 +8,8 @@ import { openTransport, type RoomTransport } from "@/services/signaling/channel"
 type Ctx = {
   broadcast: <T extends SignalType>(signal: Omit<RoomSignal<T>, "senderId" | "senderName" | "timestamp">) => void;
   useSignal: <T extends SignalType>(type: T, handler: (signal: RoomSignal<T>) => void) => void;
+  // ก้อนเสียงดิบสำหรับถอดคำบรรยายที่ server ไม่ใช่สัญญาณ JSON จึงมีทางส่งของตัวเอง
+  sendAudio: (frame: ArrayBuffer) => void;
   connected: boolean;
   // true เมื่อ transport เจอ close code 4401/4403 แล้วเลิก retry ถาวร — ต่างจาก connected=false
   // ธรรมดาที่ยังพยายามต่ออยู่เบื้องหลัง หน้าที่แสดงผล (เช่น live room page) ใช้ค่านี้ตัดสินใจว่าจะบอกผู้ใช้อย่างไร
@@ -51,6 +53,10 @@ export function RoomSignalingProvider({ meetingId, children }: { meetingId: stri
     transportRef.current?.send(partial.type, partial.payload);
   }, []);
 
+  const sendAudio = useCallback<Ctx["sendAudio"]>((frame) => {
+    transportRef.current?.sendAudio(frame);
+  }, []);
+
   const useSignal = useCallback<Ctx["useSignal"]>((type, handler) => {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     useEffect(() => {
@@ -68,7 +74,7 @@ export function RoomSignalingProvider({ meetingId, children }: { meetingId: stri
   }, []);
 
   return (
-    <RoomSignalingContext.Provider value={{ broadcast, useSignal, connected, connectionFailed }}>
+    <RoomSignalingContext.Provider value={{ broadcast, sendAudio, useSignal, connected, connectionFailed }}>
       {children}
     </RoomSignalingContext.Provider>
   );
