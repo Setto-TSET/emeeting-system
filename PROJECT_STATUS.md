@@ -1,8 +1,8 @@
 # e-Meeting System — Project Status Report
 
 **Project:** ระบบประชุมออนไลน์พร้อมความลับ + สรุปประชุมอัตโนมัติ + ZegoCloud Integration  
-**Status:** Phase 0–C Complete + Guest Join Complete + ZegoCloud Real SDK Integrated + Phase E (Voting/Hand Raise/Subtitle/Doc-Share Sync) Complete + **Frontend deployed to Vercel production** + **Backend containerised พร้อม deploy (docker compose)** — Phase F (Server-Side Thai ASR) ออกแบบเสร็จแล้วแต่ยังไม่เริ่มเขียนโค้ด, Zoom Room SIP bridge still blocked on licensing  
-**Last Updated:** 2026-08-25  
+**Status:** Phase 0–F Complete (code) — Meetings/Bookings/Files/Realtime state ย้ายขึ้น server (MySQL) หมดแล้ว, Server-Side Thai ASR (Typhoon self-host) implement ครบทุกชั้นแล้ว, **Frontend deployed to Vercel production**, Backend containerised + Render blueprint พร้อม — เหลือ deploy backend ขึ้น host จริง, ทดสอบ ASR สองเครื่อง, Email service, Zoom Room SIP bridge (blocked on licensing)  
+**Last Updated:** 2026-08-31  
 **Repository:** https://github.com/Setto-TSET/emeeting-system  
 **Production:** https://meeting-system-features-40fa4d.vercel.app
 
@@ -17,16 +17,17 @@
 - ✅ วิดีโอจริงผ่าน **ZegoCloud SDK** (token04 generator + API route + engine + component — ต่อ credential จริงสำเร็จแล้ว, Webex ถูกตัดออกจากระบบทั้งหมด)
 - ✅ ความลับระดับการประชุม (watermark + blur-on-blur + right-click block)
 - ✅ สรุปประชุมอัตโนมัติจาก AI (pipeline mock สำเร็จ) + notification flow + .ics calendar
-- ✅ อัปโหลดเอกสารจริง (IndexedDB) + preview ด้วย PDF/Markdown viewer
+- ✅ อัปโหลดเอกสารจริง (เก็บที่ server, MySQL) + preview ด้วย PDF/Markdown viewer
 - ✅ การจำหน่ายเอกสารตามสิทธิ์ (4 ระดับการมองเห็น)
 - ✅ Guest Join — Magic Link flow (เชิญบุคคลภายนอกเข้าประชุมโดยไม่ต้องสร้างบัญชี, ใช้งานได้จริงแล้ว ไม่ใช่แค่ plan)
 - ✅ โหวตแบบ realtime, ยกมือแบบ realtime, ซับไตเติลสด (ถอดเสียงที่ server ด้วย Typhoon ASR self-host ใช้ได้ทุกเบราว์เซอร์ที่รองรับ AudioWorklet), ถอดคำพูด + แชร์เอกสารซิงค์ — ผ่าน WebSocket backend ที่ authenticate ด้วย JWT แล้ว **sync ข้ามเครื่อง/ข้ามเบราว์เซอร์ได้จริง** state ทั้งหมดเก็บที่ server (MySQL) ไม่ใช่ per-tab อีกต่อไป, คนเข้าห้องทีหลังดึง snapshot ปัจจุบันผ่าน `GET /api/rooms/:meetingId/state` (ดู README.md)
-- ✅ Backend containerised แล้ว — `backend/Dockerfile` + `deploy/docker-compose.yml` (MySQL 8 + backend + Caddy reverse proxy พร้อม TLS อัตโนมัติ) + `deploy/.env.example` เหลือแค่ยกขึ้น host จริง
-- ✅ Design spec + implementation plan ของ **Server-Side Thai ASR (Typhoon self-host)** เขียนและอนุมัติแล้ว พร้อมผลวัด CER/latency จริง (ยังไม่ implement)
+- ✅ **การจองห้อง / การประชุม / ไฟล์เอกสาร อยู่ที่ server หมดแล้ว** — ไม่ใช่ localStorage/IndexedDB อีกต่อไป ทุกคนเห็นข้อมูลชุดเดียวกัน; การจองเช็คทับซ้อนใน transaction เดียวกับ insert (`SELECT ... FOR UPDATE`) กันจองชนกัน คืนค่า 409
+- ✅ Backend containerised แล้ว — `backend/Dockerfile` + `deploy/docker-compose.yml` (MySQL 8 + backend + Caddy reverse proxy พร้อม TLS อัตโนมัติ) + `deploy/.env.example`; เพิ่ม `render.yaml` (Render blueprint, MySQL ใช้ Aiven ผ่าน `DATABASE_URL`) + คู่มือ `deploy/RENDER.md`, `deploy/KOYEB.md`
+- ✅ **Phase F: Server-Side Thai ASR implement ครบแล้ว** — ASR sidecar (`asr/server.py`, FastAPI + typhoon-asr + Dockerfile + tests), backend audio pipeline (`backend/src/realtime/audio.ts`, `asrClient.ts`), frontend PCM capture (`src/services/speech/pcm.ts`, `audioCapture.ts`, `public/pcm-worklet.js`) พร้อม design spec + ผลวัด CER/latency
 
 ### ⏳ ยังเลื่อน
-- ❌ Backend deploy จริง (โค้ด + DB schema + auth + WebSocket realtime เขียนและเทสครบแล้ว, containerise + compose stack พร้อมแล้ว — เหลือแค่ยกขึ้น host จริงกับตั้งโดเมน/TLS)
-- ⏳ Server-Side Thai ASR (Phase F) — โค้ดครบทุกชั้นแล้ว (sidecar, backend pipeline, การจับเสียงในเบราว์เซอร์) เหลือการทดสอบสองเครื่องจริงกับการวัด CER จากเสียงประชุมจริง
+- ❌ Backend deploy จริง (โค้ด + DB schema + auth + WebSocket realtime เขียนและเทสครบแล้ว, container + compose + Render blueprint พร้อมแล้ว — เหลือแค่ยกขึ้น host จริงกับตั้งโดเมน/TLS)
+- ⏳ Server-Side Thai ASR (Phase F) — โค้ดครบทุกชั้นแล้ว เหลือการทดสอบสองเครื่องจริงกับการวัด CER จากเสียงประชุมจริง
 - ❌ Email service จริง (template พร้อม, รอเลือก Sendgrid/AWS SES)
 - ❌ Zoom Room enterprise SIP bridge (Phase E placeholder UI ทำแล้ว, ตัว SIP bridge จริงรอ ZegoCloud Enterprise Plan)
 - ⏳ Server-side audit logging — `backend/` มี `POST /api/audit/log-view` + `GET /api/audit/logs` (admin-only) แล้ว แต่ frontend ยังไม่เรียกใช้จริง; signed URLs ยังไม่ทำ (Phase 2 security) — ส่วน authentication (JWT + bcrypt) และ server-side authorization (ใครเข้าห้องไหนได้, ใครเป็น manager) ทำเสร็จแล้ว
@@ -81,7 +82,7 @@
 | Watermark | ✅ | Grid 6×4, -30° rotation, 20% opacity, dynamic timestamp |
 | Blur-on-blur | ✅ | `visibilitychange` + `blur`/`focus` events → opaque z-20 overlay |
 | Right-click block | ✅ | `onContextMenu: preventDefault()` + Ctrl/Cmd+P block |
-| No download button | ✅ | IndexedDB (no static URL) |
+| No download button | ✅ | ไฟล์อยู่ที่ server หลัง JWT (no static URL) |
 | Confidentiality badges | ✅ | "ลับ" (restricted) / "ลับมาก" (top_secret) |
 
 **File:** `src/components/meeting/DocumentPreview.tsx` + `Watermark.tsx`
@@ -191,18 +192,20 @@ Replaces the earlier Webex mock as the primary video engine seam.
 | Compose stack: MySQL 8 + backend + Caddy reverse proxy | ✅ | `deploy/docker-compose.yml` |
 | Reverse proxy + automatic TLS | ✅ | `deploy/Caddyfile` |
 | Environment template + เอกสาร backend env | ✅ | `deploy/.env.example`, `backend/.env.example`, `backend/README.md` |
+| Render blueprint (backend + Aiven MySQL) | ✅ | `render.yaml`, `deploy/RENDER.md`, `deploy/KOYEB.md` |
 | ยกขึ้น host จริง + ตั้งโดเมน | ⏳ | ยังไม่ได้ทำ — งานถัดไปลำดับแรก |
 
 ---
 
-### Phase F: Server-Side Thai ASR (Typhoon) 📝 DESIGN COMPLETE — NOT IMPLEMENTED
+### Phase F: Server-Side Thai ASR (Typhoon) ✅ CODE COMPLETE — รอทดสอบสองเครื่องจริง
 | Component | Status | File |
 |---|---|---|
 | Design spec (พร้อมผลวัด CER/latency จริง) | ✅ | `docs/superpowers/specs/2026-08-24-server-side-thai-asr-design.md` |
 | Implementation plan (task-by-task) | ✅ | `docs/superpowers/plans/2026-08-24-server-side-thai-asr.md` |
-| ASR sidecar (Python + FastAPI + typhoon-asr) | ❌ | `asr/` ยังไม่มี |
-| Backend audio pipeline | ❌ | `backend/src/realtime/audio.ts`, `asrClient.ts` ยังไม่มี |
-| Frontend PCM capture (AudioWorklet) | ❌ | `src/services/speech/pcm.ts`, `public/pcm-worklet.js` ยังไม่มี |
+| ASR sidecar (Python + FastAPI + typhoon-asr) | ✅ | `asr/server.py`, `asr/Dockerfile`, `asr/requirements.txt`, `asr/tests/` |
+| Backend audio pipeline | ✅ | `backend/src/realtime/audio.ts`, `backend/src/realtime/asrClient.ts` |
+| Frontend PCM capture (AudioWorklet) | ✅ | `src/services/speech/pcm.ts`, `src/services/speech/audioCapture.ts`, `public/pcm-worklet.js` |
+| ทดสอบสองเครื่องจริง + วัด CER จากเสียงประชุมจริง | ⏳ | ยังไม่ได้ทำ |
 
 **เหตุผล:** Web Speech API มีเฉพาะ Chromium (Safari/Firefox/มือถือบางรุ่นไม่มีคำบรรยายเลย), คุณภาพภาษาไทยปรับแต่งไม่ได้ และเสียงออกนอกองค์กร (ส่งไปประมวลผลที่ Google) ซึ่งขัดกับจุดขายเรื่องความลับของระบบ — แผนคือ self-host Typhoon ASR บน VM เดียวกับ backend แล้วเข้าเส้นทาง `subtitle_text` เดิม
 
@@ -249,8 +252,8 @@ D:\Internship\meeting Porject/
 │   │   │   ├── mockSummarizer.ts
 │   │   │   ├── reportBuilder.ts
 │   │   │   └── index.ts
-│   │   ├── fileStorage.ts        # IndexedDB seam
-│   │   ├── localStore.ts         # localStorage wrapper
+│   │   ├── fileStorage.ts        # ไฟล์เอกสารผ่าน backend API
+│   │   ├── api/                  # client, meetings, bookings
 │   │   ├── session.ts            # Session management
 │   │   └── ...
 │   ├── contexts/                 # React Context
@@ -258,10 +261,10 @@ D:\Internship\meeting Porject/
 │   │   ├── MeetingContext        # Meetings + CRUD
 │   │   ├── BookingContext        # Room booking
 │   │   └── ...
-│   └── data/                     # Mock data (single source)
-│       └── index.ts              # Users, meetings, committees, documents
+│   └── data/                     # seed/reference data (users, committees)
+│       └── index.ts
 │
-├── backend/                      # Node.js + Express API (Planned, Not Started, DEPRECATED spec — see below)
+├── backend/                      # Node.js + Express API — implement แล้ว (ยังไม่ deploy)
 │   ├── src/
 │   │   ├── server.ts             # Express entry point
 │   │   ├── middleware/           # Auth, error handler
@@ -297,14 +300,14 @@ D:\Internship\meeting Porject/
 |-------|--------|-----------------|
 | **Layer 1: Access Control** | ✅ | JWT + session + `can()` capability model + guest magic token (24h) |
 | **Layer 2: Client-Side Deterrent** | ✅ | Watermark + blur-on-blur + right-click block + confidentiality levels |
-| **Layer 3: Server-Side Protection** | ⏳ | Audit logging (backend routes exist in `backend/`, not yet wired to frontend) + signed URLs (60s) + single-active session |
+| **Layer 3: Server-Side Protection** | ⏳ | Audit logging (`backend/src/routes/audit.ts` มีแล้ว แต่ frontend ยังไม่เรียก) + signed URLs (60s) + single-active session ยังไม่ทำ |
 | **Layer 4: Policy & Legal** | 📋 | NDA template, data classification, incident response (org responsibility) |
 
 **Key Protections:**
 - ✅ Watermark shows viewer name + timestamp (survives screenshot)
 - ✅ Blur-on-blur when window inactive
 - ✅ Confidentiality levels (normal/restricted/top_secret) control watermark refresh rate
-- ✅ Documents in IndexedDB (no static URL to share)
+- ✅ Documents เก็บที่ server หลัง JWT + สิทธิ์ (ไม่มี static URL ให้แชร์)
 - ✅ Permissions checked per action + per resource
 
 **Cannot Prevent (Accepted Risk):**
@@ -323,33 +326,22 @@ D:\Internship\meeting Porject/
 
 ---
 
-## 🏗️ Backend Architecture (Specification Complete, Not Started)
+## 🏗️ Backend Architecture ✅ IMPLEMENTED (ยังไม่ deploy ขึ้น host จริง)
 
-> **หมายเหตุ (2026-08-13):** Video token ไม่ต้องใช้ backend แยกแล้ว เพราะ ZegoCloud token ออกจาก
-> Next.js API route โดยตรง (`src/app/api/video/token/route.ts`, ใช้จริงอยู่แล้ว) backend/ ที่เหลือ
-> เป็นแผนสำหรับ transcription/summarize/guest endpoints เท่านั้น ยังไม่ implement
+> **หมายเหตุ (2026-08-31):** Video token ยังออกจาก Next.js API route โดยตรง
+> (`src/app/api/video/token/route.ts`) ส่วน backend Express (`backend/`) implement แล้วจริง:
+> auth, meetings, bookings, rooms/realtime state, transcription, summarize, audit
+> โค้ดจริงอยู่ที่ `backend/src/routes/` และ `backend/src/repositories/` มี test ครบ
 
 ### Database Schema
-```sql
--- Meetings + Rooms
-transcriptions (status: none|processing|ready|failed)
-summaries (draft + final)
-guest_invites (new table for Phase D)
-audit_logs (Phase 2)
-
--- Supporting tables
-users, committees, permissions, sessions (existing)
-```
+Schema จริงอยู่ที่ `backend/src/database/schema.sql` (+ `migrations.ts`, `seed.ts`) —
+ครอบคลุม users, meetings, meeting_files, bookings, votes, hand_raises, transcript, doc_share,
+guest invites และ audit logs
 
 ### API Endpoints
-```
-POST /api/transcription/request → { status: "processing" }
-GET  /api/transcription/result  → { status, segments[] }
-POST /api/transcription/poll    → Background worker
-POST /api/summarize             → { summary, isDraft: true }
-POST /api/guests/invite-batch   → { sent, failed }  [Phase D]
-GET  /api/guests/list           → { guests[] }     [Phase D]
-```
+Implement แล้ว (`backend/src/routes/`): `auth.ts`, `meetings.ts`, `bookings.ts`, `rooms.ts`
+(รวม `GET /api/rooms/:meetingId/state`), `transcription.ts`, `summarize.ts`, `audit.ts`
+พร้อม WebSocket realtime (`backend/src/realtime/`)
 
 Video token ไม่อยู่ในรายการนี้แล้ว — ทำงานจริงอยู่ที่ `src/app/api/video/token/route.ts` (Next.js, ไม่ผ่าน backend/)
 
@@ -414,8 +406,8 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 | Test Case | Status | Notes |
 |-----------|--------|-------|
 | 5 roles switching | ✅ | Buttons/menus update correctly |
-| Create meeting | ✅ | Data persists in localStorage |
-| Upload document | ✅ | File stored in IndexedDB |
+| Create meeting | ✅ | บันทึกที่ server (MySQL) ทุกคนเห็น |
+| Upload document | ✅ | ไฟล์เก็บที่ server |
 | View document | ✅ | Watermark + blur-on-blur working |
 | Change confidentiality | ✅ | Watermark refresh rate updates |
 | Generate summary | ✅ | Mock transcript + mock summary |
@@ -430,8 +422,7 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 | **Lines of Code (Frontend)** | ~8,000 (React + TypeScript) |
 | **Components** | 40+ reusable |
 | **Routes** | 12 protected pages |
-| **Mock Data** | 50+ users, meetings, committees |
-| **Data Storage** | localStorage (metadata) + IndexedDB (files) |
+| **Data Storage** | MySQL ฝั่ง server (meetings, bookings, files, realtime state) |
 | **Commits** | 50+ with clear messages |
 | **Code Review** | 5 major bug fixes (race, webcam, roster, form, timer) |
 | **Time Investment** | 6 weeks (planning + implementation + iteration) |
@@ -440,16 +431,17 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 
 ## 📞 Known Limitations & Future Work
 
-### Current (Frontend Only)
+### Current
 - ✅ ZegoCloud SDK จริง (ไม่ใช่ placeholder แล้ว — Webex ถูกตัดออกทั้งหมด)
-- ❌ No backend API (localStorage only, ยกเว้น video token ที่ผ่าน Next.js API route แล้ว)
+- ✅ Backend API + MySQL จริง (meetings, bookings, files, realtime state) — ไม่ใช่ localStorage/mock แล้ว
+- ❌ Backend ยังไม่ได้ deploy ขึ้น host จริง (frontend production จึงยังชี้ backend ไม่ได้)
 - ❌ No email service (template only)
-- ⏳ Audit logging — backend routes exist in `backend/` (`POST /api/audit/log-view`, `GET /api/audit/logs`), not yet wired to frontend
-- ❌ No database (mock data)
+- ⏳ Audit logging — backend routes มีแล้ว (`POST /api/audit/log-view`, `GET /api/audit/logs`) แต่ frontend ยังไม่เรียก
+- ⚠️ `src/lib/idb.ts` เป็น dead code แล้ว (ไม่มีไฟล์ไหน import) — รอลบ
 - ✅ Authentication จริง (`POST /api/auth/login` เช็ครหัสผ่านด้วย bcrypt ที่ server, ออก JWT, ทุก request/WebSocket แนบ token)
 
 ### Ready to Address (With Backend)
-- ✅ ถอดเสียงไทยฝั่ง server ด้วย Typhoon ASR self-host (แทน Web Speech API ฝั่ง client)
+- ✅ ถอดเสียงไทยฝั่ง server ด้วย Typhoon ASR self-host — implement แล้ว รอทดสอบบน host จริง
 - 🔄 Claude AI summarization (API key ต้องมี)
 - 🔄 Email with .ics (Sendgrid/AWS SES)
 - 🔄 Signed URLs + wiring frontend to the existing audit trail backend routes
@@ -512,8 +504,8 @@ npm run dev
 | ✅ ความลับเอกสาร | ✅ | Watermark + blur + confidentiality levels |
 | ✅ สรุปประชุม AI | ✅ | Mock pipeline (transcript → summary → report) |
 | ✅ วิดีโอประชุมจริง | ✅ | ZegoCloud SDK ต่อจริง — ทดสอบ loginRoom สำเร็จ |
-| ✅ ดูแล้วไม่ต้องดาวน์โหลด | ✅ | IndexedDB + PDF/Markdown viewer |
-| ✅ Backend specification | ✅ | `backend/` folder (transcription/summarize — video token ไม่ต้องใช้ backend แล้ว) |
+| ✅ ดูแล้วไม่ต้องดาวน์โหลด | ✅ | ไฟล์จาก server + PDF/Markdown viewer |
+| ✅ Backend implementation | ✅ | `backend/` (auth/meetings/bookings/rooms/transcription/summarize/audit + realtime) |
 | ✅ Production seams | ✅ | Services abstracted (video, transcription, summarize) |
 
 ---
@@ -524,11 +516,13 @@ npm run dev
 - [x] **Deploy frontend** — Vercel production, ZegoCloud credential ตั้งเป็น env var บน Vercel แล้ว (ไม่ใช่แค่ dev `.env.local`)
 - [x] **Setup Backend Project** — Express + MySQL + JWT auth + WebSocket realtime server เขียนและเทสครบแล้ว (transcription/summarize/guest/rooms/realtime)
 - [x] **Containerise backend** — Dockerfile + compose stack พร้อมใช้ (`deploy/`)
-- [ ] **Deploy backend ขึ้น host จริง** — งานถัดไปลำดับแรก: เช่า VM, ตั้งโดเมน, รัน compose, ชี้ frontend มาที่ backend จริง
+- [x] **ย้าย meetings/bookings/files ขึ้น server** — MySQL, ไม่มี localStorage/IndexedDB แล้ว
+- [x] **Phase F: Server-Side Thai ASR** — implement ครบทุกชั้นแล้ว (sidecar + backend pipeline + frontend capture)
+- [ ] **Deploy backend ขึ้น host จริง** — งานถัดไปลำดับแรก: Render blueprint (`render.yaml`) + Aiven MySQL ตาม `deploy/RENDER.md`, ตั้งโดเมน, ชี้ frontend มาที่ backend จริง
 - [ ] **Email Service Setup** — Sendgrid/AWS SES account
 
 ### 2️⃣ Medium-term (2–4 weeks)
-- [ ] **Phase F: Server-Side Thai ASR** — implement ตาม `docs/superpowers/plans/2026-08-24-server-side-thai-asr.md` (แทนการประเมิน AssemblyAI/Azure STT — ตัดสินใจเลือก Typhoon self-host แล้ว)
+- [ ] **ทดสอบ ASR สองเครื่องจริง** — วัด CER/latency จากเสียงประชุมจริงบน host
 - [ ] **Phase D Testing** — Email → calendar → join workflow
 - [ ] **Phase 2 Security** — Wire frontend to existing audit logging backend routes + signed URLs + session management
 
@@ -553,6 +547,6 @@ npm run dev
 
 ---
 
-**Last Reviewed:** 2026-08-25 (ตรงกับ commit `a9515f9`)  
+**Last Reviewed:** 2026-08-31 (ตรงกับ commit `49d7ca3`)  
 **Prepared by:** Claude Code  
-**Next Review:** เมื่อ backend ขึ้น host จริง หรือเริ่ม implement Phase F (Server-Side Thai ASR)
+**Next Review:** เมื่อ backend ขึ้น host จริง หรือหลังทดสอบ ASR สองเครื่อง
