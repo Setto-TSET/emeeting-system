@@ -73,22 +73,26 @@ export function createApp(): Express {
   return app;
 }
 
+// เปิด port ก่อนต่อฐานข้อมูล — กลับด้านกันทำให้ platform ที่เช็ค /health
+// (Render, Railway) ไม่มีวันเห็น service ขึ้น live เลยถ้า DB ต่อไม่ติด:
+// request ค้างเงียบ ไม่มีแม้แต่ error หน้าเดียว และ log ก็เข้าไปดูสาเหตุไม่ได้
 async function start() {
+  const server = http.createServer(createApp());
+  attachRealtime(server);
+
+  server.listen(PORT, () => {
+    console.log(`✅ Server running on http://localhost:${PORT}`);
+    console.log(`✅ WebSocket listening on ws://localhost:${PORT}/ws`);
+  });
+
   try {
     console.log('🚀 Initializing database...');
     await initDatabase();
     console.log('✅ Database connected');
-
-    const server = http.createServer(createApp());
-    attachRealtime(server);
-
-    server.listen(PORT, () => {
-      console.log(`✅ Server running on http://localhost:${PORT}`);
-      console.log(`✅ WebSocket listening on ws://localhost:${PORT}/ws`);
-    });
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
+    // ไม่ปิด process ทิ้ง: เก็บ server ไว้ให้ /health ตอบ คนดูแลจะได้เห็น error นี้
+    // ใน log แทนจะเจอแค่ container ที่ restart วนไปเรื่อย — ทุก route ที่แตะ DB จะตอบ 500 ตามปกติ
+    console.error('❌ Database connection failed — API ที่ต้องใช้ DB จะตอบ 500 จนกว่าจะแก้:', error);
   }
 }
 

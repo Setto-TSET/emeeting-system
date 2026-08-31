@@ -7,9 +7,15 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// connectTimeout ต้องมีเสมอ: ค่าดีฟอลต์ของ mysql2 คือรอได้ไม่จำกัด
+// ถ้า host ปลายทางไม่ตอบ (firewall, URL ผิด, SSL ไม่ตรง) getConnection() จะค้างตลอดกาล
+// โดยไม่มี error ออกมาเลย — บน host จริงแปลว่า process เงียบจนคน debug ไม่ได้
+const CONNECT_TIMEOUT_MS = 15_000;
+
 const pool = process.env.DATABASE_URL
-  ? mysql.createPool(process.env.DATABASE_URL)
+  ? mysql.createPool({ uri: process.env.DATABASE_URL, connectTimeout: CONNECT_TIMEOUT_MS })
   : mysql.createPool({
+      connectTimeout: CONNECT_TIMEOUT_MS,
       host: process.env.DB_HOST || 'localhost',
       port: parseInt(process.env.DB_PORT || '3306'),
       user: process.env.DB_USER || 'root',
