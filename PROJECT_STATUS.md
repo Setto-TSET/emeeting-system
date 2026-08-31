@@ -1,8 +1,8 @@
 # e-Meeting System — Project Status Report
 
 **Project:** ระบบประชุมออนไลน์พร้อมความลับ + สรุปประชุมอัตโนมัติ + ZegoCloud Integration  
-**Status:** Phase 0–C Complete + Guest Join Complete + ZegoCloud Real SDK Integrated + Phase E (Voting/Hand Raise/Subtitle/Doc-Share Sync) Complete + **Frontend deployed to Vercel production** + **Backend containerised พร้อม deploy (docker compose)** — Phase F (Server-Side Thai ASR) ออกแบบเสร็จแล้วแต่ยังไม่เริ่มเขียนโค้ด, Zoom Room SIP bridge still blocked on licensing  
-**Last Updated:** 2026-08-25  
+**Status:** Phase 0–C Complete + Guest Join Complete + ZegoCloud Real SDK Integrated + Phase E (Voting/Hand Raise/Subtitle/Doc-Share Sync) Complete + **Phase F (Server-Side Thai ASR) เขียนโค้ดครบทุกชั้นแล้ว** + **ข้อมูลหลัก (การประชุม / ไฟล์เอกสาร / การจองห้อง) ย้ายขึ้น server หมดแล้ว** + Frontend อยู่บน Vercel production — งานค้างคือ **deploy backend ขึ้น Render + Aiven MySQL ให้สำเร็จ** (blueprint พร้อมแล้ว ยังไม่มี URL จริง), Zoom Room SIP bridge still blocked on licensing  
+**Last Updated:** 2026-08-31  
 **Repository:** https://github.com/Setto-TSET/emeeting-system  
 **Production:** https://meeting-system-features-40fa4d.vercel.app
 
@@ -22,7 +22,8 @@
 - ✅ Guest Join — Magic Link flow (เชิญบุคคลภายนอกเข้าประชุมโดยไม่ต้องสร้างบัญชี, ใช้งานได้จริงแล้ว ไม่ใช่แค่ plan)
 - ✅ โหวตแบบ realtime, ยกมือแบบ realtime, ซับไตเติลสด (ถอดเสียงที่ server ด้วย Typhoon ASR self-host ใช้ได้ทุกเบราว์เซอร์ที่รองรับ AudioWorklet), ถอดคำพูด + แชร์เอกสารซิงค์ — ผ่าน WebSocket backend ที่ authenticate ด้วย JWT แล้ว **sync ข้ามเครื่อง/ข้ามเบราว์เซอร์ได้จริง** state ทั้งหมดเก็บที่ server (MySQL) ไม่ใช่ per-tab อีกต่อไป, คนเข้าห้องทีหลังดึง snapshot ปัจจุบันผ่าน `GET /api/rooms/:meetingId/state` (ดู README.md)
 - ✅ Backend containerised แล้ว — `backend/Dockerfile` + `deploy/docker-compose.yml` (MySQL 8 + backend + Caddy reverse proxy พร้อม TLS อัตโนมัติ) + `deploy/.env.example` เหลือแค่ยกขึ้น host จริง
-- ✅ Design spec + implementation plan ของ **Server-Side Thai ASR (Typhoon self-host)** เขียนและอนุมัติแล้ว พร้อมผลวัด CER/latency จริง (ยังไม่ implement)
+- ✅ **Server-Side Thai ASR (Typhoon self-host)** — เขียนครบทุกชั้นแล้ว (sidecar `asr/` + backend pipeline + การจับเสียงในเบราว์เซอร์) เหลือทดสอบสองเครื่องจริง + วัด CER จากเสียงประชุมจริง
+- ✅ **ข้อมูลย้ายขึ้น server หมดแล้ว (2026-08-27)** — การประชุม (เดิม localStorage), ไฟล์เอกสาร (เดิม IndexedDB) และการจองห้อง (เดิม localStorage) อยู่ใน MySQL ทั้งหมด — สร้างประชุมที่เครื่องหนึ่ง คนอื่นเห็นและเข้าห้องได้จริง
 
 ### ⏳ ยังเลื่อน
 - ❌ Backend deploy จริง (โค้ด + DB schema + auth + WebSocket realtime เขียนและเทสครบแล้ว, containerise + compose stack พร้อมแล้ว — เหลือแค่ยกขึ้น host จริงกับตั้งโดเมน/TLS)
@@ -191,18 +192,27 @@ Replaces the earlier Webex mock as the primary video engine seam.
 | Compose stack: MySQL 8 + backend + Caddy reverse proxy | ✅ | `deploy/docker-compose.yml` |
 | Reverse proxy + automatic TLS | ✅ | `deploy/Caddyfile` |
 | Environment template + เอกสาร backend env | ✅ | `deploy/.env.example`, `backend/.env.example`, `backend/README.md` |
-| ยกขึ้น host จริง + ตั้งโดเมน | ⏳ | ยังไม่ได้ทำ — งานถัดไปลำดับแรก |
+| Render blueprint (Docker จาก `backend/Dockerfile`, 1 instance) | ✅ | `render.yaml`, `deploy/RENDER.md` (2026-08-27) |
+| คู่มือ deploy ทางเลือก (Koyeb + Aiven) | ✅ | `deploy/KOYEB.md`, `deploy/koyeb-deploy.sh` |
+| Vercel service config (frontend) | ✅ | `vercel.json` — เคยลบแล้ว revert กลับ โปรเจกต์ใช้ framework preset `services` จึงต้องมีไฟล์นี้ (commit `49d7ca3`) |
+| ยกขึ้น host จริง (Render + Aiven) + ชี้ frontend มาที่ backend จริง | ⏳ | ยังไม่ได้ทำ — **งานถัดไปลำดับแรก** ทำตาม `deploy/RENDER.md` |
 
 ---
 
-### Phase F: Server-Side Thai ASR (Typhoon) 📝 DESIGN COMPLETE — NOT IMPLEMENTED
+### Phase F: Server-Side Thai ASR (Typhoon) ✅ CODE COMPLETE — รอทดสอบกับเสียงจริง (2026-08-25)
 | Component | Status | File |
 |---|---|---|
 | Design spec (พร้อมผลวัด CER/latency จริง) | ✅ | `docs/superpowers/specs/2026-08-24-server-side-thai-asr-design.md` |
 | Implementation plan (task-by-task) | ✅ | `docs/superpowers/plans/2026-08-24-server-side-thai-asr.md` |
-| ASR sidecar (Python + FastAPI + typhoon-asr) | ❌ | `asr/` ยังไม่มี |
-| Backend audio pipeline | ❌ | `backend/src/realtime/audio.ts`, `asrClient.ts` ยังไม่มี |
-| Frontend PCM capture (AudioWorklet) | ❌ | `src/services/speech/pcm.ts`, `public/pcm-worklet.js` ยังไม่มี |
+| ASR sidecar (Python + FastAPI + typhoon-asr) | ✅ | `asr/server.py`, `asr/Dockerfile`, `asr/tests/test_server.py` |
+| Backend audio pipeline (แกะ frame, ตัดช่วงซ้ำ, จำกัดงานต่อห้อง) | ✅ | `backend/src/realtime/audio.ts`, `asrClient.ts` |
+| Frontend PCM capture (AudioWorklet) | ✅ | `src/services/speech/pcm.ts`, `audioCapture.ts`, `public/pcm-worklet.js` |
+| Sidecar ใน compose stack | ✅ | `deploy/docker-compose.yml` (commit `0e1aaf7`) |
+| ทดสอบสองเครื่องจริง + วัด CER จากเสียงประชุมจริง | ⏳ | ยังไม่ได้ทำ |
+
+> หมายเหตุ: sidecar อยู่ใน `deploy/docker-compose.yml` (VM จริง) แต่ **ไม่ได้อยู่ใน `render.yaml`
+> และไม่มีใน `deploy/RENDER.md` / `deploy/KOYEB.md`** — deploy ตามคู่มือสองไฟล์นั้นแล้ว `ASR_URL`
+> จะไม่ถูกตั้ง คำบรรยายสดจึงยังไม่ทำงาน ต้องหาที่รัน sidecar เพิ่มก่อน
 
 **เหตุผล:** Web Speech API มีเฉพาะ Chromium (Safari/Firefox/มือถือบางรุ่นไม่มีคำบรรยายเลย), คุณภาพภาษาไทยปรับแต่งไม่ได้ และเสียงออกนอกองค์กร (ส่งไปประมวลผลที่ Google) ซึ่งขัดกับจุดขายเรื่องความลับของระบบ — แผนคือ self-host Typhoon ASR บน VM เดียวกับ backend แล้วเข้าเส้นทาง `subtitle_text` เดิม
 
@@ -440,12 +450,13 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 
 ## 📞 Known Limitations & Future Work
 
-### Current (Frontend Only)
+### Current
 - ✅ ZegoCloud SDK จริง (ไม่ใช่ placeholder แล้ว — Webex ถูกตัดออกทั้งหมด)
-- ❌ No backend API (localStorage only, ยกเว้น video token ที่ผ่าน Next.js API route แล้ว)
+- ✅ Backend API + MySQL จริง — auth, การประชุม, ไฟล์เอกสาร, การจองห้อง, realtime state อยู่ที่ server หมดแล้ว
+- ❌ ยังไม่มี backend ที่ deploy จริง — frontend production ชี้ `NEXT_PUBLIC_API_BASE_URL` ไปที่ localhost อยู่ จึงเล่นจริงได้เฉพาะเครื่อง dev
 - ❌ No email service (template only)
 - ⏳ Audit logging — backend routes exist in `backend/` (`POST /api/audit/log-view`, `GET /api/audit/logs`), not yet wired to frontend
-- ❌ No database (mock data)
+- ⏳ คณะทำงาน (committees), ห้องประชุม (rooms) และ magic link ของแขกรับเชิญ ยังเป็นข้อมูลในเครื่อง (`src/data/index.ts`, `src/lib/inviteTokens.ts`) — สิทธิ์ของเลขานุการต่อคณะทำงานจึงยังบังคับที่ server ไม่ได้
 - ✅ Authentication จริง (`POST /api/auth/login` เช็ครหัสผ่านด้วย bcrypt ที่ server, ออก JWT, ทุก request/WebSocket แนบ token)
 
 ### Ready to Address (With Backend)
@@ -524,11 +535,14 @@ npm run dev
 - [x] **Deploy frontend** — Vercel production, ZegoCloud credential ตั้งเป็น env var บน Vercel แล้ว (ไม่ใช่แค่ dev `.env.local`)
 - [x] **Setup Backend Project** — Express + MySQL + JWT auth + WebSocket realtime server เขียนและเทสครบแล้ว (transcription/summarize/guest/rooms/realtime)
 - [x] **Containerise backend** — Dockerfile + compose stack พร้อมใช้ (`deploy/`)
-- [ ] **Deploy backend ขึ้น host จริง** — งานถัดไปลำดับแรก: เช่า VM, ตั้งโดเมน, รัน compose, ชี้ frontend มาที่ backend จริง
+- [x] **ย้ายข้อมูลหลักขึ้น server** — การประชุม + ไฟล์เอกสาร + การจองห้อง (2026-08-27)
+- [ ] **Deploy backend ขึ้น host จริง** — **งานถัดไปลำดับแรก**: สร้าง Aiven MySQL → รัน migrate/seed จากเครื่อง dev → Render blueprint → ตั้ง `NEXT_PUBLIC_API_BASE_URL` / `NEXT_PUBLIC_WS_URL` / `CORS_ORIGIN` ให้ตรงกัน (`deploy/RENDER.md`)
+- [ ] **ทดสอบสองเครื่องจริง** — โหวต/ยกมือ/ซับไตเติล/แชร์เอกสาร ข้ามเครื่อง หลัง backend ขึ้นแล้ว
 - [ ] **Email Service Setup** — Sendgrid/AWS SES account
 
 ### 2️⃣ Medium-term (2–4 weeks)
-- [ ] **Phase F: Server-Side Thai ASR** — implement ตาม `docs/superpowers/plans/2026-08-24-server-side-thai-asr.md` (แทนการประเมิน AssemblyAI/Azure STT — ตัดสินใจเลือก Typhoon self-host แล้ว)
+- [ ] **Phase F: วัดคุณภาพ ASR จริง** — โค้ดครบแล้ว เหลือหา host ที่รัน sidecar ไหว (Render free ไม่พอ) + วัด CER จากเสียงประชุมจริง
+- [ ] **ย้ายคณะทำงาน (committees) ขึ้น DB** — ตอนนี้ `meetingAccess.ts` ปฏิเสธกรณีที่สิทธิ์มาจากคณะทำงาน เพราะ JWT ไม่มีข้อมูลนั้น
 - [ ] **Phase D Testing** — Email → calendar → join workflow
 - [ ] **Phase 2 Security** — Wire frontend to existing audit logging backend routes + signed URLs + session management
 
@@ -553,6 +567,6 @@ npm run dev
 
 ---
 
-**Last Reviewed:** 2026-08-25 (ตรงกับ commit `a9515f9`)  
+**Last Reviewed:** 2026-08-31 (ตรงกับ commit `49d7ca3`)  
 **Prepared by:** Claude Code  
-**Next Review:** เมื่อ backend ขึ้น host จริง หรือเริ่ม implement Phase F (Server-Side Thai ASR)
+**Next Review:** เมื่อ backend ขึ้น Render + Aiven สำเร็จ และ frontend production ชี้มาที่ backend จริงได้
