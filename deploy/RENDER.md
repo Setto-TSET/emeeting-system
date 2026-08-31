@@ -62,6 +62,12 @@
    | `DATABASE_URL` | Service URI ที่แปลงแล้วจากข้อ 1 |
    | `CORS_ORIGIN` | โดเมน Vercel เช่น `https://emeeting-system.vercel.app` (ยังไม่รู้ ใส่ทีหลังได้) |
    | `CLAUDE_API_KEY` | เว้นว่างได้ ถ้าไม่ใช้ฟีเจอร์สรุปด้วย AI |
+   | `ASR_URL` | URL ของ ASR sidecar สำหรับคำบรรยายสด เว้นว่างได้ (ดูหมายเหตุล่าง) |
+
+   > **คำบรรยายสด (ASR) ยังไม่มีที่รันบน free tier** — `asr/` ต้องโหลดโมเดล typhoon-asr
+   > ซึ่งกินแรมเกินโควตา Render free ส่วนอื่นของระบบทำงานครบโดยไม่ต้องมี ASR
+   > ถ้าไม่ตั้ง `ASR_URL` backend จะเรียก `http://localhost:8000` ซึ่งไม่มีอยู่จริงบน Render
+   > ผลคือคำบรรยายเงียบไปเฉย ๆ ไม่มี error ที่หน้าเว็บ — ตั้งใจให้เป็นแบบนั้น
 
    `JWT_SECRET` ไม่ต้องกรอก — `render.yaml` สั่งให้ Render สุ่มให้เอง
 4. กด Apply แล้วรอ build (~3-5 นาทีครั้งแรก) จดโดเมนที่ได้ เช่น `emeeting-backend.onrender.com`

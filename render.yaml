@@ -34,3 +34,7 @@ services:
       # ใช้เฉพาะฟีเจอร์สรุปการประชุมด้วย AI — เว้นว่างได้ ระบบอื่นทำงานปกติ
       - key: CLAUDE_API_KEY
         sync: false
+      # URL ของ ASR sidecar (คำบรรยายสด) — ไม่ใส่แล้วจะไปเรียก localhost:8000 ซึ่งไม่มีบน Render
+      # คำบรรยายจะเงียบไปโดยไม่มี error ที่หน้าเว็บ ระบบอื่นทำงานปกติ
+      - key: ASR_URL
+        sync: false
