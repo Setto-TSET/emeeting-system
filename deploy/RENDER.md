@@ -105,6 +105,16 @@
 4. จองห้องประชุมจากเครื่องหนึ่ง อีกเครื่องต้องเห็นห้องนั้นไม่ว่างแล้ว
 5. อัปโหลดเอกสารในการประชุม → อีกคนต้องเปิดไฟล์เดียวกันได้
 
+## หมายเหตุ: โปรเจค `asr` บน Vercel
+
+Vercel ตรวจเจอ repo นี้เป็น monorepo เลยสร้างโปรเจคชื่อ `asr` (root directory `asr/`) ขึ้นมา
+แต่ `asr/` เป็น Python + FastAPI ที่รันด้วย Docker — Vercel build ไม่ได้ ทุก commit จึงขึ้น CI แดง
+
+`asr/vercel.json` สั่งข้าม build ของโปรเจคนั้นไว้ (`ignoreCommand: exit 0`) CI จึงขึ้น skipped แทน failed
+ถ้าอยากเก็บกวาดให้สะอาดจริง ให้ลบโปรเจค `asr` ทิ้งที่หน้า Vercel dashboard แล้วลบไฟล์นี้ออก
+
+---
+
 ## 5. อัปเดตหลังจากนี้
 
 `autoDeploy: true` — push เข้า branch หลักแล้ว Render กับ Vercel build ใหม่ให้เอง
