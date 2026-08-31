@@ -31,7 +31,11 @@ router.use(authMiddleware);
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 function actorOf(req: Request): Actor {
-  return { id: req.user!.id, role: req.user!.role };
+  return {
+    id: req.user!.id,
+    role: req.user!.role,
+    ...(req.user!.meetingId ? { meetingId: req.user!.meetingId } : {}),
+  };
 }
 
 /** โหลดการประชุมพร้อมเช็คสิทธิ์ดู — คืน null แล้วตอบไปแล้วถ้าไม่ผ่าน */
@@ -52,7 +56,7 @@ async function loadViewable(req: Request, res: Response): Promise<MeetingPayload
 router.get(
   '/',
   asyncHandler(async (req: Request, res: Response) => {
-    const meetings = await listMeetingsForUser(req.user!.id, req.user!.role);
+    const meetings = await listMeetingsForUser(req.user!.id, req.user!.role, req.user!.meetingId);
     res.json({ meetings });
   })
 );

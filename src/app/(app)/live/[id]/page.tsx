@@ -135,6 +135,24 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
         p.id === existing.id ? { ...p, present: true } : p
       );
       updateMeeting(meeting.id, { participants: updatedParticipants });
+    } else if (currentUser.id.startsWith("guest-")) {
+      // แขกที่มาจากลิงก์เชิญกรอกชื่อไปแล้วที่หน้า /join — ไม่ต้องถามซ้ำ
+      // ตัวตนต้องเป็น id ที่ backend ออกให้เท่านั้น ถ้าสร้าง id ใหม่ตรงนี้ ZegoCloud จะปฏิเสธ
+      // ตอน login (token ผูกกับ user_id เดิม — error 50122 token userId err)
+      // ⚠️ ไม่เขียนกลับเข้า roster เหมือนกรณีผู้จัด — แขกไม่มีบัญชี เขียนแล้ว server ปฏิเสธ
+      setLocalParticipant({
+        id: `P-guest-${currentUser.id}`,
+        userId: currentUser.id,
+        name: currentUser.name,
+        position: currentUser.position,
+        role: currentUser.position,
+        department: currentUser.department,
+        email: currentUser.email,
+        attendance: "attend",
+        present: true,
+        inSystem: false,
+      });
+      setHasJoined(true);
     } else if (currentUser.systemRole === "admin" || currentUser.systemRole === "secretary") {
       // ผู้จัดการเข้าห้องได้เลยโดยไม่ต้องผ่านฟอร์ม guest
       // ⚠️ ห้ามเขียนกลับเข้า roster ของประชุม — ไม่งั้นทุกครั้งที่ admin เปิดดู

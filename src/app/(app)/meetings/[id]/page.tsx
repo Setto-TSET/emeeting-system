@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, use, useEffect } from "react";
+import { useState, useRef, use, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +25,14 @@ import { putFile, formatBytes } from "@/services/fileStorage";
 import { can, canEditMeeting, denialReason } from "@/lib/authz";
 import { useCurrentUser } from "@/context/UserContext";
 import { useMeetings } from "@/context/MeetingContext";
-import { createInviteToken, getTokensForMeeting, revokeToken, buildJoinUrl, type InviteToken } from "@/lib/inviteTokens";
+import { buildJoinUrl } from "@/lib/inviteTokens";
+import {
+  fetchInvites,
+  createInvite as createInviteOnServer,
+  revokeInvite as revokeInviteOnServer,
+  type Invite,
+} from "@/services/api/invites";
+import { ApiError } from "@/services/api/client";
 import { downloadIcs } from "@/lib/calendar";
 import { generateMockTranscript } from "@/services/transcription/mockProvider";
 import { mockSummarizer } from "@/services/summarize/mockSummarizer";
@@ -125,25 +132,45 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   // ─── Magic Link guest invite ───
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
-  const [inviteTokens, setInviteTokens] = useState<InviteToken[]>([]);
+  const [inviteTokens, setInviteTokens] = useState<Invite[]>([]);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
-  const [showEmailPreview, setShowEmailPreview] = useState<InviteToken | null>(null);
+  const [showEmailPreview, setShowEmailPreview] = useState<Invite | null>(null);
+  const [invitingBusy, setInvitingBusy] = useState(false);
 
-  useEffect(() => {
-    setInviteTokens(getTokensForMeeting(meeting.id));
+  // ลิงก์เชิญอยู่ที่ server แล้ว — 403 คือ "ไม่ใช่ผู้จัด" ไม่ใช่ข้อผิดพลาด ปล่อยรายการว่างไว้เฉยๆ
+  const reloadInvites = useCallback(async () => {
+    try {
+      setInviteTokens(await fetchInvites(meeting.id));
+    } catch (e) {
+      if (!(e instanceof ApiError) || (e.status !== 403 && e.status !== 401)) {
+        toast.error(e instanceof ApiError ? e.message : "โหลดลิงก์เชิญไม่สำเร็จ");
+      }
+      setInviteTokens([]);
+    }
   }, [meeting.id]);
 
-  const handleSendInvite = () => {
+  useEffect(() => {
+    void reloadInvites();
+  }, [reloadInvites]);
+
+  const handleSendInvite = async () => {
     if (!inviteEmail.trim()) {
       toast.error("กรุณาระบุ email ของผู้ได้รับเชิญ");
       return;
     }
-    const token = createInviteToken(meeting.id, inviteEmail.trim(), currentUser.name, inviteName.trim() || undefined);
-    setInviteTokens(getTokensForMeeting(meeting.id));
-    setInviteEmail("");
-    setInviteName("");
-    setShowEmailPreview(token);
-    toast.success("สร้าง Magic Link สำเร็จ", { description: `ส่งให้ ${inviteEmail.trim()}` });
+    setInvitingBusy(true);
+    try {
+      const invite = await createInviteOnServer(meeting.id, inviteEmail.trim(), inviteName.trim() || undefined);
+      await reloadInvites();
+      setInviteEmail("");
+      setInviteName("");
+      setShowEmailPreview(invite);
+      toast.success("สร้าง Magic Link สำเร็จ", { description: `ส่งให้ ${inviteEmail.trim()}` });
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "สร้างลิงก์เชิญไม่สำเร็จ");
+    } finally {
+      setInvitingBusy(false);
+    }
   };
 
   const handleCopyLink = (token: string) => {
@@ -154,10 +181,14 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     setTimeout(() => setCopiedToken(null), 2000);
   };
 
-  const handleRevokeToken = (tokenId: string) => {
-    revokeToken(tokenId);
-    setInviteTokens(getTokensForMeeting(meeting.id));
-    toast.success("ยกเลิกลิงก์เชิญแล้ว");
+  const handleRevokeToken = async (tokenId: string) => {
+    try {
+      await revokeInviteOnServer(tokenId);
+      await reloadInvites();
+      toast.success("ยกเลิกลิงก์เชิญแล้ว");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "ยกเลิกลิงก์เชิญไม่สำเร็จ");
+    }
   };
 
   // ─── Phase C-4: Transcript + Summary pipeline ───
@@ -230,11 +261,12 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     const now = new Date().toISOString();
     updateMeeting(meeting.id, { status: "notified", notifiedAt: now });
 
-    for (const ext of extList) {
-      if (ext.email && ext.email !== "-") {
-        createInviteToken(meeting.id, ext.email, currentUser.name, ext.name);
-      }
-    }
+    // ออกลิงก์ให้บุคคลภายนอกทุกคนพร้อมกัน — ล้มไปคนหนึ่งไม่ควรทำให้ทั้งชุดหยุด
+    void Promise.allSettled(
+      extList
+        .filter((ext) => ext.email && ext.email !== "-")
+        .map((ext) => createInviteOnServer(meeting.id, ext.email, ext.name))
+    ).then(reloadInvites);
 
     toast.success("ส่ง Email แจ้งวาระเรียบร้อย", {
       description: `แจ้งคนในระบบ ${sysCount} ราย, บุคคลภายนอก ${extCount} ราย`,
@@ -1110,7 +1142,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                         placeholder="ชื่อ (ไม่บังคับ)"
                         className="h-9 text-sm sm:w-44"
                       />
-                      <Button size="sm" onClick={handleSendInvite} className="h-9 px-4 flex-shrink-0">
+                      <Button size="sm" onClick={handleSendInvite} disabled={invitingBusy} className="h-9 px-4 flex-shrink-0">
                         <span className="material-symbols-outlined text-[16px] mr-1">send</span>
                         สร้างลิงก์เชิญ
                       </Button>
@@ -1122,16 +1154,16 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                         <p className="text-[11px] text-muted-foreground font-medium">ลิงก์ที่สร้างแล้ว ({inviteTokens.length})</p>
                         <div className="space-y-1">
                           {inviteTokens.map((t) => (
-                            <div key={t.token} className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11px] ${t.used ? "bg-muted/50 opacity-60" : "bg-background"}`}>
+                            <div key={t.token} className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11px] ${t.status !== "active" ? "bg-muted/50 opacity-60" : "bg-background"}`}>
                               <span className="material-symbols-outlined text-[14px] text-muted-foreground">
-                                {t.used ? "check_circle" : "link"}
+                                {t.status === "used" ? "check_circle" : t.status === "active" ? "link" : "link_off"}
                               </span>
                               <span className="truncate flex-1 font-medium">{t.guestEmail}</span>
                               {t.guestName && <span className="text-muted-foreground">({t.guestName})</span>}
                               <span className="text-muted-foreground flex-shrink-0">
-                                {t.used ? "ใช้แล้ว" : `หมดอายุ ${new Date(t.expiresAt).toLocaleDateString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`}
+                                {t.status === "used" ? `ใช้แล้ว — ${t.usedByName ?? ""}` : t.status === "revoked" ? "ยกเลิกแล้ว" : t.status === "expired" ? "หมดอายุแล้ว" : `หมดอายุ ${new Date(t.expiresAt).toLocaleDateString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`}
                               </span>
-                              {!t.used && (
+                              {t.status === "active" && (
                                 <>
                                   <Button
                                     variant="ghost"

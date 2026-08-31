@@ -15,6 +15,7 @@ import roomsRoutes from './routes/rooms';
 import meetingsRoutes, { filesRouter } from './routes/meetings';
 import auditRoutes from './routes/audit';
 import bookingsRoutes from './routes/bookings';
+import { publicInvitesRouter, invitesRouter, meetingInvitesRouter } from './routes/invites';
 import { attachRealtime } from './realtime/server';
 
 dotenv.config();
@@ -61,6 +62,11 @@ export function createApp(): Express {
   app.use('/api/summarize', authMiddleware, summarizeRoutes);
   app.use('/api/audit', authMiddleware, auditRoutes);
   app.use('/api/rooms', roomsRoutes);
+  // ลิงก์เชิญของการประชุม — ต้องมาก่อน /api/meetings ไม่งั้น router ของ meetings กลืน :id ไปก่อน
+  app.use('/api/meetings/:id/invites', meetingInvitesRouter);
+  // เปิดลิงก์กับกดยอมรับไม่ต้องล็อกอิน ที่เหลือต้อง — จึงแยกเป็นสอง router บน path เดียวกัน
+  app.use('/api/invites', publicInvitesRouter);
+  app.use('/api/invites', invitesRouter);
   app.use('/api/meetings', meetingsRoutes);
   app.use('/api/files', filesRouter);
   app.use('/api/bookings', bookingsRoutes);

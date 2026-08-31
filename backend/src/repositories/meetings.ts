@@ -114,8 +114,16 @@ export async function getMeeting(meetingId: string): Promise<MeetingPayload | nu
  */
 export async function listMeetingsForUser(
   userId: string,
-  role: string
+  role: string,
+  guestMeetingId?: string
 ): Promise<MeetingPayload[]> {
+  // แขกเห็นเฉพาะการประชุมที่ token ผูกไว้ — ไม่มีแถวใน meeting_participants ให้ JOIN
+  if (role === 'guest') {
+    if (!guestMeetingId) return [];
+    const rows = (await query('SELECT * FROM meetings WHERE id = ?', [guestMeetingId])) as MeetingRow[];
+    return rows.map(toMeeting);
+  }
+
   const rows =
     role === 'admin'
       ? ((await query('SELECT * FROM meetings ORDER BY meeting_date DESC')) as MeetingRow[])

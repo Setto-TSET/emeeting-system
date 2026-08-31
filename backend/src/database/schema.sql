@@ -138,3 +138,21 @@ CREATE TABLE IF NOT EXISTS room_bookings (
   INDEX idx_bookings_room_date (room_id, booking_date, status),
   INDEX idx_bookings_owner (booked_by_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ลิงก์เชิญบุคคลภายนอก — เดิมเก็บใน localStorage ของผู้เชิญ คนรับลิงก์จึงเปิดไม่ได้เลย
+-- ใช้ครั้งเดียว: used_at ว่างแปลว่ายังใช้ได้ ตัดสินด้วย UPDATE ... WHERE used_at IS NULL
+-- ไม่ลบแถวเมื่อเพิกถอนหรือใช้แล้ว — ต้องตรวจย้อนหลังได้ว่าใครออกลิงก์ให้ใคร
+CREATE TABLE IF NOT EXISTS meeting_invites (
+  token        VARCHAR(64)  NOT NULL PRIMARY KEY,
+  meeting_id   VARCHAR(64)  NOT NULL,
+  guest_email  VARCHAR(255) NOT NULL,
+  guest_name   VARCHAR(255) NULL,
+  created_by   VARCHAR(64)  NOT NULL,
+  created_by_name VARCHAR(255) NOT NULL DEFAULT '',
+  created_at   BIGINT       NOT NULL,
+  expires_at   BIGINT       NOT NULL,
+  used_at      BIGINT       NULL,
+  used_by_name VARCHAR(255) NULL,
+  revoked_at   BIGINT       NULL,
+  INDEX idx_invites_meeting (meeting_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

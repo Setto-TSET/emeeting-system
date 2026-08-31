@@ -27,7 +27,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
       const stored =
         sessionStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(STORAGE_KEY);
       const parsed = stored ? JSON.parse(stored) : null;
-      const resolved = users.find((u) => u.id === parsed?.id) ?? users[0];
+      // แขกที่เข้ามาด้วยลิงก์เชิญไม่มีแถวใน users (id ขึ้นต้น "guest-" ที่ backend ออกให้)
+      // ถ้าค้นไม่เจอแล้วตกไป users[0] ตัวตนของแขกจะหายทันทีที่รีเฟรชหน้าห้องประชุม
+      const resolved: AppUser =
+        typeof parsed?.id === "string" && parsed.id.startsWith("guest-")
+          ? parsed
+          : users.find((u) => u.id === parsed?.id) ?? users[0];
       setCurrentUser(resolved);
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(resolved));
     } catch (e) {

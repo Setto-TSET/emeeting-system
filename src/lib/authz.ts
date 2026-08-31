@@ -84,6 +84,13 @@ export function can(user: AppUser, action: MeetingAction, meeting: Meeting): boo
   // admin ผ่านทุกอย่าง — รวมไว้จุดเดียว ไม่กระจายไปเช็คตามที่ต่างๆ
   if (isAdmin(user)) return true;
 
+  // แขกที่เข้ามาด้วยลิงก์เชิญ — ไม่มีแถวใน participants เพราะไม่มีบัญชีในระบบ
+  // token ของแขกผูกกับการประชุมเดียว และ backend ส่งกลับมาแค่ห้องนั้นห้องเดียว
+  // (ดู listMeetingsForUser / canViewMeeting ฝั่ง server) ที่นี่จึงเหลือแค่ปลดหน้าจอให้ตรงกัน
+  if (user.id.startsWith("guest-")) {
+    return action === "meeting.view" || action === "meeting.join";
+  }
+
   // room account — เข้าร่วมและดูได้เฉพาะประชุมที่จัดในห้องนี้
   if (user.systemRole === "room") {
     const isInMyRoom =

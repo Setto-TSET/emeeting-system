@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { verifyToken, markTokenUsed, type InviteToken } from "@/lib/inviteTokens";
-import { useMeetings } from "@/context/MeetingContext";
-import type { Meeting } from "@/data";
+import { openInvite, acceptInvite, type InviteView, type InviteMeetingView, type InviteRejection } from "@/services/api/invites";
+import { setAccessToken, ApiError } from "@/services/api/client";
+import { useCurrentUser } from "@/context/UserContext";
 
 const guestRoles = [
   "ผู้ทรงคุณวุฒิภายนอก",
@@ -21,38 +21,42 @@ const guestRoles = [
 
 type PageState =
   | { kind: "loading" }
-  | { kind: "valid"; invite: InviteToken; meeting: Meeting }
-  | { kind: "error"; reason: "not_found" | "expired" | "already_used" | "meeting_not_found" };
+  | { kind: "valid"; invite: InviteView; meeting: InviteMeetingView }
+  | { kind: "error"; reason: InviteRejection };
 
 export default function JoinByTokenPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const router = useRouter();
-  const { meetings, joinMeetingAsExternal } = useMeetings();
+  const { setCurrentUser } = useCurrentUser();
   const [state, setState] = useState<PageState>({ kind: "loading" });
   const [guestName, setGuestName] = useState("");
   const [guestRole, setGuestRole] = useState<string>(guestRoles[0]);
   const [joining, setJoining] = useState(false);
 
+  // อ่านจาก endpoint สาธารณะ — แขกยังไม่ล็อกอิน จะพึ่ง useMeetings() ไม่ได้
   useEffect(() => {
-    if (meetings.length === 0) return;
+    let cancelled = false;
 
-    const result = verifyToken(token);
-    if (!result.ok) {
-      setState({ kind: "error", reason: result.reason });
-      return;
-    }
+    openInvite(token)
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.ok) {
+          setState({ kind: "error", reason: result.reason });
+          return;
+        }
+        setState({ kind: "valid", invite: result.invite, meeting: result.meeting });
+        if (result.invite.guestName) setGuestName(result.invite.guestName);
+      })
+      .catch(() => {
+        if (!cancelled) setState({ kind: "error", reason: "not_found" });
+      });
 
-    const meeting = meetings.find((m) => m.id === result.invite.meetingId);
-    if (!meeting) {
-      setState({ kind: "error", reason: "meeting_not_found" });
-      return;
-    }
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
-    setState({ kind: "valid", invite: result.invite, meeting });
-    if (result.invite.guestName) setGuestName(result.invite.guestName);
-  }, [token, meetings]);
-
-  const handleJoin = (e: React.FormEvent) => {
+  const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (state.kind !== "valid") return;
     if (!guestName.trim()) {
@@ -61,13 +65,31 @@ export default function JoinByTokenPage({ params }: { params: Promise<{ token: s
     }
 
     setJoining(true);
-    markTokenUsed(token);
-    joinMeetingAsExternal(state.meeting.id, guestName.trim(), guestRole);
-    toast.success("เข้าร่วมประชุมสำเร็จ!", { description: state.meeting.name });
+    try {
+      const result = await acceptInvite(token, guestName.trim(), guestRole);
+      if (!result.ok) {
+        setState({ kind: "error", reason: result.reason });
+        return;
+      }
 
-    setTimeout(() => {
-      router.push(`/live/${state.meeting.id}`);
-    }, 800);
+      // guest JWT ผูกกับการประชุมนี้ห้องเดียว — WebSocket ของห้อง live ตรวจฟิลด์นี้
+      setAccessToken(result.token);
+      setCurrentUser({
+        id: result.user.id,
+        name: result.user.name,
+        position: guestRole,
+        department: "ภายนอกองค์กร",
+        email: result.user.email,
+        systemRole: "external",
+        committeeIds: [],
+      });
+
+      toast.success("เข้าร่วมประชุมสำเร็จ!", { description: result.meeting.name });
+      router.push(`/live/${result.meeting.id}`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "เข้าร่วมประชุมไม่สำเร็จ");
+      setJoining(false);
+    }
   };
 
   const errorMessages: Record<string, { icon: string; title: string; desc: string }> = {
@@ -85,6 +107,11 @@ export default function JoinByTokenPage({ params }: { params: Promise<{ token: s
       icon: "check_circle",
       title: "ลิงก์ถูกใช้ไปแล้ว",
       desc: "ลิงก์นี้ถูกใช้เข้าร่วมประชุมแล้ว หากต้องการเข้าอีกครั้ง กรุณาขอลิงก์ใหม่",
+    },
+    revoked: {
+      icon: "link_off",
+      title: "ลิงก์ถูกยกเลิก",
+      desc: "ผู้จัดประชุมยกเลิกลิงก์เชิญนี้แล้ว กรุณาติดต่อผู้จัดประชุม",
     },
     meeting_not_found: {
       icon: "event_busy",

@@ -11,7 +11,8 @@
 
 import type { MeetingPayload } from '../repositories/meetings';
 
-export type Actor = { id: string; role: string };
+// meetingId มีเฉพาะ guest — token ของแขกผูกกับการประชุมเดียวตอนออก token
+export type Actor = { id: string; role: string; meetingId?: string };
 
 function permissionType(meeting: MeetingPayload, userId: string): string | null {
   const list = Array.isArray(meeting.permissions) ? meeting.permissions : [];
@@ -26,6 +27,8 @@ function isParticipant(meeting: MeetingPayload, userId: string): boolean {
 
 export function canViewMeeting(actor: Actor, meeting: MeetingPayload): boolean {
   if (actor.role === 'admin') return true;
+  // แขกไม่มีแถวใน participants (ไม่มีบัญชีในระบบ) — สิทธิ์มาจาก token ที่ผูกห้องไว้แล้ว
+  if (actor.role === 'guest') return actor.meetingId === meeting.id;
   if (meeting.organizerId === actor.id) return true;
   if (isParticipant(meeting, actor.id)) return true;
   if (permissionType(meeting, actor.id)) return true;
