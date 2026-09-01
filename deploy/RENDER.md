@@ -63,9 +63,12 @@
    | `CORS_ORIGIN` | โดเมน Vercel เช่น `https://emeeting-system.vercel.app` (ยังไม่รู้ ใส่ทีหลังได้) |
    | `CLAUDE_API_KEY` | เว้นว่างได้ ถ้าไม่ใช้ฟีเจอร์สรุปด้วย AI |
    | `ASR_URL` | URL ของ ASR sidecar สำหรับคำบรรยายสด เว้นว่างได้ (ดูหมายเหตุล่าง) |
+   | `ASR_TOKEN` | ความลับที่แนบไปหา sidecar ต้องตรงกับฝั่ง sidecar — บังคับเมื่อ sidecar อยู่บน public URL |
 
-   > **คำบรรยายสด (ASR) ยังไม่มีที่รันบน free tier** — `asr/` ต้องโหลดโมเดล typhoon-asr
-   > ซึ่งกินแรมเกินโควตา Render free ส่วนอื่นของระบบทำงานครบโดยไม่ต้องมี ASR
+   > **คำบรรยายสด (ASR) รันบน Render free ไม่ได้** — `asr/` ต้องโหลดโมเดล typhoon-asr
+   > ซึ่งกินแรมเกินโควตา Render free ให้ deploy แยกไปที่ Hugging Face Spaces แทน
+   > ขั้นตอนอยู่ที่ `deploy/HUGGINGFACE.md` (ต้องตั้ง `ASR_URL` คู่กับ `ASR_TOKEN`)
+   > ส่วนอื่นของระบบทำงานครบโดยไม่ต้องมี ASR
    > ถ้าไม่ตั้ง `ASR_URL` backend จะเรียก `http://localhost:8000` ซึ่งไม่มีอยู่จริงบน Render
    > ผลคือคำบรรยายเงียบไปเฉย ๆ ไม่มี error ที่หน้าเว็บ — ตั้งใจให้เป็นแบบนั้น
 

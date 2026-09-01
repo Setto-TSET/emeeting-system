@@ -1,9 +1,11 @@
 import unicodedata
+
 import numpy as np
+import pytest
 import soundfile as sf
 from fastapi.testclient import TestClient
 
-from server import app
+from server import SAMPLE_RATE, app
 
 REFERENCE = "มติที่ประชุมเห็นชอบตามที่เสนอด้วยคะแนนเสียงเจ็ดต่อสอง"
 client = TestClient(app)
@@ -69,3 +71,52 @@ def test_transcribe_rejects_odd_length_body():
         headers={"Content-Type": "application/octet-stream"},
     )
     assert response.status_code == 400
+
+
+# ── ASR_TOKEN ──────────────────────────────────────────
+# เสียงจริงไม่เกี่ยวกับการตรวจสิทธิ์ ใช้ความเงียบ 1 วินาทีก็พอ ประหยัดเวลาถอดเสียงในเทสต์
+# (สั้นกว่านี้โมเดลถอดไม่ได้แล้วตอบ 500 ซึ่งกลบผลของด่านตรวจสิทธิ์ที่ต้องการวัด)
+SILENT_PCM = bytes(SAMPLE_RATE * 2)
+
+
+@pytest.fixture
+def with_token(monkeypatch):
+    monkeypatch.setenv("ASR_TOKEN", "s3cr3t")
+    return "s3cr3t"
+
+
+def post(content=SILENT_PCM, headers=None):
+    return client.post(
+        "/transcribe",
+        content=content,
+        headers={"Content-Type": "application/octet-stream", **(headers or {})},
+    )
+
+
+def test_transcribe_requires_token_when_configured(with_token):
+    assert post().status_code == 401
+
+
+def test_transcribe_rejects_wrong_token(with_token):
+    assert post(headers={"Authorization": "Bearer wrong"}).status_code == 401
+
+
+def test_transcribe_rejects_non_bearer_scheme(with_token):
+    # ส่งความลับถูกแต่ผิดรูปแบบก็ไม่ผ่าน — กันการเผลอรับ header รูปอื่นที่ proxy แปะมาเอง
+    assert post(headers={"Authorization": "Token s3cr3t"}).status_code == 401
+
+
+def test_transcribe_accepts_correct_token(with_token):
+    # ผ่านด่านตรวจแล้วจึงไปถึงการตรวจรูปแบบเสียง — ไม่ใช่ 401 คือพอ
+    assert post(headers={"Authorization": f"Bearer {with_token}"}).status_code == 200
+
+
+def test_transcribe_open_when_token_not_configured(monkeypatch):
+    # docker compose ในเครือข่ายปิดไม่ได้ตั้งค่านี้ ต้องยังยิงได้เหมือนเดิม
+    monkeypatch.delenv("ASR_TOKEN", raising=False)
+    assert post().status_code == 200
+
+
+def test_health_stays_open(with_token):
+    # ตัวตรวจสุขภาพของแพลตฟอร์มแนบความลับให้ไม่ได้ และ /health ไม่ได้คืนข้อมูลอะไร
+    assert client.get("/health").status_code == 200

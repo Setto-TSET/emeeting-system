@@ -12,10 +12,20 @@ export function asrBaseUrl(): string {
   return process.env.ASR_URL ?? 'http://localhost:8000';
 }
 
+/**
+ * ความลับที่ sidecar ใช้ตรวจว่า request มาจาก backend ของเราจริง
+ * จำเป็นเมื่อ sidecar อยู่บน public URL (เช่น Hugging Face Spaces) — ดู deploy/HUGGINGFACE.md
+ * ไม่ตั้งค่าก็ยิงได้เหมือนเดิม สำหรับ docker compose ที่ sidecar อยู่ในเครือข่ายปิด
+ */
+function authHeaders(): Record<string, string> {
+  const token = process.env.ASR_TOKEN;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function transcribePcm(pcm: Buffer): Promise<string> {
   const response = await fetch(`${asrBaseUrl()}/transcribe`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream' },
+    headers: { 'Content-Type': 'application/octet-stream', ...authHeaders() },
     body: new Uint8Array(pcm),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });

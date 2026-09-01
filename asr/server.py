@@ -5,6 +5,7 @@
 """
 
 import os
+import secrets
 import tempfile
 from contextlib import asynccontextmanager
 
@@ -20,8 +21,34 @@ DEVICE = os.environ.get("ASR_DEVICE", "cpu")
 _model = None
 
 
+def _asr_token() -> str:
+    # อ่านทุกครั้งแทนอ่านครั้งเดียวตอน import — เทสต์ตั้งค่านี้ต่อเคสได้โดยไม่ต้องโหลดโมดูลใหม่
+    return os.environ.get("ASR_TOKEN", "")
+
+
+def require_token(request: Request) -> None:
+    """sidecar นี้ไม่มีระบบผู้ใช้ ใครยิงถึงก็สั่งถอดเสียงได้
+
+    เปิดออกอินเทอร์เน็ตโดยไม่ตั้ง ASR_TOKEN แปลว่าคนนอกใช้ CPU ของเราได้ฟรี
+    และคิวของ sidecar ตัวเดียวจะบวมจนคำบรรยายของห้องประชุมจริงหยุดทำงาน
+    ปล่อยผ่านเมื่อไม่ตั้งค่า เพื่อให้ docker compose ในเครือข่ายปิดใช้ได้โดยไม่ต้องตั้งอะไรเพิ่ม
+    """
+    expected = _asr_token()
+    if not expected:
+        return
+
+    scheme, _, value = request.headers.get("authorization", "").partition(" ")
+    # compare_digest ไม่ใช่การกันเดา แต่กันการวัดเวลาตอบเพื่อไล่เดาความลับทีละตัวอักษร
+    if scheme.lower() != "bearer" or not secrets.compare_digest(value, expected):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    if not _asr_token():
+        # ไม่ยอมสตาร์ตไม่ได้ เพราะ compose ที่รันในเครือข่ายปิดก็ไม่ได้ตั้งค่านี้เหมือนกัน
+        print("[asr] WARNING: ไม่ได้ตั้ง ASR_TOKEN — ห้ามเปิด service นี้ออกอินเทอร์เน็ต", flush=True)
+
     # โหลดโมเดลตั้งแต่ตอนสตาร์ต ไม่ปล่อยให้ request แรกเป็นคนจ่ายค่าโหลดสามวินาที
     # (คำบรรยายประโยคแรกของประชุมแรกหลัง deploy จะหายไปเงียบ ๆ ถ้ารอโหลดตอนนั้น)
     await run_in_threadpool(get_model)
@@ -50,6 +77,8 @@ def health():
 
 @app.post("/transcribe")
 async def transcribe(request: Request):
+    require_token(request)
+
     raw = await request.body()
     if not raw:
         raise HTTPException(status_code=400, detail="empty body")

@@ -38,3 +38,7 @@ services:
       # คำบรรยายจะเงียบไปโดยไม่มี error ที่หน้าเว็บ ระบบอื่นทำงานปกติ
       - key: ASR_URL
         sync: false
+      # ความลับที่แนบไปกับทุก request ที่ยิงหา sidecar — ต้องตรงกับ ASR_TOKEN ฝั่ง sidecar
+      # จำเป็นเมื่อ sidecar อยู่บน public URL ไม่ตั้งแปลว่าใครก็สั่งถอดเสียงผ่าน CPU ของเราได้
+      - key: ASR_TOKEN
+        sync: false

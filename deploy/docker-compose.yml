@@ -43,6 +43,7 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:?ตั้ง CORS_ORIGIN ใน deploy/.env ก่อน}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ASR_URL: ${ASR_URL:-http://asr:8000}
+      ASR_TOKEN: ${ASR_TOKEN:-}
     expose:
       - "3001"
 
@@ -50,6 +51,9 @@ services:
     build:
       context: ../asr
     restart: unless-stopped
+    # เว้นว่างได้ใน stack นี้ — asr ไม่ได้ publish port ออกนอก network ของ compose
+    environment:
+      ASR_TOKEN: ${ASR_TOKEN:-}
     # ponytail: instance เดียว โมเดลกิน RAM ราว 2 GB และ CPU ทำได้ 23 เท่าของเวลาจริงอยู่แล้ว
     # ถ้าห้องประชุมพร้อมกันเยอะจนถอดไม่ทัน ค่อยเพิ่ม replica แล้วใส่ load balancer หน้ามัน
     expose:
