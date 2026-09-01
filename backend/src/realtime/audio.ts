@@ -6,7 +6,7 @@
 
 import type { RoomClient } from './rooms';
 import { send, broadcast } from './server';
-import { transcribePcm } from './asrClient';
+import { asrBaseUrl, transcribePcm } from './asrClient';
 import * as transcript from '../repositories/transcript';
 
 const HEADER_BYTES = 4;
@@ -102,7 +102,10 @@ export async function handleAudioFrame(client: RoomClient, raw: Buffer): Promise
   let text: string;
   try {
     text = await transcribePcm(parsed.pcm);
-  } catch {
+  } catch (error) {
+    // ผู้ใช้เห็นแค่ว่า "ถอดเสียงไม่สำเร็จ" ซึ่งไม่พอจะรู้ว่า sidecar ล่ม, ASR_URL ผิด
+    // หรือ ASR_TOKEN สองฝั่งไม่ตรง — สาเหตุจริงต้องไปโผล่ใน log ของ server
+    console.error('[asr] เรียก sidecar ไม่สำเร็จ:', asrBaseUrl(), '-', (error as Error).message);
     return send(client.socket, {
       type: 'signal_error',
       senderId: client.userId,
