@@ -27,7 +27,7 @@
 
 ### ⏳ ยังเลื่อน
 - ✅ Backend deploy ขึ้น Render แล้ว (2026-09-07) — https://emeeting-backend.onrender.com ต่อ MySQL Aiven free, TLS จาก Render, CORS ชี้โดเมน Vercel แล้ว — เหลือ custom domain
-- ⏳ Server-Side Thai ASR (Phase F) — โค้ดครบทุกชั้นแล้ว เหลือการทดสอบสองเครื่องจริงกับการวัด CER จากเสียงประชุมจริง
+- ⏳ คำบรรยายสด — ห้อง `normal`/`restricted` ถอดผ่าน Azure AI Speech (streaming, มีผลบางส่วน), ห้อง `top_secret` ใช้ Typhoon self-host ตามเดิม — โค้ดครบแล้ว เหลือตั้งคีย์ Azure บน Render กับวัด CER จากเสียงประชุมจริง (ดู `docs/superpowers/specs/2026-09-07-realtime-thai-asr-cloud-design.md`)
 - ❌ Email service จริง (template พร้อม, รอเลือก Sendgrid/AWS SES)
 - ❌ Zoom Room enterprise SIP bridge (Phase E placeholder UI ทำแล้ว, ตัว SIP bridge จริงรอ ZegoCloud Enterprise Plan)
 - ⏳ Server-side audit logging — `backend/` มี `POST /api/audit/log-view` + `GET /api/audit/logs` (admin-only) แล้ว แต่ frontend ยังไม่เรียกใช้จริง; signed URLs ยังไม่ทำ (Phase 2 security) — ส่วน authentication (JWT + bcrypt) และ server-side authorization (ใครเข้าห้องไหนได้, ใครเป็น manager) ทำเสร็จแล้ว

@@ -80,6 +80,31 @@
    ```
    ต้องได้ `{"status":"ok","timestamp":"..."}`
 
+## 2.5 คำบรรยายสด (Azure AI Speech)
+
+ห้องระดับ `normal` กับ `restricted` ถอดเสียงผ่าน Azure ส่วน `top_secret` ใช้ Typhoon
+self-host เหมือนเดิม (ดู `deploy/HUGGINGFACE.md`)
+
+1. https://portal.azure.com → Create resource → **Speech** → region **Southeast Asia**
+   → pricing tier **F0 (ฟรี 5 ชั่วโมงเสียงต่อเดือน)**
+2. หน้า **Keys and Endpoint** คัดลอก **KEY 1**
+3. ที่ Render → service `emeeting-backend` → **Environment**
+
+   | ตัวแปร | ค่า |
+   |---|---|
+   | `AZURE_SPEECH_KEY` | KEY 1 จากข้อ 2 |
+   | `AZURE_SPEECH_REGION` | `southeastasia` |
+
+4. ตรวจว่าใช้ได้: เข้าห้องประชุมสองเบราว์เซอร์ กดปุ่มคำบรรยาย พูดภาษาไทย
+   ตัวอักษรควรเริ่มไหลภายในราวครึ่งวินาที และประโยคจะ "แก้ตัวเอง" จนกว่าจะจบ
+
+> **F0 เปิดได้ session เดียวพร้อมกัน** ระบบจึงเปิดให้เฉพาะคนที่พูดดังที่สุดในห้อง
+> คนที่พูดแทรกจะไม่มีคำบรรยายจนกว่าคนแรกจะหยุด ขึ้น S0 แล้วตั้ง `ASR_MAX_STREAMS`
+> เป็น 4-8 เพื่อให้ถอดพร้อมกันหลายคนได้ **ห้ามตั้งเกิน 100** ซึ่งเป็นเพดานของ S0
+>
+> ค่าใช้จ่ายหลังเกินโควตาฟรีอยู่ที่ราว $0.146 ต่อชั่วโมงเสียง และคิดตามจำนวน session
+> ที่เปิด ไม่ใช่จำนวนคนในห้อง — ประชุมหนึ่งชั่วโมงที่ `ASR_MAX_STREAMS=1` คิดหนึ่งชั่วโมง
+
 ## 3. frontend บน Vercel
 
 1. https://vercel.com → Add New Project → import repo เดียวกัน (framework ตรวจเจอ Next.js เอง)
