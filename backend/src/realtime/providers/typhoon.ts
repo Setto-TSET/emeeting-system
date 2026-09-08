@@ -38,7 +38,7 @@ export const typhoonProvider: AsrProvider = {
       bytesSinceFlush = 0;
 
       pending = pending.then(async () => {
-        const text = (await transcribePcm(chunk)) ?? '';
+        const text = await transcribePcm(chunk);
         const deduped = stripOverlap(previousText, text).trim();
         previousText = text;
         if (deduped) options.onFinal(deduped, startSec);
@@ -61,7 +61,7 @@ export const typhoonProvider: AsrProvider = {
           const startSec = chunkStartSec ?? 0;
           buffer = Buffer.alloc(0);
           pending = pending.then(async () => {
-            const text = (await transcribePcm(tail)) ?? '';
+            const text = await transcribePcm(tail);
             const deduped = stripOverlap(previousText, text).trim();
             previousText = text;
             if (deduped) options.onFinal(deduped, startSec);

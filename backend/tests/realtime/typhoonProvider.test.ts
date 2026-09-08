@@ -15,6 +15,7 @@ describe('typhoon provider', () => {
   beforeEach(() => mockTranscribe.mockReset());
 
   it('ไม่เรียก sidecar จนกว่าจะสะสมครบ 3 วินาที', async () => {
+    mockTranscribe.mockResolvedValue('ข้อความ');
     const session = await typhoonProvider.open({ onPartial: jest.fn(), onFinal: jest.fn() });
 
     for (let i = 0; i < 11; i += 1) session.push(FRAME, i * 0.25);
