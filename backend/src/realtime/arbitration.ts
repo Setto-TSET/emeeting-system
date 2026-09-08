@@ -53,6 +53,15 @@ function removeFromRoom(meetingId: string, list: Slot[], slot: Slot): void {
   if (list.length === 0) slots.delete(meetingId);
 }
 
+// เอา slot ออกจากห้องหลัง await ใด ๆ ต้องดึง list ปัจจุบันจาก map ใหม่เสมอ — list ที่ capture
+// ไว้ก่อน await อาจไม่ใช่ array ที่ map ถืออยู่จริงแล้ว (เช่นถ้ามีคน mutate map ระหว่างนั้น)
+// removeFromRoom เทียบด้วย object identity อยู่แล้ว จึงลบได้แค่ตัวเองแม้ slot ตัวอื่นจะเข้ามาแทนที่
+function cleanupFailedSlot(meetingId: string, slot: Slot): void {
+  const list = slots.get(meetingId);
+  if (!list) return;
+  removeFromRoom(meetingId, list, slot);
+}
+
 function logCloseFailure(meetingId: string, speakerId: string, error: unknown): void {
   console.error(
     `[asr] ปิด session ไม่สำเร็จ (meeting=${meetingId}, speaker=${speakerId}):`,
@@ -92,7 +101,7 @@ export async function claimSlot(
       return await slot.sessionPromise;
     } catch (error) {
       // เปิดไม่สำเร็จ — ต้องคืน slot ปลอมนี้ ไม่งั้นห้องจะค้างเต็มตลอดไปทั้งที่ไม่มี session จริง
-      removeFromRoom(meetingId, list, slot);
+      cleanupFailedSlot(meetingId, slot);
       throw error;
     }
   }
@@ -106,13 +115,16 @@ export async function claimSlot(
   const displacedSpeakerId = weakest.speakerId;
   const displacedPromise = weakest.sessionPromise;
 
-  // เขียนทับ slot object เดิมแบบ synchronous ทันที — claim ที่ชนกันจะเห็นเจ้าของใหม่ทันที
-  // ไม่มีช่วงที่สอง claim เลือก weakest ตัวเดียวกันแล้วต่างคนต่างเปิด session ใหม่ทับกัน
-  const newPromise = openSession();
-  weakest.speakerId = speakerId;
-  weakest.sessionPromise = newPromise;
-  weakest.rms = rms;
-  weakest.lastFrameAt = now;
+  // สร้าง slot object ใหม่แทนที่จะเขียนทับตัวเดิม แล้วเสียบแทนที่ตำแหน่งของ weakest ใน list
+  // แบบ synchronous ทันที — claim ที่ชนกันจะเห็นเจ้าของใหม่ทันที ไม่มีช่วงที่สอง claim เลือก
+  // weakest ตัวเดียวกันแล้วต่างคนต่างเปิด session ใหม่ทับกัน
+  //
+  // ห้ามใช้ object เดิมซ้ำ (weakest) เพราะถ้า takeover รอบนี้ reject ทีหลัง cleanup จะลบ slot
+  // ด้วย object identity — ถ้า object ถูก reuse แล้วมีคนแย่ง slot ต่อจากเราอีกที cleanup ของเรา
+  // จะไปลบ slot ของเจ้าของใหม่ (ที่ session ใช้งานได้จริง) ออกจากห้องโดยไม่ได้ตั้งใจ
+  const newSlot: Slot = { speakerId, sessionPromise: openSession(), rms, lastFrameAt: now };
+  const idx = list.indexOf(weakest);
+  list[idx] = newSlot;
 
   // ปิด session เดิมแยกต่างหาก — ปิดไม่สำเร็จต้องไม่ทำให้ claim ของคนที่แย่ง slot ได้ fail ไปด้วย
   displacedPromise
@@ -120,10 +132,11 @@ export async function claimSlot(
     .catch((error) => logCloseFailure(meetingId, displacedSpeakerId, error));
 
   try {
-    return await newPromise;
+    return await newSlot.sessionPromise;
   } catch (error) {
     // session ใหม่เปิดไม่สำเร็จ — session เดิมถูกสั่งปิดไปแล้ว กู้คืนไม่ได้ ต้องคืน slot นี้แทน
-    removeFromRoom(meetingId, list, weakest);
+    // ลบด้วย identity ของ newSlot เอง เพื่อไม่ให้ไปโดน slot ของคนที่แย่งต่อจากเราอีกที
+    cleanupFailedSlot(meetingId, newSlot);
     throw error;
   }
 }
@@ -136,12 +149,13 @@ export async function releaseIdle(now: number): Promise<void> {
     const idle = list.filter((slot) => now - slot.lastFrameAt > limit);
     if (idle.length === 0) continue;
 
+    // mutate array เดิมในที่ (แทนการ set array ใหม่ทับใน map) — reference ที่ claimSlot อาจ
+    // capture ไว้ก่อน await (เช่นระหว่างเปิด session ใหม่) ต้องยังชี้ไปที่ array ที่ map ถืออยู่จริง
+    // ไม่งั้น cleanup ของ claimSlot จะไปแก้ array ที่หลุดจาก map ไปแล้ว ในขณะที่ map ถือ array ใหม่
     const remaining = list.filter((slot) => !idle.includes(slot));
-    if (remaining.length === 0) {
-      slots.delete(meetingId);
-    } else {
-      slots.set(meetingId, remaining);
-    }
+    list.length = 0;
+    list.push(...remaining);
+    if (list.length === 0) slots.delete(meetingId);
 
     // ปิดทีละตัวและกลืน error — session ที่ปิดไม่สำเร็จต้องไม่กัน slot ของคนอื่นไว้ตลอดประชุม
     for (const slot of idle) {
