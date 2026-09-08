@@ -36,4 +36,21 @@ describe('selectProvider', () => {
     mockConfigured.mockReturnValue(false);
     expect(selectProvider({ id: 'M', confidentialityLevel: 'normal' } as never).name).toBe('typhoon');
   });
+
+  it('confidentialityLevel เป็น null ได้ typhoon — ค่าผิดชนิดถือว่าไม่รู้ระดับความลับ', () => {
+    expect(selectProvider({ id: 'M', confidentialityLevel: null } as never).name).toBe('typhoon');
+  });
+
+  it('confidentialityLevel เป็นตัวเลขได้ typhoon — ค่าผิดชนิดถือว่าไม่รู้ระดับความลับ', () => {
+    expect(selectProvider({ id: 'M', confidentialityLevel: 1 } as never).name).toBe('typhoon');
+  });
+
+  it('confidentialityLevel เป็น boolean ได้ typhoon — ค่าผิดชนิดถือว่าไม่รู้ระดับความลับ', () => {
+    expect(selectProvider({ id: 'M', confidentialityLevel: true } as never).name).toBe('typhoon');
+  });
+
+  it('confidentialityLevel เป็น object หรือ array ได้ typhoon — ค่าผิดชนิดถือว่าไม่รู้ระดับความลับ', () => {
+    expect(selectProvider({ id: 'M', confidentialityLevel: { level: 'normal' } } as never).name).toBe('typhoon');
+    expect(selectProvider({ id: 'M', confidentialityLevel: ['normal'] } as never).name).toBe('typhoon');
+  });
 });

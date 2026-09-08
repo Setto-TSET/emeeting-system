@@ -17,7 +17,11 @@ export function selectProvider(meeting: MeetingPayload | null): AsrProvider {
   // อ่านการประชุมไม่ได้แปลว่าไม่รู้ว่าห้องนี้ลับแค่ไหน ค่าตั้งต้นต้องเป็นทางที่ปลอดภัยกว่าเสมอ
   if (!meeting) return typhoonProvider;
 
-  const level = typeof meeting.confidentialityLevel === 'string' ? meeting.confidentialityLevel : 'normal';
+  const raw = meeting.confidentialityLevel;
+  // ค่าที่ผิดชนิดแปลว่าข้อมูลเสียหรือมาจากรุ่นเก่า ซึ่งบอกไม่ได้ว่าห้องนี้ลับแค่ไหน ไม่ใช่การไม่ได้ตั้งค่า
+  if (raw !== undefined && typeof raw !== 'string') return typhoonProvider;
+
+  const level = raw === undefined ? 'normal' : raw;
   if (!CLOUD_LEVELS.has(level)) return typhoonProvider;
 
   // ไม่มีคีย์ก็ไปทาง typhoon ตามปกติ ไม่ใช่การ fallback อัตโนมัติจาก Azure ที่ล้ม —
