@@ -9,6 +9,10 @@ import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
 import type { AsrOpenOptions, AsrProvider, AsrSession } from './types';
 
 const SAMPLE_RATE = 16000;
+// เพดานเวลารอ stopContinuousRecognitionAsync — ถ้า websocket ค้าง SDK อาจไม่เรียก callback ไหนเลย
+// close() ถูก await ระหว่างที่ห้องประชุมกำลังดำเนินอยู่ ถ้าไม่มีเพดานนี้ slot การพูดจะไม่ถูกปล่อยและ
+// คำบรรยายทั้งห้องจะหยุดค้างไปด้วย
+const STOP_RECOGNITION_TIMEOUT_MS = 5000;
 
 export function isAzureConfigured(): boolean {
   return Boolean(process.env.AZURE_SPEECH_KEY);
@@ -79,7 +83,27 @@ export const azureProvider: AsrProvider = {
         // ปิด push stream ก่อน เพื่อให้ Azure ยิงผลสุดท้ายของประโยคที่ค้างอยู่ออกมาก่อนหยุด
         pushStream.close();
         await new Promise<void>((resolve) => {
-          recognizer.stopContinuousRecognitionAsync(() => resolve(), () => resolve());
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            resolve();
+          };
+          const timer = setTimeout(() => {
+            // SDK ไม่เรียก callback ไหนเลย (เช่น websocket ค้าง) — เลิกรอแล้วเดินหน้า teardown ต่อ
+            console.error('[asr] azure recognizer ไม่หยุดภายในเวลาที่กำหนด');
+            finish();
+          }, STOP_RECOGNITION_TIMEOUT_MS);
+          recognizer.stopContinuousRecognitionAsync(
+            () => {
+              clearTimeout(timer);
+              finish();
+            },
+            () => {
+              clearTimeout(timer);
+              finish();
+            }
+          );
         });
         recognizer.close();
       },
