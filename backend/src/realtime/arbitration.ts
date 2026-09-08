@@ -10,7 +10,9 @@ import type { AsrSession } from './providers/types';
 
 type Slot = {
   speakerId: string;
-  session: AsrSession;
+  // เก็บ promise ไม่ใช่ session ที่ resolve แล้ว เพื่อให้ "จอง slot" เกิดขึ้นแบบ synchronous
+  // ก่อน await ใด ๆ — สอง claim ที่ชนกันจะไม่มีทางเห็นห้องว่างพร้อมกันทั้งคู่
+  sessionPromise: Promise<AsrSession>;
   rms: number;
   lastFrameAt: number;
 };
@@ -39,6 +41,25 @@ export function resetArbitration(): void {
   slots.clear();
 }
 
+/** จำนวนห้องที่ยังมี slot ค้างอยู่ตอนนี้ — สำหรับเทสต์เท่านั้น ไม่ export internals ที่แก้ไขได้ */
+export function activeRoomCount(): number {
+  return slots.size;
+}
+
+function removeFromRoom(meetingId: string, list: Slot[], slot: Slot): void {
+  const idx = list.indexOf(slot);
+  if (idx === -1) return;
+  list.splice(idx, 1);
+  if (list.length === 0) slots.delete(meetingId);
+}
+
+function logCloseFailure(meetingId: string, speakerId: string, error: unknown): void {
+  console.error(
+    `[asr] ปิด session ไม่สำเร็จ (meeting=${meetingId}, speaker=${speakerId}):`,
+    (error as Error).message
+  );
+}
+
 /**
  * ขอสิทธิ์ถอดเสียงให้ผู้พูดคนนี้ คืน session ที่พร้อมรับเสียง หรือ null ถ้าไม่ได้สิทธิ์
  *
@@ -59,13 +80,21 @@ export async function claimSlot(
   if (held) {
     held.rms = rms;
     held.lastFrameAt = now;
-    return held.session;
+    return held.sessionPromise;
   }
 
   if (list.length < maxStreams()) {
-    const session = await openSession();
-    list.push({ speakerId, session, rms, lastFrameAt: now });
-    return session;
+    // จองที่ก่อน await — ต้อง push เข้า list ในเทิร์น synchronous เดียวกับการเช็ค capacity
+    // ไม่งั้น claim อีกอันที่ชนกันจะเห็น list.length เดิมและเปิด session ซ้ำ
+    const slot: Slot = { speakerId, sessionPromise: openSession(), rms, lastFrameAt: now };
+    list.push(slot);
+    try {
+      return await slot.sessionPromise;
+    } catch (error) {
+      // เปิดไม่สำเร็จ — ต้องคืน slot ปลอมนี้ ไม่งั้นห้องจะค้างเต็มตลอดไปทั้งที่ไม่มี session จริง
+      removeFromRoom(meetingId, list, slot);
+      throw error;
+    }
   }
 
   // แย่ง slot จากคนที่เบาที่สุด และต้องดังกว่าเป็นสัดส่วนที่ชัดเจน ไม่ใช่ดังกว่านิดเดียว —
@@ -74,13 +103,29 @@ export async function claimSlot(
   const weakest = list.reduce((min, slot) => (slot.rms < min.rms ? slot : min), list[0]);
   if (rms <= weakest.rms * takeoverRatio()) return null;
 
-  await weakest.session.close();
-  const session = await openSession();
+  const displacedSpeakerId = weakest.speakerId;
+  const displacedPromise = weakest.sessionPromise;
+
+  // เขียนทับ slot object เดิมแบบ synchronous ทันที — claim ที่ชนกันจะเห็นเจ้าของใหม่ทันที
+  // ไม่มีช่วงที่สอง claim เลือก weakest ตัวเดียวกันแล้วต่างคนต่างเปิด session ใหม่ทับกัน
+  const newPromise = openSession();
   weakest.speakerId = speakerId;
-  weakest.session = session;
+  weakest.sessionPromise = newPromise;
   weakest.rms = rms;
   weakest.lastFrameAt = now;
-  return session;
+
+  // ปิด session เดิมแยกต่างหาก — ปิดไม่สำเร็จต้องไม่ทำให้ claim ของคนที่แย่ง slot ได้ fail ไปด้วย
+  displacedPromise
+    .then((session) => session.close())
+    .catch((error) => logCloseFailure(meetingId, displacedSpeakerId, error));
+
+  try {
+    return await newPromise;
+  } catch (error) {
+    // session ใหม่เปิดไม่สำเร็จ — session เดิมถูกสั่งปิดไปแล้ว กู้คืนไม่ได้ ต้องคืน slot นี้แทน
+    removeFromRoom(meetingId, list, weakest);
+    throw error;
+  }
 }
 
 /** ปิด session ของคนที่หยุดส่งเสียงนานเกินกำหนด แล้วคืน slot ให้คนอื่น */
@@ -91,15 +136,18 @@ export async function releaseIdle(now: number): Promise<void> {
     const idle = list.filter((slot) => now - slot.lastFrameAt > limit);
     if (idle.length === 0) continue;
 
-    slots.set(
-      meetingId,
-      list.filter((slot) => !idle.includes(slot))
-    );
+    const remaining = list.filter((slot) => !idle.includes(slot));
+    if (remaining.length === 0) {
+      slots.delete(meetingId);
+    } else {
+      slots.set(meetingId, remaining);
+    }
+
     // ปิดทีละตัวและกลืน error — session ที่ปิดไม่สำเร็จต้องไม่กัน slot ของคนอื่นไว้ตลอดประชุม
     for (const slot of idle) {
-      await slot.session.close().catch((error) => {
-        console.error('[asr] ปิด session ไม่สำเร็จ:', (error as Error).message);
-      });
+      await slot.sessionPromise
+        .then((session) => session.close())
+        .catch((error) => logCloseFailure(meetingId, slot.speakerId, error));
     }
   }
 }
@@ -112,11 +160,8 @@ export async function releaseSpeaker(meetingId: string, speakerId: string): Prom
   const slot = list.find((entry) => entry.speakerId === speakerId);
   if (!slot) return;
 
-  slots.set(
-    meetingId,
-    list.filter((entry) => entry !== slot)
-  );
-  await slot.session.close().catch((error) => {
-    console.error('[asr] ปิด session ไม่สำเร็จ:', (error as Error).message);
-  });
+  removeFromRoom(meetingId, list, slot);
+  await slot.sessionPromise
+    .then((session) => session.close())
+    .catch((error) => logCloseFailure(meetingId, speakerId, error));
 }
