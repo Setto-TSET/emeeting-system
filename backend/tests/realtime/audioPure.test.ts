@@ -1,7 +1,8 @@
 import { parseAudioFrame, stripOverlap } from '../../src/realtime/audio';
 
 function frame(startMs: number, samples: number[]): Buffer {
-  const header = Buffer.alloc(4);
+  // header ตอนนี้ยาว 8 ไบต์ (timestamp + RMS) ตรงกับ parseAudioFrame เวอร์ชันใหม่ — ดูเคส "header v2" ด้านล่าง
+  const header = Buffer.alloc(8);
   header.writeUInt32LE(startMs, 0);
   const pcm = Buffer.alloc(samples.length * 2);
   samples.forEach((s, i) => pcm.writeInt16LE(s, i * 2));
@@ -28,6 +29,31 @@ describe('parseAudioFrame', () => {
   test('PCM ความยาวเป็นเลขคี่ ถูกปฏิเสธ', () => {
     const bad = Buffer.concat([frame(0, [1]), Buffer.from([0x7f])]);
     expect(parseAudioFrame(bad)).toBeNull();
+  });
+});
+
+describe('parseAudioFrame (header v2)', () => {
+  function frame(startMs: number, level: number, samples = 4): Buffer {
+    const header = Buffer.alloc(8);
+    header.writeUInt32LE(startMs, 0);
+    header.writeFloatLE(level, 4);
+    return Buffer.concat([header, Buffer.alloc(samples * 2)]);
+  }
+
+  it('อ่าน timestamp, RMS และ PCM ออกมาได้', () => {
+    const parsed = parseAudioFrame(frame(2000, 0.5));
+    expect(parsed).not.toBeNull();
+    expect(parsed!.startSec).toBe(2);
+    expect(parsed!.rms).toBeCloseTo(0.5, 5);
+    expect(parsed!.pcm.length).toBe(8);
+  });
+
+  it('เฟรมที่สั้นกว่า header คืน null ไม่ throw', () => {
+    expect(parseAudioFrame(Buffer.alloc(6))).toBeNull();
+  });
+
+  it('PCM ที่มีจำนวนไบต์เป็นเลขคี่คืน null — ครึ่งตัวอย่างแปลว่าเฟรมพัง', () => {
+    expect(parseAudioFrame(Buffer.concat([Buffer.alloc(8), Buffer.alloc(3)]))).toBeNull();
   });
 });
 

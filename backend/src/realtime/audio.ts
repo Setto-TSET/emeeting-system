@@ -9,7 +9,8 @@ import { send, broadcast } from './server';
 import { asrBaseUrl, transcribePcm } from './asrClient';
 import * as transcript from '../repositories/transcript';
 
-const HEADER_BYTES = 4;
+// header: [0..4) timestamp ms, [4..8) RMS — ดู src/services/speech/pcm.ts (ต้องตรงกันทั้งสองฝั่ง)
+const HEADER_BYTES = 8;
 
 // ก้อนเสียงทับซ้อนกัน 0.5 วินาที คำตรงรอยต่อจึงถูกถอดสองครั้ง มองย้อนไม่เกินเท่านี้ก็พอ
 // (พูดเร็วสุดราว 20 ตัวอักษรต่อครึ่งวินาที เผื่อไว้เป็น 30)
@@ -20,13 +21,20 @@ const MAX_OVERLAP_CHARS = 30;
 // "ลับมาปกติ" ซึ่งผิดความหมายไปเลย
 const MIN_OVERLAP_CHARS = 3;
 
-export function parseAudioFrame(raw: Buffer): { startSec: number; pcm: Buffer } | null {
+export function parseAudioFrame(raw: Buffer): { startSec: number; rms: number; pcm: Buffer } | null {
   if (raw.length <= HEADER_BYTES) return null;
 
   const pcm = raw.subarray(HEADER_BYTES);
   if (pcm.length % 2 !== 0) return null;
 
-  return { startSec: raw.readUInt32LE(0) / 1000, pcm };
+  const level = raw.readFloatLE(4);
+
+  return {
+    startSec: raw.readUInt32LE(0) / 1000,
+    // client ที่ถูกแก้เองส่งค่าอะไรมาก็ได้ ปัดให้อยู่ในช่วงที่ใช้เปรียบเทียบได้เสมอ
+    rms: Number.isFinite(level) && level > 0 ? level : 0,
+    pcm,
+  };
 }
 
 function withoutSpaces(value: string): string {
