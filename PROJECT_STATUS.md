@@ -1,7 +1,7 @@
 # e-Meeting System — Project Status Report
 
 **Project:** ระบบประชุมออนไลน์พร้อมความลับ + สรุปประชุมอัตโนมัติ + ZegoCloud Integration  
-**Status:** Phase 0–F Complete (code) — **Frontend (Vercel) + Backend (Render) + MySQL (Aiven) deployed ขึ้น production ครบทั้งสามชั้นแล้ว**, Meetings/Bookings/Files/Realtime state อยู่ที่ server หมด, Server-Side Thai ASR (Typhoon self-host) implement ครบทุกชั้น — เหลือ deploy ASR sidecar แยกไป HF Spaces, ทดสอบสองเครื่องบน production, Email service, Zoom Room SIP bridge (blocked on licensing)  
+**Status:** Phase 0–F Complete (code) — **Frontend (Vercel) + Backend (Render) + MySQL (Aiven) deployed ขึ้น production ครบทั้งสามชั้นแล้ว**, Meetings/Bookings/Files/Realtime state อยู่ที่ server หมด, คำบรรยายสดแยกเส้นทางตามระดับความลับ: ห้อง `normal`/`restricted` ถอดผ่าน Azure AI Speech (cloud, streaming) ส่วนห้อง `top_secret` ยังใช้ Typhoon self-host เหมือนเดิม — โค้ดครบทั้งสองเส้นทาง เหลือตั้งคีย์ Azure บน Render, วัด CER/latency จากเสียงประชุมจริง, deploy ASR sidecar (Typhoon) แยกไป HF Spaces, ทดสอบสองเครื่องบน production, Email service, Zoom Room SIP bridge (blocked on licensing)  
 **Last Updated:** 2026-09-07  
 **Repository:** https://github.com/Setto-TSET/emeeting-system  
 **Production:** frontend https://meeting-system-features-40fa4d.vercel.app · backend https://emeeting-backend.onrender.com (Render free, singapore) · MySQL Aiven free
@@ -23,7 +23,8 @@
 - ✅ โหวตแบบ realtime, ยกมือแบบ realtime, ซับไตเติลสด (ถอดเสียงที่ server ด้วย Typhoon ASR self-host ใช้ได้ทุกเบราว์เซอร์ที่รองรับ AudioWorklet), ถอดคำพูด + แชร์เอกสารซิงค์ — ผ่าน WebSocket backend ที่ authenticate ด้วย JWT แล้ว **sync ข้ามเครื่อง/ข้ามเบราว์เซอร์ได้จริง** state ทั้งหมดเก็บที่ server (MySQL) ไม่ใช่ per-tab อีกต่อไป, คนเข้าห้องทีหลังดึง snapshot ปัจจุบันผ่าน `GET /api/rooms/:meetingId/state` (ดู README.md)
 - ✅ **การจองห้อง / การประชุม / ไฟล์เอกสาร อยู่ที่ server หมดแล้ว** — ไม่ใช่ localStorage/IndexedDB อีกต่อไป ทุกคนเห็นข้อมูลชุดเดียวกัน; การจองเช็คทับซ้อนใน transaction เดียวกับ insert (`SELECT ... FOR UPDATE`) กันจองชนกัน คืนค่า 409
 - ✅ Backend containerised แล้ว — `backend/Dockerfile` + `deploy/docker-compose.yml` (MySQL 8 + backend + Caddy reverse proxy พร้อม TLS อัตโนมัติ) + `deploy/.env.example`; เพิ่ม `render.yaml` (Render blueprint, MySQL ใช้ Aiven ผ่าน `DATABASE_URL`) + คู่มือ `deploy/RENDER.md`, `deploy/KOYEB.md`
-- ✅ **Phase F: Server-Side Thai ASR implement ครบแล้ว** — ASR sidecar (`asr/server.py`, FastAPI + typhoon-asr + Dockerfile + tests), backend audio pipeline (`backend/src/realtime/audio.ts`, `asrClient.ts`), frontend PCM capture (`src/services/speech/pcm.ts`, `audioCapture.ts`, `public/pcm-worklet.js`) พร้อม design spec + ผลวัด CER/latency
+- ✅ **Phase F: Server-Side Thai ASR (Typhoon self-host) implement ครบแล้ว** — ASR sidecar (`asr/server.py`, FastAPI + typhoon-asr + Dockerfile + tests), backend audio pipeline (`backend/src/realtime/audio.ts`, `asrClient.ts`), frontend PCM capture (`src/services/speech/pcm.ts`, `audioCapture.ts`, `public/pcm-worklet.js`) พร้อม design spec + ผลวัด CER/latency — เส้นทางนี้ยังเป็นเส้นทางเดียวสำหรับห้อง `top_secret`
+- ✅ **คำบรรยายสด ห้อง `normal`/`restricted` ถอดผ่าน Azure AI Speech** — server ตัดสิน provider จาก `confidentialityLevel` ที่เก็บไว้ (`backend/src/realtime/providers/select.ts`), streaming แบบ interim results (`th-TH`, region `southeastasia`), phrase list ต่อห้องประชุมสร้างจากผู้เข้าร่วม + วาระของห้องนั้นเอง, และจำกัดให้ผู้พูดที่ active หนึ่งคนต่อห้องถือ session พร้อมกัน (`ASR_MAX_STREAMS`, ดู `backend/src/realtime/arbitration.ts`) — free tier ของ Azure ตรึงค่านี้ไว้ที่ 1 ดูรายละเอียดที่ `docs/superpowers/specs/2026-09-07-realtime-thai-asr-cloud-design.md`
 
 ### ⏳ ยังเลื่อน
 - ✅ Backend deploy ขึ้น Render แล้ว (2026-09-07) — https://emeeting-backend.onrender.com ต่อ MySQL Aiven free, TLS จาก Render, CORS ชี้โดเมน Vercel แล้ว — เหลือ custom domain
@@ -197,7 +198,7 @@ Replaces the earlier Webex mock as the primary video engine seam.
 
 ---
 
-### Phase F: Server-Side Thai ASR (Typhoon) ✅ CODE COMPLETE — รอทดสอบสองเครื่องจริง
+### Phase F: Server-Side Thai ASR (Typhoon) ✅ CODE COMPLETE — เส้นทางของห้อง `top_secret`
 | Component | Status | File |
 |---|---|---|
 | Design spec (พร้อมผลวัด CER/latency จริง) | ✅ | `docs/superpowers/specs/2026-08-24-server-side-thai-asr-design.md` |
@@ -205,9 +206,10 @@ Replaces the earlier Webex mock as the primary video engine seam.
 | ASR sidecar (Python + FastAPI + typhoon-asr) | ✅ | `asr/server.py`, `asr/Dockerfile`, `asr/requirements.txt`, `asr/tests/` |
 | Backend audio pipeline | ✅ | `backend/src/realtime/audio.ts`, `backend/src/realtime/asrClient.ts` |
 | Frontend PCM capture (AudioWorklet) | ✅ | `src/services/speech/pcm.ts`, `src/services/speech/audioCapture.ts`, `public/pcm-worklet.js` |
+| Deploy sidecar ไปโฮสต์ที่มีแรมพอ (ปัจจุบัน Render free รันไม่ได้) | ⏳ | ยังไม่ได้ทำ — ตาม `deploy/HUGGINGFACE.md`; จนกว่าจะเสร็จ ห้อง `top_secret` ไม่มีคำบรรยายสดเลย |
 | ทดสอบสองเครื่องจริง + วัด CER จากเสียงประชุมจริง | ⏳ | ยังไม่ได้ทำ |
 
-**เหตุผล:** Web Speech API มีเฉพาะ Chromium (Safari/Firefox/มือถือบางรุ่นไม่มีคำบรรยายเลย), คุณภาพภาษาไทยปรับแต่งไม่ได้ และเสียงออกนอกองค์กร (ส่งไปประมวลผลที่ Google) ซึ่งขัดกับจุดขายเรื่องความลับของระบบ — แผนคือ self-host Typhoon ASR บน VM เดียวกับ backend แล้วเข้าเส้นทาง `subtitle_text` เดิม
+**เหตุผล:** Web Speech API มีเฉพาะ Chromium (Safari/Firefox/มือถือบางรุ่นไม่มีคำบรรยายเลย), คุณภาพภาษาไทยปรับแต่งไม่ได้ และเสียงออกนอกองค์กร (ส่งไปประมวลผลที่ Google) ซึ่งขัดกับจุดขายเรื่องความลับของระบบ — แผนคือ self-host Typhoon ASR บน VM เดียวกับ backend แล้วเข้าเส้นทาง `subtitle_text` เดิม เส้นทางนี้ยังเป็นทางเดียวที่ยอมให้ห้อง `top_secret` มีคำบรรยาย (ห้อง `normal`/`restricted` ย้ายไปทาง Azure AI Speech แล้ว ดูหัวข้อ "ยังเลื่อน" ด้านบนและ `docs/superpowers/specs/2026-09-07-realtime-thai-asr-cloud-design.md`)
 
 ---
 
@@ -520,7 +522,7 @@ npm run dev
 - [x] **Setup Backend Project** — Express + MySQL + JWT auth + WebSocket realtime server เขียนและเทสครบแล้ว (transcription/summarize/guest/rooms/realtime)
 - [x] **Containerise backend** — Dockerfile + compose stack พร้อมใช้ (`deploy/`)
 - [x] **ย้าย meetings/bookings/files ขึ้น server** — MySQL, ไม่มี localStorage/IndexedDB แล้ว
-- [x] **Phase F: Server-Side Thai ASR** — implement ครบทุกชั้นแล้ว (sidecar + backend pipeline + frontend capture)
+- [x] **Phase F: Server-Side Thai ASR (Typhoon)** — implement ครบทุกชั้นแล้ว (sidecar + backend pipeline + frontend capture), ใช้กับห้อง `top_secret`; ห้อง `normal`/`restricted` ย้ายไป Azure AI Speech แล้ว (โค้ดครบ รอตั้งคีย์บน Render — ดูข้อ "Deploy ASR sidecar" กับ "ทดสอบ ASR สองเครื่องจริง" ด้านล่าง)
 - [x] **Deploy backend ขึ้น host จริง** — Render blueprint + Aiven MySQL ตาม `deploy/RENDER.md` เสร็จ 2026-09-07 (verify: `/health` 200, login 401 = DB ต่อติด, CORS preflight 204 ตรงโดเมน Vercel, `/ws` ตอบ 101 Switching Protocols)
 - [ ] **ตั้ง env ฝั่ง Vercel + redeploy** — `NEXT_PUBLIC_API_BASE_URL=https://emeeting-backend.onrender.com`, `NEXT_PUBLIC_WS_URL=wss://emeeting-backend.onrender.com/ws` (ทั้ง Production และ Preview — `NEXT_PUBLIC_*` ฝังตอน build ต้อง redeploy ถึงมีผล)
 - [ ] **เทสสองเครื่องบน production** — ตาม `deploy/RENDER.md` ข้อ 4 (สร้างประชุม/โหวต/จองห้อง/อัปโหลดเอกสาร)
