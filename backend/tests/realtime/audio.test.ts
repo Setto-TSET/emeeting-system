@@ -78,6 +78,12 @@ describe('audio frames', () => {
     await query('DELETE FROM meetings');
     await query('DELETE FROM app_users');
     await seedFromMockData('Meeting@2569');
+    // seed มาเป็น top_secret — เปลี่ยนเป็น normal เพื่อให้เทสต์ส่วนใหญ่วิ่งผ่าน azure (cloud)
+    // เทสต์ "ยกระดับเป็น top_secret" จะเปลี่ยนกลับเองตอนรัน
+    await query(
+      "UPDATE meetings SET payload = JSON_SET(payload, '$.confidentialityLevel', 'normal') WHERE id = ?",
+      [MEETING],
+    );
 
     server = http.createServer(createApp());
     attachRealtime(server);
@@ -88,13 +94,20 @@ describe('audio frames', () => {
   afterAll(async () => {
     // ปิด socket ที่ยังค้างก่อน ไม่งั้น server.close() รอ WebSocket ที่เทสต์เปิดไว้ไปตลอด
     // แล้ว jest ค้างไม่จบ (handlers.test ไม่เจอเพราะทุกเคสที่นั่นปิด socket ครบก่อน assert สุดท้าย)
-    server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (server) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
     await close();
-  });
+  }, 10_000);
 
   beforeEach(async () => {
     await query('DELETE FROM transcript_segments');
+    // restore normal ทุกรอบ — เทสต์ "ยกระดับเป็น top_secret" เปลี่ยนค่าไว้
+    await query(
+      "UPDATE meetings SET payload = JSON_SET(payload, '$.confidentialityLevel', 'normal') WHERE id = ?",
+      [MEETING],
+    );
     openedProviders.length = 0;
     resetAudioState();
   });
