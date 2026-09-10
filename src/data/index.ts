@@ -70,7 +70,7 @@ export const users: AppUser[] = [
     position: "เจ้าหน้าที่บริหารงานทั่วไป",
     department: "สำนักบริหาร",
     email: "somchai.j@e-office.cloud",
-    systemRole: "staff",
+    systemRole: "admin",
     committeeIds: ["COM-01", "COM-02"],
   },
   {
