@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "migrate": "ts-node src/database/migrations.ts",
     "seed": "ts-node -r tsconfig-paths/register src/database/seed.ts",
+    "reset-password": "ts-node src/database/reset-password.ts",
     "test": "jest"
   },
   "keywords": [
