@@ -12,6 +12,7 @@ import {
   getMeeting,
   listMeetingsForUser,
   saveMeeting,
+  deleteMeeting,
   MeetingPayload,
 } from '../repositories/meetings';
 import * as files from '../repositories/meetingFiles';
@@ -113,6 +114,20 @@ router.put(
       organizerId: existing.organizerId ?? null,
     });
     res.json({ meeting: saved });
+  })
+);
+
+/** DELETE /api/meetings/:id — ลบทั้งการประชุม เฉพาะผู้จัด/ผู้จัดการประชุม (หรือ admin) */
+router.delete(
+  '/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const existing = await getMeeting(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'ไม่พบการประชุมนี้' });
+    if (!canEditMeeting(actorOf(req), existing)) {
+      return res.status(403).json({ error: 'ไม่มีสิทธิ์ลบการประชุมนี้' });
+    }
+    await deleteMeeting(req.params.id);
+    res.status(204).end();
   })
 );
 
