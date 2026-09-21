@@ -12,7 +12,7 @@ import { getNavGroups, getHomeRoute } from "@/lib/access";
 
 function SidebarNav({ pathname }: { pathname: string }) {
   const router = useRouter();
-  const { currentUser } = useCurrentUser();
+  const { currentUser, signOut } = useCurrentUser();
   // เมนูขึ้นกับสิทธิ์ — ผู้เข้าร่วมเห็นแค่ หน้าหลัก / การประชุมของฉัน / เอกสาร
   const navGroups = getNavGroups(currentUser.systemRole);
   const isActive = (href: string) => {
@@ -109,7 +109,7 @@ function SidebarNav({ pathname }: { pathname: string }) {
             </div>
           </div>
           <button
-            onClick={() => router.push("/")}
+            onClick={() => { signOut(); router.push("/"); }}
             className="flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground/70 hover:bg-white/10 hover:text-white transition-colors"
             title="ออกจากระบบ"
           >

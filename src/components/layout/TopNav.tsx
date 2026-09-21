@@ -43,7 +43,7 @@ export default function TopNav() {
   const [searchText, setSearchText] = useState("");
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState(notificationsData);
-  const { currentUser } = useCurrentUser();
+  const { currentUser, signOut } = useCurrentUser();
 
   let bc = breadcrumbMap[pathname];
   if (!bc) {
@@ -191,7 +191,7 @@ export default function TopNav() {
               <span className="material-symbols-outlined text-[16px] mr-2">tune</span> การตั้งค่า
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive" onClick={() => router.push("/")}>
+            <DropdownMenuItem className="text-destructive" onClick={() => { signOut(); router.push("/"); }}>
               <span className="material-symbols-outlined text-[16px] mr-2">logout</span> ออกจากระบบ
             </DropdownMenuItem>
           </DropdownMenuContent>

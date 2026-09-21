@@ -2,10 +2,12 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { users, AppUser } from "@/data";
+import { setAccessToken } from "@/services/api/client";
 
 type Ctx = {
   currentUser: AppUser;
   setCurrentUser: (u: AppUser) => void;
+  signOut: () => void;
   users: AppUser[];
 };
 
@@ -52,8 +54,21 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ออกจากระบบ — ล้าง JWT และตัวตนทั้งใน sessionStorage (แท็บนี้) และ localStorage
+  // (ค่าตั้งต้นของแท็บใหม่) ไม่งั้นเปิดหน้าใหม่จะเด้งกลับเข้าเป็นคนเดิมทั้งที่ token หมดแล้ว
+  const signOut = () => {
+    setAccessToken(null);
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+      console.error("Failed to clear user from storage", e);
+    }
+    setCurrentUser(users[0]);
+  };
+
   return (
-    <UserContext.Provider value={{ currentUser, setCurrentUser: changeCurrentUser, users }}>
+    <UserContext.Provider value={{ currentUser, setCurrentUser: changeCurrentUser, signOut, users }}>
       {initialized ? children : <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground bg-background">กำลังโหลดข้อมูลผู้ใช้...</div>}
     </UserContext.Provider>
   );

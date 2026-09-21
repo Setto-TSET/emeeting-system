@@ -54,6 +54,7 @@ vi.mock("@/context/UserContext", () => ({
   useCurrentUser: () => ({
     currentUser: { id: "U-1", name: "ผู้ใช้ทดสอบ", email: "u1@test.local", systemRole: "member" },
     setCurrentUser: vi.fn(),
+    signOut: vi.fn(),
     users: [],
   }),
 }));
