@@ -437,7 +437,6 @@ Video token ไม่อยู่ในรายการนี้แล้ว �
 - ❌ Backend ยังไม่ได้ deploy ขึ้น host จริง (frontend production จึงยังชี้ backend ไม่ได้)
 - ❌ No email service (template only)
 - ⏳ Audit logging — backend routes มีแล้ว (`POST /api/audit/log-view`, `GET /api/audit/logs`) แต่ frontend ยังไม่เรียก
-- ⚠️ `src/lib/idb.ts` เป็น dead code แล้ว (ไม่มีไฟล์ไหน import) — รอลบ
 - ✅ Authentication จริง (`POST /api/auth/login` เช็ครหัสผ่านด้วย bcrypt ที่ server, ออก JWT, ทุก request/WebSocket แนบ token)
 
 ### Ready to Address (With Backend)
