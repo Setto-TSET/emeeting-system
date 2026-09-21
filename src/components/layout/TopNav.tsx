@@ -4,7 +4,7 @@ import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { notificationsData, systemRoleLabels, systemRoleColors, systemRoleDescriptions } from "@/data";
+import { notificationsData, systemRoleLabels, systemRoleColors } from "@/data";
 import { useCurrentUser } from "@/context/UserContext";
 import {
   Breadcrumb,
@@ -43,7 +43,7 @@ export default function TopNav() {
   const [searchText, setSearchText] = useState("");
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState(notificationsData);
-  const { currentUser, setCurrentUser, users } = useCurrentUser();
+  const { currentUser } = useCurrentUser();
 
   let bc = breadcrumbMap[pathname];
   if (!bc) {
@@ -104,57 +104,14 @@ export default function TopNav() {
           />
         </div>
 
-        {/* User / Role Switcher (สำหรับทดสอบสิทธิ์) */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2 mr-1 rounded-lg">
-              <span className={`inline-flex items-center rounded-md border px-1.5 text-[10px] font-semibold ${systemRoleColors[currentUser.systemRole]}`}>
-                {systemRoleLabels[currentUser.systemRole]}
-              </span>
-              <span className="hidden md:inline text-xs font-medium max-w-[110px] truncate">{currentUser.name}</span>
-              <span className="material-symbols-outlined text-[16px] text-muted-foreground">expand_more</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-72 rounded-xl">
-            <DropdownMenuLabel className="flex items-center justify-between">
-              <span>สลับผู้ใช้ (สำหรับทดสอบสิทธิ์)</span>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <div className="max-h-[360px] overflow-y-auto custom-scrollbar">
-              {users.map(u => {
-                const active = u.id === currentUser.id;
-                return (
-                  <button
-                    key={u.id}
-                    onClick={() => {
-                      setCurrentUser(u);
-                      toast.success(`สลับเป็น ${u.name}`, { description: systemRoleDescriptions[u.systemRole] });
-                    }}
-                    className={`w-full text-left px-3 py-2 hover:bg-muted/50 flex items-start gap-2 border-l-2 transition-colors ${active ? "bg-primary/5 border-primary" : "border-transparent"}`}
-                  >
-                    <div className="mt-0.5 h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="material-symbols-outlined text-primary text-[16px]">person</span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-sm font-medium truncate">{u.name}</p>
-                        <span className={`inline-flex items-center rounded-md border px-1 text-[9px] font-semibold ${systemRoleColors[u.systemRole]}`}>
-                          {systemRoleLabels[u.systemRole]}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground truncate">{u.position} · {u.department}</p>
-                    </div>
-                    {active && <span className="material-symbols-outlined text-primary text-[16px] mt-1.5">check</span>}
-                  </button>
-                );
-              })}
-            </div>
-            <DropdownMenuSeparator />
-            <div className="px-3 py-2 text-[10px] text-muted-foreground">
-              บทบาทกำหนดว่าจะเห็นเอกสารใดในระบบ
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* ผู้ใช้ที่ล็อกอินอยู่ (อ่านอย่างเดียว) — สลับบัญชีต้องล็อกอินใหม่ที่หน้าเข้าสู่ระบบ
+            เพื่อให้ JWT ตรงกับตัวตนเสมอ ไม่งั้น backend ปฏิเสธการเขียนทุกอย่าง (สร้าง/บันทึกประชุม) */}
+        <div className="flex items-center gap-1.5 h-8 px-2 mr-1">
+          <span className={`inline-flex items-center rounded-md border px-1.5 text-[10px] font-semibold ${systemRoleColors[currentUser.systemRole]}`}>
+            {systemRoleLabels[currentUser.systemRole]}
+          </span>
+          <span className="hidden md:inline text-xs font-medium max-w-[110px] truncate">{currentUser.name}</span>
+        </div>
 
         <DropdownMenu open={isNotifOpen} onOpenChange={setIsNotifOpen}>
           <DropdownMenuTrigger asChild>
