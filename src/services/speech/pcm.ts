@@ -4,8 +4,10 @@
 // เพื่อให้ทดสอบได้โดยไม่ต้องมี AudioContext จริง
 
 export const TARGET_RATE = 16000;
-export const CHUNK_SECONDS = 3;
-export const OVERLAP_SECONDS = 0.5;
+
+// เฟรมสั้นพอให้ Azure ยิงผลบางส่วนได้ทันคำพูด (เป้าหมาย partial แรก < 500 ms)
+// ก้อนใหญ่กว่านี้ไม่ได้ช่วยความแม่นเพราะฝั่ง Azure ประกอบสตรีมเองอยู่แล้ว
+export const FRAME_SECONDS = 0.25;
 
 // noise floor ของไมค์แต่ละตัวกับห้องประชุมแต่ละห้องไม่เท่ากัน ค่านี้ตั้งไว้กลาง ๆ
 // และต้องแก้ได้จากที่เดียว ไม่ฝังกระจายไปตามไฟล์อื่น
@@ -63,10 +65,19 @@ export function floatToPcm16(samples: Float32Array): Int16Array {
   return pcm;
 }
 
-export function buildAudioFrame(pcm: Int16Array, startMs: number): ArrayBuffer {
-  const buffer = new ArrayBuffer(4 + pcm.byteLength);
+// header: [0..4) timestamp ms, [4..8) RMS ของเฟรมนี้
+// RMS ต้องมากับเฟรม ไม่ใช่ให้ server คำนวณเอง เพราะ server ตัดสินใจเรื่อง slot
+// ก่อนแตะ PCM และการถอด PCM ทุกเฟรมของทุกคนเพื่อวัดความดังคือการทำงานซ้ำที่ไม่จำเป็น
+const HEADER_BYTES = 8;
+
+export function buildAudioFrame(pcm: Int16Array, startMs: number, level: number): ArrayBuffer {
+  const buffer = new ArrayBuffer(HEADER_BYTES + pcm.byteLength);
   const view = new DataView(buffer);
   view.setUint32(0, Math.max(0, Math.floor(startMs)), true);
-  new Int16Array(buffer, 4).set(pcm);
+  // ค่าเพี้ยน (NaN จากไมค์ที่ส่งตัวอย่างว่าง, ค่าติดลบ) ต้องกลายเป็นศูนย์ ไม่ใช่หลุดเข้าไป
+  // เทียบกับความดังของคนอื่น — NaN ชนะทุกการเปรียบเทียบไม่ได้ แต่มันทำให้ทุกการเทียบเป็น false
+  // ซึ่งแปลว่าคนนั้นแย่ง slot ไม่ได้เลยตลอดประชุมโดยไม่มีใครรู้สาเหตุ
+  view.setFloat32(4, Number.isFinite(level) && level > 0 ? level : 0, true);
+  new Int16Array(buffer, HEADER_BYTES).set(pcm);
   return buffer;
 }

@@ -8,8 +8,7 @@ import {
   downsampleTo16k,
   floatToPcm16,
   rms,
-  CHUNK_SECONDS,
-  OVERLAP_SECONDS,
+  FRAME_SECONDS,
   SILENCE_RMS_THRESHOLD,
   TARGET_RATE,
 } from "./pcm";
@@ -45,8 +44,7 @@ export async function startCapture(options: {
     throw error;
   }
 
-  const chunkSamples = CHUNK_SECONDS * TARGET_RATE;
-  const keepSamples = Math.floor(OVERLAP_SECONDS * TARGET_RATE);
+  const frameSamples = FRAME_SECONDS * TARGET_RATE;
   let buffer = new Float32Array(0);
 
   collector.port.onmessage = (event: MessageEvent<Float32Array>) => {
@@ -56,22 +54,24 @@ export async function startCapture(options: {
     merged.set(downsampled, buffer.length);
     buffer = merged;
 
-    while (buffer.length >= chunkSamples) {
-      const chunk = buffer.subarray(0, chunkSamples);
+    while (buffer.length >= frameSamples) {
+      const frame = buffer.subarray(0, frameSamples);
 
-      // อ่านเวลาจากนาฬิกาจริงทุกก้อน ไม่ใช่บวกทีละ 2.5 วินาทีจากค่าตั้งต้น — ถ้าเสียงหยุดไหล
+      // อ่านเวลาจากนาฬิกาจริงทุกเฟรม ไม่ใช่บวกทีละ 250 มิลลิวินาทีจากค่าตั้งต้น — ถ้าเสียงหยุดไหล
       // (แท็บถูกพักบนมือถือ, worklet ตกบล็อกเพราะเครื่องหน่วง) ตัวนับจะเดินช้ากว่าความจริง
       // แล้วคำบรรยายทุกบรรทัดหลังจากนั้นจะติดเวลาที่เร็วกว่าที่พูดจริงไปตลอดทั้งประชุม
-      const chunkStartMs = Date.now() - options.startedAt - CHUNK_SECONDS * 1000;
+      const frameStartMs = Date.now() - options.startedAt - FRAME_SECONDS * 1000;
+      const level = rms(frame);
 
-      // เงียบก็ไม่ต้องส่ง ลดงานของ sidecar และไม่ให้ transcript มีบรรทัดว่าง
-      if (rms(chunk) >= SILENCE_RMS_THRESHOLD) {
-        options.sendAudio(buildAudioFrame(floatToPcm16(chunk), chunkStartMs));
+      // เงียบก็ไม่ส่ง — ทั้งประหยัดแบนด์วิดท์และเป็นสัญญาณให้ server รู้ว่าคนนี้หยุดพูดแล้ว
+      // (arbitration ปิด session เมื่อไม่มีเฟรมเข้ามาเกิน SILENCE_CLOSE_MS ดู backend/src/realtime/arbitration.ts)
+      if (level >= SILENCE_RMS_THRESHOLD) {
+        options.sendAudio(buildAudioFrame(floatToPcm16(frame), frameStartMs, level));
       }
 
-      // เก็บท้ายก้อนไว้ทับซ้อนกับก้อนถัดไป กันคำขาดตรงรอยต่อ
-      // ข้อความที่ซ้ำจากช่วงนี้ถูกตัดที่ฝั่ง server (backend/src/realtime/audio.ts)
-      buffer = buffer.slice(chunkSamples - keepSamples);
+      // ไม่เก็บส่วนทับซ้อนไว้แล้ว — Azure ประกอบสตรีมต่อเนื่องเองจึงไม่มีรอยต่อให้กัน
+      // ส่วน typhoon provider สร้างการทับซ้อนขึ้นเองตอนสะสมเฟรมเป็นก้อน (ฝั่ง server)
+      buffer = buffer.slice(frameSamples);
     }
   };
 

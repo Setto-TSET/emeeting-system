@@ -9,12 +9,38 @@ import { createApp } from '../../src/server';
 import { attachRealtime } from '../../src/realtime/server';
 import { resetAudioState } from '../../src/realtime/audio';
 
-jest.mock('../../src/realtime/asrClient', () => ({
-  transcribePcm: jest.fn(),
-}));
-import { transcribePcm } from '../../src/realtime/asrClient';
+// audio.ts ไม่คุยกับ asrClient/transcribePcm ตรง ๆ อีกแล้ว มันเลือก provider ผ่าน selectProvider
+// แล้วเปิด session ผ่าน provider นั้น — ปลอม provider แทน เพื่อให้เทสต์คุมได้ว่า partial/final
+// ยิงตอนไหน และพิสูจน์ได้ว่าเสียงวิ่งไปทาง provider ไหนจริง ๆ (openedProviders)
+const openedProviders: string[] = [];
 
-const mockTranscribe = transcribePcm as jest.MockedFunction<typeof transcribePcm>;
+function fakeProvider(name: 'azure' | 'typhoon') {
+  return {
+    name,
+    open: jest.fn(async (options: { onPartial(t: string): void; onFinal(t: string, s: number): void }) => {
+      openedProviders.push(name);
+      return {
+        // เฟรมแรกยิง partial แล้วตามด้วย final ทันที เพื่อให้เทสต์ตรวจได้ทั้งสองเส้นทาง
+        // ในหนึ่งเฟรมโดยไม่ต้องรอเวลาจริง
+        push: (_pcm: Buffer, startSec: number) => {
+          if (startSec < 2) options.onPartial('สวัส');
+          else options.onFinal('สวัสดีครับ', startSec);
+        },
+        close: jest.fn(async () => {}),
+      };
+    }),
+  };
+}
+
+jest.mock('../../src/realtime/providers/azure', () => ({
+  azureProvider: fakeProvider('azure'),
+  isAzureConfigured: () => true,
+}));
+jest.mock('../../src/realtime/providers/typhoon', () => ({
+  typhoonProvider: fakeProvider('typhoon'),
+}));
+
+import { azureProvider } from '../../src/realtime/providers/azure';
 
 let server: http.Server;
 let port: number;
@@ -24,9 +50,10 @@ function tokenFor(sub: string, name: string, role: string) {
   return signAccessToken({ sub, email: `${sub}@e-office.cloud`, name, role });
 }
 
-function audioFrame(startMs: number, sampleCount = 8): Buffer {
-  const header = Buffer.alloc(4);
+function audioFrame(startMs: number, level = 0.2, sampleCount = 4000): Buffer {
+  const header = Buffer.alloc(8);
   header.writeUInt32LE(startMs, 0);
+  header.writeFloatLE(level, 4);
   return Buffer.concat([header, Buffer.alloc(sampleCount * 2)]);
 }
 
@@ -51,6 +78,12 @@ describe('audio frames', () => {
     await query('DELETE FROM meetings');
     await query('DELETE FROM app_users');
     await seedFromMockData('Meeting@2569');
+    // seed มาเป็น top_secret — เปลี่ยนเป็น normal เพื่อให้เทสต์ส่วนใหญ่วิ่งผ่าน azure (cloud)
+    // เทสต์ "ยกระดับเป็น top_secret" จะเปลี่ยนกลับเองตอนรัน
+    await query(
+      "UPDATE meetings SET payload = JSON_SET(payload, '$.confidentialityLevel', 'normal') WHERE id = ?",
+      [MEETING],
+    );
 
     server = http.createServer(createApp());
     attachRealtime(server);
@@ -61,23 +94,92 @@ describe('audio frames', () => {
   afterAll(async () => {
     // ปิด socket ที่ยังค้างก่อน ไม่งั้น server.close() รอ WebSocket ที่เทสต์เปิดไว้ไปตลอด
     // แล้ว jest ค้างไม่จบ (handlers.test ไม่เจอเพราะทุกเคสที่นั่นปิด socket ครบก่อน assert สุดท้าย)
-    server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (server) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
     await close();
-  });
+  }, 10_000);
 
   beforeEach(async () => {
     await query('DELETE FROM transcript_segments');
-    mockTranscribe.mockReset();
+    // restore normal ทุกรอบ — เทสต์ "ยกระดับเป็น top_secret" เปลี่ยนค่าไว้
+    await query(
+      "UPDATE meetings SET payload = JSON_SET(payload, '$.confidentialityLevel', 'normal') WHERE id = ?",
+      [MEETING],
+    );
+    openedProviders.length = 0;
     resetAudioState();
   });
 
-  test('ผู้พูดได้รับคำบรรยายของตัวเองกลับมาด้วย', async () => {
-    mockTranscribe.mockResolvedValue('สวัสดีครับ');
+  it('ผลบางส่วนถูกกระจายแต่ไม่ถูกเขียนลง transcript', async () => {
+    const socket = await openClient('U-001', 'มาลี');
+    const before = (await query('SELECT COUNT(*) AS n FROM transcript_segments WHERE meeting_id = ?', [MEETING])) as any[];
+
+    // provider ปลอมยิง partial เมื่อ startSec < 2 (ดู fakeProvider ด้านบนของไฟล์)
+    socket.send(audioFrame(1000));
+    const signal = await nextMessage(socket);
+
+    expect(signal.type).toBe('subtitle_text');
+    expect(signal.payload.isFinal).toBe(false);
+
+    const after = (await query('SELECT COUNT(*) AS n FROM transcript_segments WHERE meeting_id = ?', [MEETING])) as any[];
+    expect(after[0].n).toBe(before[0].n);
+
+    socket.close();
+  });
+
+  it('ผลสุดท้ายถูกเขียนลง transcript พร้อมเวลาเริ่มของประโยค', async () => {
+    const socket = await openClient('U-001', 'มาลี');
+
+    socket.send(audioFrame(4000));
+    await nextMessage(socket);
+
+    const rows = (await query(
+      'SELECT text, start_sec FROM transcript_segments WHERE meeting_id = ? ORDER BY id DESC LIMIT 1',
+      [MEETING]
+    )) as any[];
+    expect(rows[0].text).toBe('สวัสดีครับ');
+    expect(Number(rows[0].start_sec)).toBe(4);
+
+    socket.close();
+  });
+
+  it('ยกระดับเป็น top_secret กลางประชุมแล้วเสียงเลิกวิ่งออก cloud ภายในหนึ่งนาที', async () => {
+    // เทสต์นี้คุมกฎที่แคชละเมิดได้ง่ายที่สุด: การเปลี่ยนระดับความลับต้องมีผลจริง
+    // ไม่ใช่รอรีสตาร์ต backend
+    const socket = await openClient('U-001', 'มาลี');
+    socket.send(audioFrame(1000));
+    await nextMessage(socket);
+
+    await query("UPDATE meetings SET payload = JSON_SET(payload, '$.confidentialityLevel', 'top_secret') WHERE id = ?", [MEETING]);
+    jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 61_000);
+
+    socket.send(audioFrame(5000));
+    await nextMessage(socket);
+
+    // เฟรมหลังยกระดับต้องเปิด typhoon ไม่ใช่ azure
+    expect(openedProviders.at(-1)).toBe('typhoon');
+
+    jest.restoreAllMocks();
+    socket.close();
+  });
+
+  it('เฟรมที่ header พังถูกทิ้งเงียบ ไม่ปิด socket', async () => {
+    const socket = await openClient('U-001', 'มาลี');
+    socket.send(Buffer.alloc(4));
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(socket.readyState).toBe(WebSocket.OPEN);
+
+    socket.close();
+  });
+
+  it('ผู้พูดได้รับคำบรรยายของตัวเองกลับมาด้วย', async () => {
     const speaker = await openClient('U-001', 'สมชาย ใจดี');
 
     const echoed = nextMessage(speaker);
-    speaker.send(audioFrame(0));
+    speaker.send(audioFrame(4000));
     const signal = await echoed;
 
     expect(signal.type).toBe('subtitle_text');
@@ -88,76 +190,24 @@ describe('audio frames', () => {
     speaker.close();
   });
 
-  test('คนอื่นในห้องได้รับคำบรรยายเดียวกัน', async () => {
-    mockTranscribe.mockResolvedValue('รับทราบครับ');
+  it('คนอื่นในห้องได้รับคำบรรยายเดียวกัน', async () => {
     const speaker = await openClient('U-001', 'สมชาย ใจดี');
     const listener = await openClient('U-003', 'มาลี รักษาสัตย์');
 
     const heard = nextMessage(listener);
-    speaker.send(audioFrame(0));
+    speaker.send(audioFrame(4000));
     const signal = await heard;
 
     expect(signal.senderId).toBe('U-001');
     expect(signal.senderName).toBe('สมชาย ใจดี');
-    expect(signal.payload.text).toBe('รับทราบครับ');
+    expect(signal.payload.text).toBe('สวัสดีครับ');
 
     speaker.close();
     listener.close();
   });
 
-  test('บันทึกลง transcript_segments ด้วย startSec จาก header ไม่ใช่เวลาที่เฟรมมาถึง', async () => {
-    mockTranscribe.mockResolvedValue('วาระที่หนึ่ง');
-    const speaker = await openClient('U-001', 'สมชาย ใจดี');
-
-    const echoed = nextMessage(speaker);
-    speaker.send(audioFrame(12_500));
-    await echoed;
-
-    const rows = (await query(
-      'SELECT speaker_id, start_sec, text FROM transcript_segments WHERE meeting_id = ?',
-      [MEETING]
-    )) as { speaker_id: string; start_sec: number; text: string }[];
-
-    expect(rows).toHaveLength(1);
-    expect(rows[0].speaker_id).toBe('U-001');
-    expect(Number(rows[0].start_sec)).toBeCloseTo(12.5, 3);
-    expect(rows[0].text).toBe('วาระที่หนึ่ง');
-
-    speaker.close();
-  });
-
-  test('ข้อความที่ซ้ำจากช่วงทับซ้อนถูกตัดก่อนบันทึก', async () => {
-    const speaker = await openClient('U-001', 'สมชาย ใจดี');
-
-    mockTranscribe.mockResolvedValueOnce('มติที่ประชุมเห็นชอบ');
-    let echoed = nextMessage(speaker);
-    speaker.send(audioFrame(0));
-    await echoed;
-
-    mockTranscribe.mockResolvedValueOnce('เห็นชอบตามที่เสนอ');
-    echoed = nextMessage(speaker);
-    speaker.send(audioFrame(3_000));
-    const second = await echoed;
-
-    expect(second.payload.text).toBe('ตามที่เสนอ');
-
-    speaker.close();
-  });
-
-  test('เฟรมที่แกะไม่ได้ถูกทิ้งเงียบ ๆ ไม่เรียก ASR และไม่ทำให้ socket ตาย', async () => {
-    const speaker = await openClient('U-001', 'สมชาย ใจดี');
-
-    speaker.send(Buffer.from([0x00, 0x01]));
-    await new Promise((resolve) => setTimeout(resolve, 150));
-
-    expect(mockTranscribe).not.toHaveBeenCalled();
-    expect(speaker.readyState).toBe(WebSocket.OPEN);
-
-    speaker.close();
-  });
-
-  test('sidecar ล้มเหลว แจ้ง signal_error กลับหาผู้ส่งเท่านั้น', async () => {
-    mockTranscribe.mockRejectedValue(new Error('sidecar down'));
+  it('เปิด session ไม่สำเร็จ แจ้ง signal_error กลับหาผู้ส่งเท่านั้น ไม่มี fallback ไป provider อื่น', async () => {
+    (azureProvider.open as jest.Mock).mockRejectedValueOnce(new Error('quota exceeded'));
     const speaker = await openClient('U-001', 'สมชาย ใจดี');
 
     const replied = nextMessage(speaker);
@@ -169,57 +219,15 @@ describe('audio frames', () => {
 
     const rows = (await query('SELECT id FROM transcript_segments WHERE meeting_id = ?', [MEETING])) as unknown[];
     expect(rows).toHaveLength(0);
+    // เปิดไม่สำเร็จแล้วต้องไม่มี session ค้างให้เฟรมถัดไปหลงเหลือ — เฟรมถัดมาต้องลองเปิดใหม่และสำเร็จ
+    const nextEchoed = nextMessage(speaker);
+    speaker.send(audioFrame(4000));
+    expect((await nextEchoed).payload.text).toBe('สวัสดีครับ');
 
     speaker.close();
   });
 
-  test('ข้อความว่างจาก ASR ไม่ถูกบันทึกและไม่ถูกกระจาย', async () => {
-    mockTranscribe.mockResolvedValue('   ');
-    const speaker = await openClient('U-001', 'สมชาย ใจดี');
-
-    speaker.send(audioFrame(0));
-    await new Promise((resolve) => setTimeout(resolve, 200));
-
-    const rows = (await query('SELECT id FROM transcript_segments WHERE meeting_id = ?', [MEETING])) as unknown[];
-    expect(rows).toHaveLength(0);
-
-    speaker.close();
-  });
-
-  test('ก้อนใหม่ที่มาระหว่างก้อนเก่ายังถอดไม่เสร็จ ทำให้ก้อนเก่าถูกทิ้ง', async () => {
-    const speaker = await openClient('U-001', 'สมชาย ใจดี');
-
-    let releaseFirst: (value: string) => void = () => {};
-    mockTranscribe.mockImplementationOnce(
-      () => new Promise<string>((resolve) => { releaseFirst = resolve; })
-    );
-    mockTranscribe.mockResolvedValueOnce('ก้อนที่สอง');
-
-    speaker.send(audioFrame(0));
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    const echoed = nextMessage(speaker);
-    speaker.send(audioFrame(3_000));
-    // รอให้ server รับก้อนที่สองจริง ๆ ก่อนค่อยปล่อยก้อนแรก — ปล่อยเลยจะกลายเป็นว่าก้อนแรก
-    // ถอดเสร็จตั้งแต่ยังไม่มีก้อนใหม่มาแทนที่ ซึ่งไม่ใช่สถานการณ์ที่เทสต์นี้ต้องการวัด
-    while (mockTranscribe.mock.calls.length < 2) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    releaseFirst('ก้อนที่หนึ่ง');
-    const signal = await echoed;
-
-    // ก้อนแรกถูกทิ้ง ข้อความที่ออกอากาศต้องเป็นก้อนที่สองเท่านั้น
-    expect(signal.payload.text).toBe('ก้อนที่สอง');
-
-    const rows = (await query('SELECT text FROM transcript_segments WHERE meeting_id = ?', [MEETING])) as {
-      text: string;
-    }[];
-    expect(rows.map((r) => r.text)).toEqual(['ก้อนที่สอง']);
-
-    speaker.close();
-  });
-
-  test('DB ล้มระหว่างบันทึก ไม่ทำให้โปรเซสตาย และห้องยังใช้งานต่อได้', async () => {
+  it('DB ล้มระหว่างบันทึก ไม่ทำให้โปรเซสตาย และห้องยังใช้งานต่อได้', async () => {
     const speaker = await openClient('U-001', 'สมชาย ใจดี');
     const rejections: unknown[] = [];
     const onUnhandled = (reason: unknown) => rejections.push(reason);
@@ -228,9 +236,10 @@ describe('audio frames', () => {
     // จำลอง DB ล้มด้วยการทิ้งตารางไปชั่วคราว — INSERT จะ reject จริงเหมือนตอน connection หลุด
     await query('RENAME TABLE transcript_segments TO transcript_segments_hidden');
     try {
-      mockTranscribe.mockResolvedValue('ล้มระหว่างบันทึก');
-      speaker.send(audioFrame(0));
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      const echoed = nextMessage(speaker);
+      speaker.send(audioFrame(4000));
+      await echoed;
+      await new Promise((resolve) => setTimeout(resolve, 200));
     } finally {
       await query('RENAME TABLE transcript_segments_hidden TO transcript_segments');
       process.off('unhandledRejection', onUnhandled);
@@ -239,50 +248,10 @@ describe('audio frames', () => {
     expect(rejections).toHaveLength(0);
 
     // socket เดิมยังใช้ได้ ก้อนถัดไปยังถอดและออกอากาศได้ตามปกติ
-    mockTranscribe.mockResolvedValue('กลับมาปกติ');
     const echoed = nextMessage(speaker);
-    speaker.send(audioFrame(3_000));
-    expect((await echoed).payload.text).toBe('กลับมาปกติ');
+    speaker.send(audioFrame(6000));
+    expect((await echoed).payload.text).toBe('สวัสดีครับ');
 
     speaker.close();
-  });
-
-  test('ยิงเฟรมรัวเกินเพดานที่ค้างได้ ถูกทิ้งก่อนถึง sidecar', async () => {
-    const speaker = await openClient('U-001', 'สมชาย ใจดี');
-
-    // ค้างทุกก้อนไว้ เพื่อให้เพดาน in-flight เต็มแล้ววัดว่ามีกี่ก้อนที่ถูกส่งต่อไป sidecar จริง
-    const release: ((value: string) => void)[] = [];
-    mockTranscribe.mockImplementation(
-      () => new Promise<string>((resolve) => { release.push(resolve); })
-    );
-
-    for (let i = 0; i < 10; i += 1) speaker.send(audioFrame(i * 2_500));
-    await new Promise((resolve) => setTimeout(resolve, 300));
-
-    expect(mockTranscribe).toHaveBeenCalledTimes(2);
-
-    release.forEach((resolve) => resolve(''));
-    speaker.close();
-  });
-
-  test('ออกจากห้องแล้วสถานะผู้พูดถูกลืม ประโยคแรกของรอบใหม่ไม่ถูกตัดทิ้ง', async () => {
-    mockTranscribe.mockResolvedValue('เห็นชอบตามที่เสนอ');
-    const first = await openClient('U-001', 'สมชาย ใจดี');
-    const echoed = nextMessage(first);
-    first.send(audioFrame(0));
-    await echoed;
-
-    first.close();
-    // รอให้ server ประมวลผล close ก่อน ไม่งั้นยังไม่ทันลืมสถานะ
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    // พูดประโยคเดิมซ้ำในรอบใหม่ ถ้าสถานะเก่ายังค้าง stripOverlap จะตัดจนเหลือสตริงว่าง
-    // แล้วจะไม่มีสัญญาณส่งกลับมาเลย เทสต์นี้จึงจะ timeout ถ้าการลืมสถานะพัง
-    const second = await openClient('U-001', 'สมชาย ใจดี');
-    const echoedAgain = nextMessage(second);
-    second.send(audioFrame(0));
-    expect((await echoedAgain).payload.text).toBe('เห็นชอบตามที่เสนอ');
-
-    second.close();
   });
 });

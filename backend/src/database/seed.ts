@@ -16,27 +16,31 @@ export async function seedFromMockData(defaultPassword: string): Promise<SeedRes
   let userCount = 0;
 
   for (const user of users) {
+    const hash = await bcrypt.hash(defaultPassword, 10);
     const existing = await queryOne('SELECT id FROM app_users WHERE id = ?', [user.id]);
     if (existing) {
-      userCount += 1;
-      continue;
+      // update password hash + fields ให้ตรงกับ mock data ปัจจุบัน
+      await query(
+        `UPDATE app_users SET password_hash = ?, name = ?, position = ?, department = ?, email = ?, system_role = ? WHERE id = ?`,
+        [hash, user.name, user.position, user.department, user.email, user.systemRole, user.id]
+      );
+    } else {
+      await query(
+        `INSERT INTO app_users (id, name, position, department, email, system_role, room_id, password_hash, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          user.id,
+          user.name,
+          user.position,
+          user.department,
+          user.email,
+          user.systemRole,
+          user.roomId ?? null,
+          hash,
+          now,
+        ]
+      );
     }
-    const hash = await bcrypt.hash(defaultPassword, 10);
-    await query(
-      `INSERT INTO app_users (id, name, position, department, email, system_role, room_id, password_hash, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        user.id,
-        user.name,
-        user.position,
-        user.department,
-        user.email,
-        user.systemRole,
-        user.roomId ?? null,
-        hash,
-        now,
-      ]
-    );
     userCount += 1;
   }
 

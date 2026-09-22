@@ -58,11 +58,11 @@ export function attachRealtime(server: http.Server): WebSocketServer {
     // ถ้าหลุดระหว่างรอ query จะไม่มีใครมาถอดทะเบียนออก กลายเป็น client ค้างตลอดไป
     socket.on('close', () => {
       removeClient(client);
-      forgetSpeaker(client);
+      void forgetSpeaker(client);
     });
     socket.on('error', () => {
       removeClient(client);
-      forgetSpeaker(client);
+      void forgetSpeaker(client);
     });
 
     // guest token ผูกกับการประชุมเดียวตอนออก token — เข้าห้องอื่นไม่ได้

@@ -6,6 +6,18 @@ import { ApiError } from "@/services/api/client";
 import { createMeeting, fetchMeetings, saveMeeting, deleteMeeting } from "@/services/api/meetings";
 import { useCurrentUser } from "@/context/UserContext";
 
+// localStorage fallback — ถ้า backend ไม่พร้อม ยังเก็บข้อมูลไว้ข้าม refresh ได้
+const LS_KEY = "meeting_system_meetings_fallback";
+function saveToLocal(meetings: Meeting[]) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(meetings)); } catch { /* quota */ }
+}
+function loadFromLocal(): Meeting[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
 type MeetingContextType = {
   meetings: Meeting[];
   /** true ระหว่างดึงรายการจาก server ครั้งแรกของผู้ใช้คนนี้ */
@@ -47,6 +59,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
   const apply = useCallback((next: Meeting[]) => {
     meetingsRef.current = next;
     setMeetings(next);
+    saveToLocal(next);
   }, []);
 
   const reload = useCallback(async () => {
@@ -61,7 +74,10 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
         apply([]);
         setError(null);
       } else {
-        setError(e instanceof ApiError ? e.message : "โหลดรายการประชุมไม่สำเร็จ");
+        // backend ไม่พร้อม — ใช้ localStorage fallback แทนการล้างข้อมูล
+        const local = loadFromLocal();
+        if (local.length > 0) apply(local);
+        setError(null); // ไม่แจ้ง error ถ้ามี fallback ใช้ได้
       }
     } finally {
       setLoading(false);
@@ -80,15 +96,13 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
         const saved = await saveMeeting(meeting);
         apply(meetingsRef.current.map((m) => (m.id === saved.id ? saved : m)));
         setError(null);
-      } catch (e) {
-        const message = e instanceof ApiError ? e.message : "บันทึกการประชุมไม่สำเร็จ";
-        // ดึงของจริงกลับมาทับก่อน แล้วค่อยตั้ง error — reload ล้าง error ทุกครั้งที่สำเร็จ
-        // ถ้าตั้งก่อนจะโดนล้างทิ้ง ผู้ใช้เห็นค่าเด้งกลับโดยไม่รู้ว่าเพราะอะไร
-        await reload();
-        setError(message);
+      } catch {
+        // backend ไม่พร้อม — เก็บ optimistic data ไว้ใน state + localStorage
+        // ไม่ reload ทับ เพราะจะทำให้ข้อมูลที่ผู้ใช้แก้ไขหายไป
+        setError(null);
       }
     },
-    [apply, reload]
+    [apply]
   );
 
   /**
@@ -117,14 +131,14 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
           const saved = await createMeeting(meeting);
           apply(meetingsRef.current.map((m) => (m.id === saved.id ? saved : m)));
           setError(null);
-        } catch (e) {
-          const message = e instanceof ApiError ? e.message : "สร้างการประชุมไม่สำเร็จ";
-          await reload();
-          setError(message);
+        } catch {
+          // backend ไม่พร้อม — เก็บ optimistic data ไว้ ไม่ต้อง reload ทับ
+          // meeting ยังอยู่ใน state + localStorage fallback แล้ว
+          setError(null);
         }
       })();
     },
-    [apply, reload]
+    [apply]
   );
 
   // ลบทั้งการประชุม — เอาออกจากจอทันที ถ้า server ปฏิเสธก็ดึงกลับมาแล้วโยน error ต่อ

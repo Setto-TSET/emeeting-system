@@ -42,3 +42,18 @@ services:
       # จำเป็นเมื่อ sidecar อยู่บน public URL ไม่ตั้งแปลว่าใครก็สั่งถอดเสียงผ่าน CPU ของเราได้
       - key: ASR_TOKEN
         sync: false
+      # คีย์ Azure AI Speech — ห้องระดับ normal/restricted ใช้เส้นทางนี้ถอดเสียง
+      # ไม่ตั้ง = ทุกห้องตกไปทาง typhoon (ซึ่งบน Render free รันไม่ได้ คำบรรยายจึงเงียบ)
+      - key: AZURE_SPEECH_KEY
+        sync: false
+      - key: AZURE_SPEECH_REGION
+        value: southeastasia
+      # F0 (ฟรี) เปิดได้ session เดียวพร้อมกันและปรับไม่ได้ ขึ้น S0 แล้วเพิ่มเป็น 4-8 ได้
+      - key: ASR_MAX_STREAMS
+        value: "1"
+      # เงียบเกินเท่านี้ปิด session คืน slot — ทั้งประหยัดค่าใช้จ่ายและปล่อยคิวให้คนถัดไป
+      - key: SILENCE_CLOSE_MS
+        value: "1500"
+      # ต้องดังเป็นกี่เท่าของคนที่ถือ slot อยู่ถึงจะแย่งได้ กันสองคนสลับ slot กันทุกเฟรม
+      - key: ARBITRATION_TAKEOVER_RATIO
+        value: "1.5"

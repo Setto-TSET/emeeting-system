@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import type { RoomSignal } from "@/services/signaling/types";
 
-type SubtitleEntry = { senderName: string; text: string; isFinal: boolean; at: number };
+type SubtitleEntry = { senderId: string; senderName: string; text: string; isFinal: boolean; at: number };
 
 export function SubtitleBar({ latest }: { latest: RoomSignal<"subtitle_text"> | null }) {
   const [lines, setLines] = useState<SubtitleEntry[]>([]);
@@ -15,14 +15,21 @@ export function SubtitleBar({ latest }: { latest: RoomSignal<"subtitle_text"> | 
   if (latest && latest !== processedLatest) {
     setProcessedLatest(latest);
     setLines((prev) => {
-      const withoutStale = prev.filter((l) => Date.now() - l.at < 5000);
+      const fresh = prev.filter((l) => Date.now() - l.at < 5000);
       const next: SubtitleEntry = {
+        senderId: latest.senderId,
         senderName: latest.senderName,
         text: latest.payload.text,
         isFinal: latest.payload.isFinal,
         at: latest.timestamp,
       };
-      return [...withoutStale.slice(-1), next]; // keep max 2 lines
+
+      // ผลบางส่วนไหลมาวินาทีละหลายครั้ง ถ้าต่อท้ายทุกครั้งจะกลายเป็นสิบบรรทัดของประโยคเดียว
+      // บรรทัดที่ยังไม่ final ของผู้พูดคนเดิมจึงถูกแทนที่ ส่วนบรรทัดที่ final แล้วค้างไว้ตามเดิม
+      const open = fresh.findIndex((l) => l.senderId === next.senderId && !l.isFinal);
+      const merged = open === -1 ? [...fresh, next] : fresh.map((l, i) => (i === open ? next : l));
+
+      return merged.slice(-2); // keep max 2 lines
     });
   }
 

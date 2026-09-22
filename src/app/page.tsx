@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -17,6 +17,31 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  // Dev auto-login: bypass หน้า login — prototype ยังไม่ต้องบังคับ login
+  // ถ้ามี token เก่าอยู่ใช้ต่อ ถ้าไม่มีลอง login ด้วย seed password
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // ถ้ามี token อยู่แล้ว (จาก session ก่อน) ไปหน้า dashboard เลย
+      const existing = typeof window !== "undefined" && sessionStorage.getItem("meeting_system_access_token");
+      if (existing) {
+        router.replace("/dashboard");
+        return;
+      }
+      // ลอง login — password ตรงกับ SEED_PASSWORD ที่ seed ไว้
+      // ลองทั้ง production password และ dev password
+      let result = await signIn("somchai.j@e-office.cloud", "Meeting@2569");
+      if (!result.ok) result = await signIn("somchai.j@e-office.cloud", "demo1234");
+      if (cancelled) return;
+      if (result.ok) {
+        setCurrentUser(result.user);
+      }
+      // ไม่ว่า login สำเร็จหรือไม่ ไป dashboard — ใช้ localStorage fallback ถ้าไม่มี token
+      router.replace("/dashboard");
+    })();
+    return () => { cancelled = true; };
+  }, [router, setCurrentUser]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
