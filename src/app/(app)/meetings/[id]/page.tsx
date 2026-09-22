@@ -2,6 +2,7 @@
 
 import { useState, useRef, use, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,7 +76,10 @@ export default function MeetingDetailPage({ params }: { params: Promise<{ id: st
 
 function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const { currentUser } = useCurrentUser();
-  const { updateMeeting, addMeetingFile, addMeetingComment } = useMeetings();
+  const { updateMeeting, removeMeeting, addMeetingFile, addMeetingComment } = useMeetings();
+  const router = useRouter();
+  const [deleteDialog, setDeleteDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const visibleFiles = meeting.files.filter(f => canViewFile(f, currentUser, meeting));
   const hiddenFileCount = meeting.files.length - visibleFiles.length;
   const shouldForce = meeting.participants.length === 0 && meeting.status !== "endorsed";
@@ -499,6 +503,8 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   // สิทธิ์แยกตามการกระทำ — เดิมใช้ตัวเดียวเช็คแค่สถานะ ทำให้ใครที่เป็น manager
   // ก็รับรองประชุมของคนอื่น ส่งอีเมลหาองค์ประชุมทุกคน หรือเพิ่มตัวเองเป็นผู้จัดการได้
   const canEdit = canEditMeeting(currentUser, meeting);
+  // ลบได้ = ผู้จัด/ผู้จัดการประชุม/admin (ตรงกับ backend canEditMeeting) โดยไม่ผูกกับสถานะ
+  const canDelete = can(currentUser, "meeting.edit", meeting);
   const canManageParticipants = can(currentUser, "meeting.manageParticipants", meeting) && meeting.status !== "endorsed";
   const canManagePermissions = can(currentUser, "meeting.managePermissions", meeting) && meeting.status !== "endorsed";
   const canNotify = can(currentUser, "meeting.notify", meeting);
@@ -605,11 +611,50 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={!canDelete}
+                  onClick={() => setDeleteDialog(true)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <span className={iconSm}>delete</span> ลบการประชุม
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
       </div>
+
+      <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>ลบการประชุม</DialogTitle>
+            <DialogDescription>
+              ลบ &ldquo;{meeting.name}&rdquo; ออกถาวร — วาระ ไฟล์เอกสาร ผู้เข้าร่วม ผลโหวต และคำเชิญทั้งหมดจะหายไปด้วย กู้คืนไม่ได้
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialog(false)} disabled={deleting}>ยกเลิก</Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  await removeMeeting(meeting.id);
+                  toast.success("ลบการประชุมแล้ว");
+                  router.push("/meetings");
+                } catch (e) {
+                  toast.error(e instanceof ApiError ? e.message : "ลบการประชุมไม่สำเร็จ");
+                  setDeleting(false);
+                  setDeleteDialog(false);
+                }
+              }}
+            >
+              {deleting ? "กำลังลบ..." : "ลบถาวร"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* บอกเหตุผลเมื่อดูได้แต่แก้ไม่ได้ — ไม่งั้นผู้ใช้เห็นหน้าที่ปุ่มหายไปเฉยๆ โดยไม่รู้ว่าทำไม */}
       {!canEdit && (

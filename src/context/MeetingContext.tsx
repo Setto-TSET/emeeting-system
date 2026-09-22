@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from "react";
 import { Meeting, MeetingFile, MeetingParticipant } from "@/data";
 import { ApiError } from "@/services/api/client";
-import { createMeeting, fetchMeetings, saveMeeting } from "@/services/api/meetings";
+import { createMeeting, fetchMeetings, saveMeeting, deleteMeeting } from "@/services/api/meetings";
 import { useCurrentUser } from "@/context/UserContext";
 
 type MeetingContextType = {
@@ -14,6 +14,7 @@ type MeetingContextType = {
   error: string | null;
   reload: () => Promise<void>;
   addMeeting: (meeting: Meeting) => void;
+  removeMeeting: (meetingId: string) => Promise<void>;
   updateMeeting: (meetingId: string, updated: Partial<Meeting>) => void;
   addMeetingFile: (meetingId: string, file: MeetingFile) => void;
   addMeetingComment: (meetingId: string, agendaId: string, comment: { by: string; text: string; time: string }) => void;
@@ -126,6 +127,25 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     [apply, reload]
   );
 
+  // ลบทั้งการประชุม — เอาออกจากจอทันที ถ้า server ปฏิเสธก็ดึงกลับมาแล้วโยน error ต่อ
+  // (async เพราะหน้าเรียกต้องรอผลก่อนพาผู้ใช้ออกจากหน้ารายละเอียดที่เพิ่งถูกลบ)
+  const removeMeeting = useCallback(
+    async (meetingId: string) => {
+      const prev = meetingsRef.current;
+      apply(prev.filter((m) => m.id !== meetingId));
+      try {
+        await deleteMeeting(meetingId);
+        setError(null);
+      } catch (e) {
+        apply(prev);
+        const message = e instanceof ApiError ? e.message : "ลบการประชุมไม่สำเร็จ";
+        setError(message);
+        throw e;
+      }
+    },
+    [apply]
+  );
+
   const updateMeeting = useCallback(
     (meetingId: string, updated: Partial<Meeting>) => {
       mutate((prev) => prev.map((m) => (m.id === meetingId ? { ...m, ...updated } : m)));
@@ -222,6 +242,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
         error,
         reload,
         addMeeting,
+        removeMeeting,
         updateMeeting,
         addMeetingFile,
         addMeetingComment,

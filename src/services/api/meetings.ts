@@ -40,6 +40,10 @@ export async function saveMeeting(meeting: Meeting): Promise<Meeting> {
   return body.meeting;
 }
 
+export async function deleteMeeting(meetingId: string): Promise<void> {
+  await apiFetch(`/api/meetings/${meetingId}`, { method: "DELETE" });
+}
+
 /** อัปโหลดเป็น base64 — ฝั่ง server จำกัดไว้ 20MB ต่อไฟล์ */
 export async function uploadMeetingFile(
   meetingId: string,

@@ -248,3 +248,31 @@ export async function saveMeeting(input: MeetingPayload): Promise<MeetingPayload
   if (!saved) throw new Error('บันทึกการประชุมไม่สำเร็จ');
   return saved;
 }
+
+/**
+ * ลบการประชุมและทุกอย่างที่ผูกกับมัน — schema ไม่มี ON DELETE CASCADE จึงต้องกวาดเอง
+ * ลูกก่อนแม่ในทรานแซกชันเดียว ไม่งั้นเหลือแถวกำพร้า (ไฟล์ BLOB กินโควตา, คำเชิญค้าง ฯลฯ)
+ * vote_options / vote_records ผูกกับ topic_id จึงลบผ่าน subquery ของ vote_topics ห้องนี้
+ */
+export async function deleteMeeting(meetingId: string): Promise<boolean> {
+  return withTransaction(async (run) => {
+    const topicScope = 'topic_id IN (SELECT id FROM vote_topics WHERE meeting_id = ?)';
+    await run(`DELETE FROM vote_records WHERE ${topicScope}`, [meetingId]);
+    await run(`DELETE FROM vote_options WHERE ${topicScope}`, [meetingId]);
+    for (const table of [
+      'vote_topics',
+      'hand_raises',
+      'transcript_segments',
+      'doc_shares',
+      'meeting_invites',
+      'meeting_files',
+      'meeting_participants',
+    ]) {
+      await run(`DELETE FROM ${table} WHERE meeting_id = ?`, [meetingId]);
+    }
+    const res = (await run('DELETE FROM meetings WHERE id = ?', [meetingId])) as {
+      affectedRows?: number;
+    };
+    return (res.affectedRows ?? 0) > 0;
+  });
+}
