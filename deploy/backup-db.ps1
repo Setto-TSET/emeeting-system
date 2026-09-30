@@ -43,8 +43,14 @@ $out = Join-Path $OutDir "emeeting-backup-$stamp.sql"
 # Aiven บังคับ SSL -- ส่งรหัสผ่านทาง env ไม่ให้โผล่ใน process list
 $env:MYSQL_PWD = $pass
 try {
-  mysqldump --ssl-mode=REQUIRED -h $dbHost -P $port -u $user --single-transaction --routines --triggers $db |
-    Out-File -FilePath $out -Encoding utf8
+  # --result-file: ให้ mysqldump เขียนไฟล์เอง อย่า pipe ผ่าน Out-File
+  # (PowerShell 5.1 จะเติม UTF-8 BOM + แปลง CRLF/encoding ทำ dump เสีย)
+  # --set-gtid-purged=OFF: Aiven managed MySQL มี GTID ตัดออกไม่ให้ restore ไป DB ใหม่ fail
+  mysqldump --ssl-mode=REQUIRED -h $dbHost -P $port -u $user `
+    --single-transaction --routines --triggers `
+    --set-gtid-purged=OFF --default-character-set=utf8mb4 `
+    --result-file="$out" $db
+  if ($LASTEXITCODE -ne 0) { throw "mysqldump failed (exit $LASTEXITCODE)" }
 } finally {
   Remove-Item Env:\MYSQL_PWD -ErrorAction SilentlyContinue
 }
