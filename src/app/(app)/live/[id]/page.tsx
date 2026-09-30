@@ -499,8 +499,8 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               className="h-8 font-semibold bg-orange-600 hover:bg-orange-700 text-white rounded-lg px-3"
               title="จบการประชุมสำหรับทุกคน"
             >
-              <span className="material-symbols-outlined text-[16px] mr-1">stop_circle</span>
-              จบการประชุมเลย
+              <span className="material-symbols-outlined text-[16px] sm:mr-1">stop_circle</span>
+              <span className="hidden sm:inline">จบการประชุมเลย</span>
             </Button>
           )}
 
@@ -524,17 +524,17 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
             }}
             className="h-8 font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg px-3"
           >
-            <span className="material-symbols-outlined text-[16px] mr-1">logout</span>
-            ออกจากห้องประชุม
+            <span className="material-symbols-outlined text-[16px] sm:mr-1">logout</span>
+            <span className="hidden sm:inline">ออกจากห้องประชุม</span>
           </Button>
         </div>
       </header>
 
-      {/* Main Workspace */}
-      <div className="flex-1 flex overflow-hidden min-h-0 relative">
+      {/* Main Workspace — stack แนวตั้งบนมือถือ, วางข้างกันตั้งแต่ md ขึ้นไป */}
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0 relative">
         
         {/* Left Side: Video Grid & Shared Presentation */}
-        <div className="flex-1 flex flex-col p-4 space-y-4 overflow-y-auto relative">
+        <div className="flex-1 flex flex-col p-2 md:p-4 space-y-4 overflow-y-auto relative min-h-0">
           
           {/* Main content pane: เอกสารที่แชร์ > engine ฝัง (ZegoCloud) > เวทีประชุมภายนอก
               ไม่มีห้องจำลอง (mockup) ให้ fallback แล้ว — ทุก meeting ต้องผ่าน engine จริงหรือลิงก์จริง */}
@@ -638,7 +638,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
         </div>
 
         {/* Right Side: Tab Drawers for Agenda, Files, Chat, and Participants */}
-        <div className="w-80 md:w-96 bg-card border-l border-border flex flex-col shrink-0">
+        <div className="w-full md:w-80 lg:w-96 h-[45%] md:h-auto bg-card border-t md:border-t-0 md:border-l border-border flex flex-col shrink-0 min-h-0">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
             <div className="px-3 pt-3 border-b border-border bg-muted flex shrink-0">
               <TabsList className="bg-muted border border-border p-0.5 rounded-lg flex-1 h-9">
