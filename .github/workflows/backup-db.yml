@@ -1,0 +1,53 @@
+name: Backup Aiven MySQL
+
+# สำรอง DB อัตโนมัติ -- Aiven free ไม่มี backup ให้
+# ต้องตั้ง repo secret: DATABASE_URL (mysql://user:pass@host:port/db?...)
+#   Settings > Secrets and variables > Actions > New repository secret
+# ดาวน์โหลด dump ได้จาก tab Actions > run > Artifacts (เก็บ 30 วัน)
+
+on:
+  schedule:
+    - cron: "0 19 * * *" # 02:00 เวลาไทย (UTC+7) ทุกวัน
+  workflow_dispatch: {} # กดรันเองได้จากหน้า Actions
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL secret not set"; exit 1
+          fi
+          # แยกส่วนจาก mysql://user:pass@host:port/db?query
+          rest="${DATABASE_URL#mysql://}"
+          rest="${rest%%\?*}"                 # ตัด ?ssl=... ทิ้ง
+          creds="${rest%%@*}"
+          hostpart="${rest#*@}"
+          user="${creds%%:*}"
+          pass="${creds#*:}"
+          hp="${hostpart%%/*}"
+          db="${hostpart#*/}"
+          host="${hp%%:*}"
+          port="${hp#*:}"
+          echo "host=$host port=$port db=$db user=$user"
+          stamp="$(date -u +%Y%m%d-%H%M%S)"
+          echo "OUTFILE=emeeting-backup-$stamp.sql" >> "$GITHUB_ENV"
+          # ใช้ mysqldump 8 จาก docker (ubuntu runner มีแต่ mariadb-client ที่ธง SSL ต่างกัน)
+          # bash '>' เขียน byte ตรง ไม่มีปัญหา BOM แบบ PowerShell
+          docker run --rm -e MYSQL_PWD="$pass" mysql:8 \
+            mysqldump --ssl-mode=REQUIRED -h "$host" -P "$port" -u "$user" \
+            --single-transaction --routines --triggers \
+            --set-gtid-purged=OFF --default-character-set=utf8mb4 "$db" \
+            > "emeeting-backup-$stamp.sql"
+          ls -lh "emeeting-backup-$stamp.sql"
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.OUTFILE }}
+          path: ${{ env.OUTFILE }}
+          retention-days: 30
