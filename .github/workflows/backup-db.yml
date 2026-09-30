@@ -36,10 +36,11 @@ jobs:
           echo "host=$host port=$port db=$db user=$user"
           stamp="$(date -u +%Y%m%d-%H%M%S)"
           echo "OUTFILE=emeeting-backup-$stamp.sql" >> "$GITHUB_ENV"
-          # ใช้ mysqldump 8 จาก docker (ubuntu runner มีแต่ mariadb-client ที่ธง SSL ต่างกัน)
+          # ubuntu runner ติดตั้ง MySQL 8 client มาให้แล้ว -- เรียก mysqldump ตรง
+          # (docker container ของ runner แก้ชื่อ host ไม่ได้: error 2005 DNS)
           # bash '>' เขียน byte ตรง ไม่มีปัญหา BOM แบบ PowerShell
-          docker run --rm -e MYSQL_PWD="$pass" mysql:8 \
-            mysqldump --ssl-mode=REQUIRED -h "$host" -P "$port" -u "$user" \
+          mysqldump --version
+          MYSQL_PWD="$pass" mysqldump --ssl-mode=REQUIRED -h "$host" -P "$port" -u "$user" \
             --single-transaction --routines --triggers \
             --set-gtid-purged=OFF --default-character-set=utf8mb4 "$db" \
             > "emeeting-backup-$stamp.sql"
