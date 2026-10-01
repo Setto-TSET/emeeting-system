@@ -35,8 +35,7 @@ import {
 } from "@/services/api/invites";
 import { ApiError } from "@/services/api/client";
 import { downloadIcs } from "@/lib/calendar";
-import { generateMockTranscript } from "@/services/transcription/mockProvider";
-import { mockSummarizer } from "@/services/summarize/mockSummarizer";
+import { summarizeMeeting } from "@/services/api/meetings";
 import { buildReportMarkdown } from "@/services/summarize/reportBuilder";
 
 const iconSm = "material-symbols-outlined text-[16px]";
@@ -211,8 +210,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const generateSummary = async () => {
     setSummaryBusy(true);
     try {
-      const transcript = generateMockTranscript(meeting);
-      const summary    = await mockSummarizer.summarizeByAgenda(transcript, []);
+      const summary    = await summarizeMeeting(meeting.id);
       const mdContent  = buildReportMarkdown(meeting, summary);
       const mdBlob     = new Blob([mdContent], { type: "text/markdown; charset=utf-8" });
       const mdFile     = new File([mdBlob], "report_draft_summary.md", { type: "text/markdown" });
@@ -237,8 +235,9 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
       });
       updateMeeting(meeting.id, { summaryDraftId: draftFileId });
       toast.success("สร้างร่างรายงานสรุปแล้ว", { description: "ดูได้ที่รายการเอกสารด้านบน" });
-    } catch {
-      toast.error("สร้างรายงานไม่สำเร็จ");
+    } catch (e) {
+      // ข้อความจาก server บอกสาเหตุจริง (ยังไม่มีคำบรรยาย / ยังไม่ตั้ง key / ไม่มีสิทธิ์)
+      toast.error(e instanceof ApiError ? e.message : "สร้างรายงานไม่สำเร็จ");
     } finally {
       setSummaryBusy(false);
     }

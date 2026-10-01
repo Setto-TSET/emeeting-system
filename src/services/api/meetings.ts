@@ -6,6 +6,7 @@
 // ═══════════════════════════════════════════
 
 import { Meeting } from "@/data";
+import type { MeetingSummary } from "@/services/summarize/types";
 import { apiFetch, apiBaseUrl, getAccessToken } from "./client";
 
 export type RemoteFileMeta = {
@@ -38,6 +39,14 @@ export async function saveMeeting(meeting: Meeting): Promise<Meeting> {
     body: JSON.stringify({ meeting }),
   });
   return body.meeting;
+}
+
+/** ร่างรายงานโดย AI — server ดึงคำบรรยายสดที่เก็บไว้เอง ไม่ส่ง transcript จากหน้าเว็บ */
+export async function summarizeMeeting(meetingId: string): Promise<MeetingSummary> {
+  return apiFetch<MeetingSummary>("/api/summarize", {
+    method: "POST",
+    body: JSON.stringify({ meetingId }),
+  });
 }
 
 export async function deleteMeeting(meetingId: string): Promise<void> {
