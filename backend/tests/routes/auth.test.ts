@@ -71,26 +71,13 @@ describe('auth routes', () => {
     expect(res.status).toBe(401);
   });
 
-  it('issues a guest token for a meeting that allows guest join', async () => {
+  it('has no way to get a guest token without an invite link', async () => {
+    // เคยมี POST /api/auth/guest ที่ใครรู้ meetingId ก็ได้ token แขก ข้ามระบบลิงก์เชิญไปทั้งหมด
     const res = await request(app)
       .post('/api/auth/guest')
       .send({ meetingId: 'MT-2569-010', name: 'ผู้เข้าร่วมภายนอก' });
 
-    expect(res.status).toBe(200);
-    expect(typeof res.body.token).toBe('string');
-    expect(res.body.user.systemRole).toBe('guest');
-  });
-
-  it('refuses a guest token for a meeting that does not allow guest join', async () => {
-    // src/data/index.ts seeds exactly one meeting (MT-2569-010); there is no
-    // MT-2569-007 to seed a second fixture from, so this test flips the same
-    // meeting's flag after the earlier "allows guest join" test has already
-    // used it — order-dependent, but there is no other seeded meeting to use.
-    await query('UPDATE meetings SET allow_guest_join = 0 WHERE id = ?', ['MT-2569-010']);
-    const res = await request(app)
-      .post('/api/auth/guest')
-      .send({ meetingId: 'MT-2569-010', name: 'ผู้เข้าร่วมภายนอก' });
-
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
+    expect(res.body.token).toBeUndefined();
   });
 });
