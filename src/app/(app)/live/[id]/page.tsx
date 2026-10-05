@@ -95,14 +95,13 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     if (!meeting) return;
     const surface = resolveVideoSurface(meeting);
     if (surface.kind !== "embed") return;
-    const roomKey = meeting.conferenceRoomKey ?? meeting.id;
     let cancelled = false;
     // เคลียร์ credential เก่าทันที — ไม่งั้นช่วงที่ roomIdentityId เพิ่งเปลี่ยน (เช่น guest join
     // เพิ่ง resolve) แต่ยังรอ token ใหม่ ZegoCloudEmbedStage จะได้ credential ของ identity เก่า
     // คู่กับ userId ใหม่ ไปพร้อมกัน — token ผูกกับ user_id เดิม ไม่ตรงกับที่ engine ใช้ login
     setVideoCredential(null);
     setCredentialError(null);
-    requestVideoCredential(surface.engineId, roomKey, roomIdentityId, roomIdentityName).then((result) => {
+    requestVideoCredential(surface.engineId, meeting.id).then((result) => {
       if (cancelled) return;
       if (result.ok) {
         setVideoCredential(result.credential);
@@ -545,7 +544,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               isHost={isManager}
               credential={videoCredential}
               credentialError={credentialError}
-              userId={roomIdentityId}
+              userId={videoCredential?.userId ?? roomIdentityId}
               displayName={roomIdentityName}
               onLeave={() => {
                 if (handRaised) {
