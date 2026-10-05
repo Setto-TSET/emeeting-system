@@ -35,8 +35,7 @@ import {
 } from "@/services/api/invites";
 import { ApiError } from "@/services/api/client";
 import { downloadIcs } from "@/lib/calendar";
-import { generateMockTranscript } from "@/services/transcription/mockProvider";
-import { mockSummarizer } from "@/services/summarize/mockSummarizer";
+import { summarizeMeeting } from "@/services/api/summarize";
 import { buildReportMarkdown } from "@/services/summarize/reportBuilder";
 
 const iconSm = "material-symbols-outlined text-[16px]";
@@ -195,24 +194,13 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     }
   };
 
-  // ─── Phase C-4: Transcript + Summary pipeline ───
-  const [transcriptBusy, setTranscriptBusy] = useState(false);
-  const [summaryBusy, setSummaryBusy]       = useState(false);
-
-  const requestTranscript = async () => {
-    setTranscriptBusy(true);
-    updateMeeting(meeting.id, { transcriptStatus: "processing" });
-    await new Promise(r => setTimeout(r, 2000));
-    updateMeeting(meeting.id, { transcriptStatus: "ready" });
-    setTranscriptBusy(false);
-    toast.success("ได้รับ Transcript แล้ว", { description: "สามารถสร้างร่างรายงานสรุปได้" });
-  };
+  // ─── ร่างรายงานสรุป — transcript มาจากคำบรรยายสดที่ server เก็บไว้ระหว่างประชุม ───
+  const [summaryBusy, setSummaryBusy] = useState(false);
 
   const generateSummary = async () => {
     setSummaryBusy(true);
     try {
-      const transcript = generateMockTranscript(meeting);
-      const summary    = await mockSummarizer.summarizeByAgenda(transcript, []);
+      const summary    = await summarizeMeeting(meeting.id);
       const mdContent  = buildReportMarkdown(meeting, summary);
       const mdBlob     = new Blob([mdContent], { type: "text/markdown; charset=utf-8" });
       const mdFile     = new File([mdBlob], "report_draft_summary.md", { type: "text/markdown" });
@@ -237,8 +225,8 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
       });
       updateMeeting(meeting.id, { summaryDraftId: draftFileId });
       toast.success("สร้างร่างรายงานสรุปแล้ว", { description: "ดูได้ที่รายการเอกสารด้านบน" });
-    } catch {
-      toast.error("สร้างรายงานไม่สำเร็จ");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "สร้างรายงานไม่สำเร็จ");
     } finally {
       setSummaryBusy(false);
     }
@@ -939,35 +927,6 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* Transcript status */}
-                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[18px] text-muted-foreground">mic</span>
-                    <div>
-                      <p className="text-xs font-medium">Transcript การประชุม</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {meeting.transcriptStatus === "none"   || !meeting.transcriptStatus ? "ยังไม่มี transcript" :
-                         meeting.transcriptStatus === "processing" ? "กำลังประมวลผล..." :
-                         meeting.transcriptStatus === "ready"      ? "พร้อมใช้งาน" :
-                         "เกิดข้อผิดพลาด"}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={transcriptBusy || meeting.transcriptStatus === "ready" || meeting.transcriptStatus === "processing" || meeting.status === "in_progress"}
-                    onClick={requestTranscript}
-                    title={meeting.status === "in_progress" ? "ต้องปิดประชุมก่อน" : undefined}
-                  >
-                    {transcriptBusy
-                      ? <><span className="material-symbols-outlined animate-spin text-[14px] mr-1">progress_activity</span>กำลังดึง...</>
-                      : meeting.transcriptStatus === "ready"
-                      ? <><span className="material-symbols-outlined text-[14px] mr-1 text-green-600">check_circle</span>ได้รับแล้ว</>
-                      : "ขอ Transcript"}
-                  </Button>
-                </div>
-
                 {/* Generate summary */}
                 <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
                   <div className="flex items-center gap-2">
@@ -975,15 +934,15 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                     <div>
                       <p className="text-xs font-medium">ร่างรายงานสรุป</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {meeting.summaryDraftId ? "สร้างแล้ว — ดูได้ที่รายการเอกสาร" : "รอ transcript ก่อน แล้วกดสร้าง"}
+                        {meeting.summaryDraftId ? "สร้างแล้ว — ดูได้ที่รายการเอกสาร" : "สรุปจากคำบรรยายสดที่บันทึกไว้ระหว่างประชุม"}
                       </p>
                     </div>
                   </div>
                   <Button
                     size="sm"
-                    disabled={summaryBusy || meeting.transcriptStatus !== "ready"}
+                    disabled={summaryBusy || meeting.status === "in_progress"}
                     onClick={generateSummary}
-                    title={meeting.transcriptStatus !== "ready" ? "ต้องได้รับ Transcript ก่อน" : undefined}
+                    title={meeting.status === "in_progress" ? "ต้องปิดประชุมก่อน" : undefined}
                   >
                     {summaryBusy
                       ? <><span className="material-symbols-outlined animate-spin text-[14px] mr-1">progress_activity</span>กำลังสร้าง...</>

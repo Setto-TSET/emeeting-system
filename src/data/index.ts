@@ -368,8 +368,6 @@ export type Meeting = {
    * backend แลกกุญแจนี้เป็นห้องจริงของผู้ให้บริการ
    */
   conferenceRoomKey?: string;
-  /** สถานะการถอดเสียง — none | processing | ready | failed (ดู services/transcription) */
-  transcriptStatus?: "none" | "processing" | "ready" | "failed";
   /** id ของร่างรายงานที่ AI สรุปให้ (ผูกกับไฟล์ report_draft) — เลขาฯ แก้ก่อนรับรอง */
   summaryDraftId?: string;
   /** วาระที่กำลังพูดคุยอยู่ในห้องประชุมออนไลน์ */

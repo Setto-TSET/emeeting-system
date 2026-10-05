@@ -100,7 +100,6 @@ export default function NewMeetingPage() {
       conferenceProvider: provider,
       // กุญแจห้องสำหรับเครื่องยนต์ที่ฝังในเว็บ — เดาไม่ได้ สร้างตั้งแต่สร้างประชุม
       conferenceRoomKey: newConferenceRoomKey(),
-      transcriptStatus: "none",
       description: form.description.trim() || undefined,
       confidentialityLevel: form.confidentialityLevel,
       status: "prepare",
