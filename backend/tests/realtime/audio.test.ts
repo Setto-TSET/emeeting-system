@@ -11,6 +11,8 @@ import { resetAudioState } from '../../src/realtime/audio';
 
 jest.mock('../../src/realtime/asrClient', () => ({
   transcribePcm: jest.fn(),
+  // audio.ts เรียกตัวนี้ตอนเขียน log ในเส้นทางที่ sidecar ล้ม — ไม่มีแล้วจะ throw ซ้อนใน catch
+  asrBaseUrl: () => 'http://asr.test',
 }));
 import { transcribePcm } from '../../src/realtime/asrClient';
 

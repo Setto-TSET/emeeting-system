@@ -1,0 +1,62 @@
+name: Tests
+
+# รันเทสต์ทุก PR และทุก push เข้า master
+# ก่อนมี workflow นี้ไม่มีใครรันเทสต์ backend เลย (ต้องมี MySQL ที่พอร์ต 3308 ในเครื่อง)
+# จนเทสต์พังเงียบ ๆ ไปตั้งแต่ commit 90222fe โดยไม่มีใครเห็น
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: testpass
+          MYSQL_DATABASE: emeeting_test
+        ports:
+          - 3308:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ptestpass"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    # ค่าเดียวกับ backend/.env.test ในเครื่อง dev — ไฟล์นั้นไม่ได้ commit
+    # dotenv ไม่ทับตัวแปรที่ตั้งไว้แล้ว ค่าตรงนี้จึงเป็นตัวที่ใช้จริงใน CI
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3308
+      DB_USER: root
+      DB_PASSWORD: testpass
+      DB_NAME: emeeting_test
+      JWT_SECRET: ci_jwt_secret_must_be_at_least_32_chars_long_1234
+      SEED_PASSWORD: testpass123
+      CORS_ORIGIN: http://localhost:3000
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20 # ตรงกับ backend/Dockerfile
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
