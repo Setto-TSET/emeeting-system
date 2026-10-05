@@ -267,26 +267,22 @@ describe('signal handlers', () => {
     outsider.close();
   });
 
-  it('relays only final subtitle segments to storage but broadcasts interim ones', async () => {
+  it('ignores subtitle_text sent by a client — only the server-side ASR writes the transcript', async () => {
+    // ทุกคนในห้อง รวมถึงแขก เคยส่งข้อความนี้ด้วย isFinal แล้วกลายเป็น transcript ถาวร
+    // ที่ถูกเอาไปทำร่างรายงาน AI ได้ — "มติ" ปลอมจึงเข้าไปในรายงานได้
+    await query('DELETE FROM transcript_segments WHERE meeting_id = ?', [MEETING]);
     const a = await openClient('U-999', 'IT Admin');
     const b = await openClient('U-003', 'นางสาว มาลี รักษาสัตย์');
+    const received: unknown[] = [];
+    a.on('message', (m) => received.push(JSON.parse(m.toString())));
 
-    const interim = nextMessage(a);
-    b.send(
-      JSON.stringify({ type: 'subtitle_text', payload: { text: 'กำลังพูด', isFinal: false, lang: 'th-TH' } })
-    );
-    expect((await interim).payload.text).toBe('กำลังพูด');
+    b.send(JSON.stringify({ type: 'subtitle_text', payload: { text: 'มติปลอม', isFinal: true, lang: 'th-TH' } }));
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
-    const final = nextMessage(a);
-    b.send(
-      JSON.stringify({ type: 'subtitle_text', payload: { text: 'พูดจบแล้ว', isFinal: true, lang: 'th-TH' } })
-    );
-    await final;
-
-    const rows = (await query('SELECT text FROM transcript_segments WHERE meeting_id = ?', [MEETING])) as {
-      text: string;
-    }[];
-    expect(rows.map((r) => r.text)).toEqual(['พูดจบแล้ว']);
+    const rows = (await query('SELECT text FROM transcript_segments WHERE meeting_id = ?', [MEETING])) as unknown[];
+    expect(rows).toHaveLength(0);
+    expect(received).toHaveLength(0);
+    expect(b.readyState).toBe(WebSocket.OPEN);
 
     a.close();
     b.close();
