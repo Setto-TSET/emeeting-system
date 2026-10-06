@@ -1,0 +1,27 @@
+name: Keep-alive DB + backend
+
+# กัน Aiven free + Render free หลับตอน idle
+# ยิง login ด้วย creds มั่ว -> backend query DB (SELECT user) -> ปลุกทั้ง Render และ Aiven
+# 401 = ยังตื่นดี, 500/000 = เพิ่งปลุก รอบหน้าจะเขียว (ไม่ fail workflow เพื่อไม่สแปมเมล)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *" # ทุก 10 นาที (GitHub อาจ delay บ้างตอน load สูง)
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping login (touches DB)
+        run: |
+          code=$(curl -s -m 60 -o /dev/null -w "%{http_code}" \
+            -X POST https://emeeting-backend.onrender.com/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"keepalive@noop.invalid","password":"x"}' || echo "000")
+          echo "login=$code"
+          if [ "$code" = "401" ]; then
+            echo "awake OK"
+          else
+            echo "not 401 (code=$code) -- likely just woke Render/Aiven; next tick should be 401"
+          fi
