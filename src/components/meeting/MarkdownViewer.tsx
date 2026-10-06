@@ -9,8 +9,20 @@ interface MarkdownViewerProps {
 }
 
 // ─── Simple Markdown → HTML (ไม่ใช้ library ภายนอก) ───
+// ผลลัพธ์ไปเข้า dangerouslySetInnerHTML — ต้อง escape ข้อความทั้งหมดก่อนแปลง markdown เสมอ
+// ไฟล์ .md มาจากผู้อัปโหลด และร่างรายงาน AI มาจากคำพูดในห้อง ถ้าไม่ escape
+// <img onerror=...> ในเอกสารจะรันบนหน้าเว็บเรา แล้วขโมย JWT ใน sessionStorage ได้
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function mdToHtml(md: string): string {
-  let html = md
+  const html = escapeHtml(md)
     // headings
     .replace(/^### (.+)$/gm, "<h3 class='md-h3'>$1</h3>")
     .replace(/^## (.+)$/gm, "<h2 class='md-h2'>$1</h2>")
@@ -21,7 +33,7 @@ export function mdToHtml(md: string): string {
     // horizontal rule
     .replace(/^---$/gm, "<hr class='md-hr'>")
     // blockquote (ต้องก่อน paragraph)
-    .replace(/^> (.+)$/gm, "<blockquote class='md-blockquote'>$1</blockquote>")
+    .replace(/^&gt; (.+)$/gm, "<blockquote class='md-blockquote'>$1</blockquote>")
     // table rows
     .replace(/^\|(.+)\|$/gm, (row) => {
       if (/^\|[\s|:-]+\|$/.test(row)) return ""; // separator row

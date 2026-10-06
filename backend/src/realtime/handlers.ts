@@ -10,7 +10,6 @@ import type { RoomClient } from './rooms';
 import { send, broadcast } from './server';
 import * as votes from '../repositories/votes';
 import * as hands from '../repositories/handRaises';
-import * as transcript from '../repositories/transcript';
 import * as docShare from '../repositories/docShare';
 
 const MANAGER_ROLES = new Set(['admin', 'secretary', 'executive']);
@@ -117,25 +116,6 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
       );
     }
 
-    case 'subtitle_text': {
-      const text = typeof data.text === 'string' ? data.text : '';
-      const isFinal = data.isFinal === true;
-      const lang = typeof data.lang === 'string' ? data.lang : 'th-TH';
-      if (!text) return;
-
-      // ข้อความระหว่างพูดกระจายอย่างเดียว ไม่บันทึก — บันทึกเฉพาะประโยคที่จบแล้ว
-      if (isFinal) {
-        await transcript.appendSegment(client.meetingId, {
-          speakerId: client.userId,
-          speakerName: client.userName,
-          startSec: typeof data.startSec === 'number' ? data.startSec : 0,
-          text,
-        });
-      }
-
-      return broadcast(client.meetingId, envelope(client, 'subtitle_text', { text, isFinal, lang }), client.userId);
-    }
-
     case 'doc_share': {
       const fileId = typeof data.fileId === 'string' ? data.fileId : '';
       const fileName = typeof data.fileName === 'string' ? data.fileName : '';
@@ -186,6 +166,8 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
       return broadcast(client.meetingId, envelope(client, 'doc_share_state', { share: null }));
     }
 
+    // subtitle_text ไม่รับจาก client อีกแล้ว — คำบรรยายมาจาก ASR ฝั่ง server (audio.ts) เท่านั้น
+    // ถ้ารับไว้ ใครในห้องก็พิมพ์ "มติ" ปลอมลง transcript ที่ใช้ทำร่างรายงานได้
     default:
       // สัญญาณที่ไม่รู้จัก — ปล่อยผ่าน ไม่ปิด socket เพื่อให้ deploy คนละเวอร์ชันอยู่ร่วมกันได้
       return;

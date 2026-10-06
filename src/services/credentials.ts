@@ -9,13 +9,16 @@
 // ═══════════════════════════════════════════
 
 import type { EmbeddedEngineId } from "./video/types";
+import { getAccessToken } from "./api/client";
 
 export type VideoCredential = {
   engineId: EmbeddedEngineId;
   /** token ที่ backend เซ็นแล้ว — ส่งให้ SDK ตอน mount */
   token: string;
-  /** ห้องจริงของผู้ให้บริการที่ backend แลกมาจาก roomKey */
+  /** ห้องจริงของผู้ให้บริการที่ server เลือกจากการประชุม — client เลือกเองไม่ได้ */
   providerRoomId: string;
+  /** user_id ที่ token ผูกไว้ (มาจาก JWT) — engine ต้อง login ด้วยค่านี้เท่านั้น */
+  userId: string;
   /** ZegoCloud App ID — client ใช้สร้าง ZegoExpressEngine */
   appId: number;
   /** ZegoCloud Server URL — client ใช้สร้าง ZegoExpressEngine */
@@ -37,15 +40,13 @@ export type VideoCredentialResult =
  */
 export async function requestVideoCredential(
   engineId: EmbeddedEngineId,
-  roomKey: string,
-  userId: string,
-  userName: string
+  meetingId: string
 ): Promise<VideoCredentialResult> {
   try {
     const response = await fetch("/api/video/token", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ roomId: roomKey, userId, userName }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAccessToken() ?? ""}` },
+      body: JSON.stringify({ meetingId }),
     });
 
     const data = await response.json().catch(() => null);
@@ -61,7 +62,8 @@ export async function requestVideoCredential(
       credential: {
         engineId,
         token: data.token,
-        providerRoomId: roomKey,
+        providerRoomId: data.roomId,
+        userId: data.userId,
         appId: data.appId,
         serverUrl: data.serverUrl,
         expiresAt: data.expiresAt,

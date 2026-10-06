@@ -3,9 +3,7 @@
 // ═══════════════════════════════════════════
 
 import { Router, Request, Response } from 'express';
-import { randomUUID } from 'crypto';
-import { queryOne } from '../database/connection';
-import { verifyPassword, signAccessToken, signGuestToken } from '../services/auth';
+import { verifyPassword, signAccessToken } from '../services/auth';
 import { authMiddleware, asyncHandler } from '../middleware';
 
 const router = Router();
@@ -34,31 +32,6 @@ router.post(
         systemRole: claims.role,
         ...(claims.roomId ? { roomId: claims.roomId } : {}),
       },
-    });
-  })
-);
-
-router.post(
-  '/guest',
-  asyncHandler(async (req: Request, res: Response) => {
-    const { meetingId, name } = req.body ?? {};
-    if (typeof meetingId !== 'string' || typeof name !== 'string' || !meetingId || !name.trim()) {
-      return res.status(400).json({ error: 'ต้องระบุรหัสการประชุมและชื่อผู้เข้าร่วม' });
-    }
-
-    const meeting = (await queryOne('SELECT id, allow_guest_join FROM meetings WHERE id = ?', [meetingId])) as
-      | { id: string; allow_guest_join: number }
-      | undefined;
-
-    if (!meeting) return res.status(404).json({ error: 'ไม่พบการประชุมนี้' });
-    if (!meeting.allow_guest_join) {
-      return res.status(403).json({ error: 'การประชุมนี้ไม่เปิดให้บุคคลภายนอกเข้าร่วม' });
-    }
-
-    const guestId = `guest-${randomUUID()}`;
-    res.json({
-      token: signGuestToken({ sub: guestId, name: name.trim(), meetingId }),
-      user: { id: guestId, name: name.trim(), email: '', systemRole: 'guest' },
     });
   })
 );

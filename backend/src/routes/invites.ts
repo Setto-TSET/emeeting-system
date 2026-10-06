@@ -85,7 +85,7 @@ publicInvitesRouter.get(
 /**
  * POST /api/invites/:token/accept — ยอมรับคำเชิญ ไม่ต้องล็อกอิน
  * คำเชิญที่ผู้จัดออกให้เป็นรายคนคือการอนุญาตแล้ว จึงไม่เช็ค allow_guest_join ซ้ำ
- * (ต่างจาก /api/auth/guest ที่ใครรู้ meetingId ก็ยิงได้)
+ * นี่คือทางเดียวที่แขกได้ token — ไม่มีทางขอ token แขกด้วย meetingId อย่างเดียว
  */
 publicInvitesRouter.post(
   '/:token/accept',
