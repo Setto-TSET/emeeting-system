@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { users, AppUser } from "@/data";
 import { setAccessToken } from "@/services/api/client";
 
@@ -56,7 +56,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   // ออกจากระบบ — ล้าง JWT และตัวตนทั้งใน sessionStorage (แท็บนี้) และ localStorage
   // (ค่าตั้งต้นของแท็บใหม่) ไม่งั้นเปิดหน้าใหม่จะเด้งกลับเข้าเป็นคนเดิมทั้งที่ token หมดแล้ว
-  const signOut = () => {
+  const signOut = useCallback(() => {
     setAccessToken(null);
     try {
       sessionStorage.removeItem(STORAGE_KEY);
@@ -65,7 +65,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       console.error("Failed to clear user from storage", e);
     }
     setCurrentUser(users[0]);
-  };
+  }, []);
 
   return (
     <UserContext.Provider value={{ currentUser, setCurrentUser: changeCurrentUser, signOut, users }}>
