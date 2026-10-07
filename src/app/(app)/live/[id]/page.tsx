@@ -53,7 +53,8 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
   // ค่าเริ่มต้นใช้เวลาที่เปิดหน้านี้ไปก่อน แล้ว RoomSignalBridge เขียนทับด้วยเวลาเริ่มห้องจริง
   // ที่ server ส่งมาตอน room_joined
-  const meetingStartRef = useRef(Date.now());
+  const [openedAt] = useState(() => Date.now());
+  const meetingStartRef = useRef(openedAt);
   const sendAudioRef = useRef<((frame: ArrayBuffer) => void) | null>(null);
   // ฟังก์ชันหยุดจับเสียงที่ startCapture คืนมา — เก็บไว้เพื่อปิดไมค์ตอนกดปิดซับหรือออกจากห้อง
   const stopCaptureRef = useRef<(() => void) | null>(null);
@@ -104,8 +105,6 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     const surface = resolveVideoSurface(meeting);
     if (surface.kind !== "embed") return;
     let cancelled = false;
-    setVideoCredential(null);
-    setCredentialError(null);
     requestVideoCredential(surface.engineId, meeting.id).then((result) => {
       if (cancelled) return;
       if (result.ok) {
@@ -116,6 +115,9 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     });
     return () => {
       cancelled = true;
+      // credential ผูกกับห้อง — ล้างทิ้งเมื่อเปลี่ยนห้องหรือออกจากห้อง
+      setVideoCredential(null);
+      setCredentialError(null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meeting?.id, inRoom]);
