@@ -54,12 +54,3 @@ export async function signIn(email: string, password: string): Promise<SignInRes
     return { ok: false, reason: "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้" };
   }
 }
-
-/** รายชื่ออีเมลที่ใช้ทดสอบได้ — แสดงในหน้า login ระหว่างที่ยังเป็น prototype */
-export function demoAccounts(): { email: string; name: string; roleLabel: string }[] {
-  return users.map((u) => ({
-    email: u.email,
-    name: u.name,
-    roleLabel: u.systemRole,
-  }));
-}

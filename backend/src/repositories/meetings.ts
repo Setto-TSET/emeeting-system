@@ -6,6 +6,7 @@
 // ═══════════════════════════════════════════
 
 import { query, queryOne, withTransaction } from '../database/connection';
+import { Actor, canViewMeeting } from '../services/meetingAccess';
 
 /** ผู้เข้าร่วมเท่าที่ backend ต้องรู้ — ฟิลด์ที่เหลืออยู่ใน payload */
 export type MeetingParticipantInput = {
@@ -42,15 +43,6 @@ type MeetingRow = {
   created_at: number | null;
   payload: unknown;
 };
-
-/** admin เข้าได้ทุกห้องอยู่แล้ว — ตรงกับ can() ฝั่งหน้าเว็บ */
-export async function isMeetingMember(meetingId: string, userId: string): Promise<boolean> {
-  const row = await queryOne(
-    'SELECT user_id FROM meeting_participants WHERE meeting_id = ? AND user_id = ?',
-    [meetingId, userId]
-  );
-  return Boolean(row);
-}
 
 export async function meetingExists(meetingId: string): Promise<boolean> {
   const row = await queryOne('SELECT id FROM meetings WHERE id = ?', [meetingId]);
@@ -108,34 +100,93 @@ export async function getMeeting(meetingId: string): Promise<MeetingPayload | nu
 }
 
 /**
- * รายการประชุมที่ผู้ใช้คนนี้มีสิทธิ์เห็น
- * admin เห็นทั้งหมด คนอื่นเห็นเฉพาะที่ตัวเองเป็นผู้จัดหรือถูกใส่ชื่อไว้
- * (สิทธิ์รายชิ้นที่ละเอียดกว่านี้ตัดสินอีกทีที่ route ด้วย authz)
+ * รายการประชุมที่ผู้ใช้คนนี้มีสิทธิ์เห็น — ใช้กฎเดียวกับการเปิดดูทีละรายการ (canViewMeeting)
+ *
+ * เดิม query เองแค่ "ผู้จัดหรือผู้เข้าร่วม" ทำให้ผู้รับมอบสิทธิ์ ผู้บริหาร และจอหน้าห้อง
+ * เปิดการประชุมทีละรายการได้ แต่ไม่เคยเห็นในรายการ — หน้าเว็บจึงขึ้นว่า "ไม่พบการประชุม"
  */
-export async function listMeetingsForUser(
-  userId: string,
-  role: string,
-  guestMeetingId?: string
-): Promise<MeetingPayload[]> {
-  // แขกเห็นเฉพาะการประชุมที่ token ผูกไว้ — ไม่มีแถวใน meeting_participants ให้ JOIN
-  if (role === 'guest') {
-    if (!guestMeetingId) return [];
-    const rows = (await query('SELECT * FROM meetings WHERE id = ?', [guestMeetingId])) as MeetingRow[];
-    return rows.map(toMeeting);
+export async function listMeetingsForUser(actor: Actor): Promise<MeetingPayload[]> {
+  // แขกเห็นเฉพาะการประชุมที่ token ผูกไว้
+  if (actor.role === 'guest') {
+    const meeting = actor.meetingId ? await getMeeting(actor.meetingId) : null;
+    return meeting ? [meeting] : [];
   }
+  // ponytail: อ่านทั้งตารางแล้วกรองในโค้ด พอสำหรับหน่วยงานเดียว ถ้าการประชุมเกินหลักหมื่นค่อยย้ายกฎไปเป็น SQL
+  const rows = (await query('SELECT * FROM meetings ORDER BY meeting_date DESC')) as MeetingRow[];
+  return rows.map(toMeeting).filter((m) => canViewMeeting(actor, m));
+}
 
-  const rows =
-    role === 'admin'
-      ? ((await query('SELECT * FROM meetings ORDER BY meeting_date DESC')) as MeetingRow[])
-      : ((await query(
-          `SELECT m.* FROM meetings m
-           LEFT JOIN meeting_participants p ON p.meeting_id = m.id AND p.user_id = ?
-           WHERE m.organizer_id = ? OR p.user_id IS NOT NULL
-           ORDER BY m.meeting_date DESC`,
-          [userId, userId]
-        )) as MeetingRow[]);
+/**
+ * หาการประชุมจากลิงก์เชิญบุคคลภายนอก — token เก็บใน payload.guestLinkToken
+ * ponytail: ค้นจาก JSON ทั้งตาราง พอสำหรับหน่วยงานเดียว ถ้าการประชุมเกินหลักหมื่นค่อยแยกเป็นคอลัมน์ที่มี index
+ */
+export async function findMeetingByGuestToken(token: string): Promise<MeetingPayload | null> {
+  if (!token) return null;
+  const row = (await queryOne(
+    "SELECT * FROM meetings WHERE JSON_UNQUOTE(JSON_EXTRACT(payload, '$.guestLinkToken')) = ? LIMIT 1",
+    [token]
+  )) as MeetingRow | undefined;
+  return row ? toMeeting(row) : null;
+}
 
-  return rows.map(toMeeting);
+/** ตั้งลิงก์เชิญใหม่ — ค่าเดิมถูกเขียนทับ ลิงก์เก่าจึงใช้ไม่ได้ทันที */
+export async function setGuestLinkToken(meetingId: string, token: string): Promise<void> {
+  await query("UPDATE meetings SET payload = JSON_SET(payload, '$.guestLinkToken', ?) WHERE id = ?", [token, meetingId]);
+}
+
+export type ChatMessage = { id: string; senderId: string; sender: string; text: string; time: string };
+
+/**
+ * ต่อท้ายข้อความแชทใน payload แบบ atomic ด้วย JSON_ARRAY_APPEND
+ * ไม่อ่าน-แก้-เขียนทั้งก้อน — สองคนพิมพ์พร้อมกันข้อความต้องไม่หายไปข้างหนึ่ง
+ */
+export async function appendChatMessage(meetingId: string, message: ChatMessage): Promise<void> {
+  await query(
+    `UPDATE meetings
+     SET payload = JSON_SET(payload, '$.chatMessages',
+       JSON_ARRAY_APPEND(COALESCE(JSON_EXTRACT(payload, '$.chatMessages'), JSON_ARRAY()), '$', CAST(? AS JSON)))
+     WHERE id = ?`,
+    [JSON.stringify(message), meetingId]
+  );
+}
+
+export type ConfidentialityAck = { userId: string; name: string; at: number };
+
+/**
+ * บันทึกว่าผู้ใช้กดยอมรับข้อตกลงรักษาความลับก่อนเข้าห้องประชุม — ต่อท้ายทุกครั้งที่เข้า (ไม่ทับของเดิม)
+ * เป็นหลักฐานย้อนหลังว่าใครรับทราบเมื่อไร แบบ atomic เหมือนแชท
+ */
+export async function appendConfidentialityAck(meetingId: string, ack: ConfidentialityAck): Promise<void> {
+  await query(
+    `UPDATE meetings
+     SET payload = JSON_SET(payload, '$.confidentialityAcks',
+       JSON_ARRAY_APPEND(COALESCE(JSON_EXTRACT(payload, '$.confidentialityAcks'), JSON_ARRAY()), '$', CAST(? AS JSON)))
+     WHERE id = ?`,
+    [JSON.stringify(ack), meetingId]
+  );
+}
+
+export type AgendaComment = { by: string; byId: string; text: string; time: string };
+
+/** ต่อท้ายความคิดเห็นในวาระ — คืน false ถ้าไม่มีวาระนี้ */
+export async function appendAgendaComment(
+  meetingId: string,
+  agendaId: string,
+  comment: AgendaComment
+): Promise<boolean> {
+  const meeting = await getMeeting(meetingId);
+  const agenda = Array.isArray(meeting?.agenda) ? (meeting!.agenda as { id?: string }[]) : [];
+  const index = agenda.findIndex((a) => a?.id === agendaId);
+  if (index < 0) return false;
+  // ponytail: index มาจากการอ่านก่อนเขียน ถ้ามีคนลบ/สลับวาระในเสี้ยววินาทีเดียวกัน ความคิดเห็นจะไปผิดวาระ
+  await query(
+    `UPDATE meetings
+     SET payload = JSON_SET(payload, '$.agenda[${index}].comments',
+       JSON_ARRAY_APPEND(COALESCE(JSON_EXTRACT(payload, '$.agenda[${index}].comments'), JSON_ARRAY()), '$', CAST(? AS JSON)))
+     WHERE id = ?`,
+    [JSON.stringify(comment), meetingId]
+  );
+  return true;
 }
 
 /**
@@ -264,7 +315,6 @@ export async function deleteMeeting(meetingId: string): Promise<boolean> {
       'hand_raises',
       'transcript_segments',
       'doc_shares',
-      'meeting_invites',
       'meeting_files',
       'meeting_participants',
     ]) {

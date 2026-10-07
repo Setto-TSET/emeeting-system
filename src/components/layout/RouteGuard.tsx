@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCurrentUser } from "@/context/UserContext";
 import { canAccessRoute, getHomeRoute } from "@/lib/access";
+import { PageLoading } from "@/components/layout/PageState";
 import { getAccessToken } from "@/services/api/client";
 
 /**
@@ -40,12 +41,12 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
     }
   }, [hasToken, allowed, currentUser.systemRole, router]);
 
-  if (!hasToken) return null;
+  if (!hasToken) return <PageLoading label="กำลังตรวจสอบการเข้าสู่ระบบ..." />;
 
   if (!allowed) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center text-center px-4">
-        <span className="material-symbols-outlined text-[44px] text-muted-foreground mb-2">lock</span>
+      <div className="flex min-h-[60dvh] flex-col items-center justify-center text-center px-4">
+        <span className="material-symbols-outlined text-5xl text-muted-foreground mb-2">lock</span>
         <p className="text-sm font-medium">หน้านี้สงวนสำหรับผู้จัดการประชุม</p>
         <p className="text-xs text-muted-foreground mt-1">กำลังพากลับไปหน้าหลัก...</p>
       </div>

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
 import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
 import { isParticipant } from "@/lib/access";
@@ -15,9 +14,11 @@ import {
   meetingRooms,
   meetingStatusLabels,
   meetingStatusColors,
+  roomStatusInfo,
 } from "@/data";
+import { PageError, PageLoading } from "@/components/layout/PageState";
 
-const iconClass = "material-symbols-outlined text-[20px]";
+const iconClass = "material-symbols-outlined text-xl";
 
 function fmtDate(d: string) {
   const dt = new Date(d);
@@ -25,8 +26,8 @@ function fmtDate(d: string) {
 }
 
 export default function DashboardPage() {
-  const { meetings } = useMeetings();
-  const { bookings } = useBookings();
+  const { meetings, loading: meetingsLoading, error: meetingsError, reload: reloadMeetings } = useMeetings();
+  const { bookings, loading: bookingsLoading, error: bookingsError, reload: reloadBookings } = useBookings();
   const { currentUser } = useCurrentUser();
 
   // ผู้เข้าร่วมได้หน้าหลักแบบเรียบง่าย ไม่มีสถิติห้อง/การจอง
@@ -44,8 +45,19 @@ export default function DashboardPage() {
 
   if (participantView) return <ParticipantHome />;
 
+  // ตัวเลขและรายการบนแดชบอร์ดต้องไม่โชว์ 0 / "ไม่มีการประชุม" ระหว่างโหลดหรือเมื่อโหลดไม่สำเร็จ
+  if ((meetingsLoading || bookingsLoading) && meetings.length === 0) return <PageLoading />;
+  if (meetingsError || bookingsError) {
+    return (
+      <PageError
+        message={meetingsError ?? bookingsError ?? ""}
+        onRetry={() => { void reloadMeetings(); void reloadBookings(); }}
+      />
+    );
+  }
+
   return (
-    <div className="p-4 md:p-6 pb-16 max-w-[1280px] mx-auto">
+    <div className="p-4 md:p-6 pb-16 max-w-page mx-auto">
       <header className="mb-5 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
         <div>
           <h1 className="text-lg md:text-xl font-semibold mb-0.5">
@@ -68,7 +80,7 @@ export default function DashboardPage() {
       {/* Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
         {[
-          { icon: "event_note", label: "การประชุมที่ผมดูแล", value: myMeetings, color: "text-primary", bg: "bg-primary/10" },
+          { icon: "event_note", label: "การประชุมที่ดูแล", value: myMeetings, color: "text-primary", bg: "bg-primary/10" },
           { icon: "bookmark", label: "การจองห้องของฉัน", value: myBookings, color: "text-chart-3", bg: "bg-chart-3/10" },
           { icon: "meeting_room", label: "ห้องพร้อมใช้งาน", value: `${activeRooms}/${meetingRooms.length}`, color: "text-chart-4", bg: "bg-chart-4/10" },
           { icon: "upcoming", label: "การประชุมที่จะมาถึง", value: upcoming.length, color: "text-chart-5", bg: "bg-chart-5/10" },
@@ -89,27 +101,27 @@ export default function DashboardPage() {
 
       {/* Next Meeting Banner */}
       {next && (
-        <Card className="card-shadow overflow-hidden mb-5 border-none relative h-[180px] md:h-[220px] hover:shadow-md transition-shadow cursor-pointer">
+        <Card className="card-shadow overflow-hidden mb-5 border-none relative min-h-44 md:min-h-56 hover:shadow-md transition-shadow cursor-pointer">
           <Link href={`/meetings/${next.id}`} className="block h-full">
             <div className="absolute inset-0 bg-gradient-to-r from-primary via-primary/85 to-primary/60" />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_50%)]" />
+            <div className="absolute inset-0 hero-glow" />
             <div className="relative flex flex-col justify-center p-5 md:p-8 h-full">
-              <Badge className="w-fit mb-2 bg-white/20 text-white border border-white/30 text-[10px]">การประชุมครั้งถัดไป</Badge>
-              <h2 className="text-lg md:text-2xl font-bold text-white mb-1.5 drop-shadow-sm">{next.name}</h2>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-white/90">
+              <Badge className="w-fit mb-2 bg-primary-foreground/20 text-primary-foreground border border-primary-foreground/30 text-tiny">การประชุมครั้งถัดไป</Badge>
+              <h2 className="text-lg md:text-2xl font-bold text-primary-foreground mb-1.5 drop-shadow-sm break-words">{next.name}</h2>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-primary-foreground/90">
                 <span className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px]">calendar_today</span>
+                  <span className="material-symbols-outlined text-base">calendar_today</span>
                   {fmtDate(next.date)}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px]">schedule</span>
+                  <span className="material-symbols-outlined text-base">schedule</span>
                   {next.startTime} - {next.endTime}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px]">place</span>
+                  <span className="material-symbols-outlined text-base">place</span>
                   {next.location}
                 </span>
-                <Badge className={`${meetingStatusColors[next.status]} text-[10px] border`}>{meetingStatusLabels[next.status]}</Badge>
+                <Badge className={`${meetingStatusColors[next.status]} text-tiny border`}>{meetingStatusLabels[next.status]}</Badge>
               </div>
             </div>
           </Link>
@@ -125,7 +137,7 @@ export default function DashboardPage() {
               <CardDescription className="text-xs">รายการประชุมที่ผู้ใช้เกี่ยวข้อง</CardDescription>
             </div>
             <Link href="/meetings" className="text-xs text-primary hover:underline flex items-center gap-0.5">
-              ดูทั้งหมด <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+              ดูทั้งหมด <span className="material-symbols-outlined text-sm">chevron_right</span>
             </Link>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -136,7 +148,7 @@ export default function DashboardPage() {
                 className="flex items-center gap-3 rounded-lg border bg-card p-3 hover:border-primary/50 transition-colors"
               >
                 <div className="bg-primary/10 p-2 rounded-md flex-shrink-0">
-                  <span className="material-symbols-outlined text-[18px] text-primary">event</span>
+                  <span className="material-symbols-outlined text-lg text-primary">event</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground/90 leading-tight mb-1 truncate">{m.name}</p>
@@ -146,7 +158,7 @@ export default function DashboardPage() {
                     <span>{m.location}</span>
                   </div>
                 </div>
-                <Badge className={`${meetingStatusColors[m.status]} text-[10px] border`}>{meetingStatusLabels[m.status]}</Badge>
+                <Badge className={`${meetingStatusColors[m.status]} text-tiny border`}>{meetingStatusLabels[m.status]}</Badge>
               </Link>
             ))}
             {upcoming.length === 0 && (
@@ -169,11 +181,11 @@ export default function DashboardPage() {
                 className="flex items-start gap-3 rounded-lg border bg-card p-3 hover:border-primary/50 transition-colors"
               >
                 <div className="bg-muted p-2 rounded-md flex-shrink-0">
-                  <span className="material-symbols-outlined text-[16px] text-muted-foreground">history</span>
+                  <span className="material-symbols-outlined text-base text-muted-foreground">history</span>
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-foreground/90 leading-tight mb-1 line-clamp-2">{m.name}</p>
-                  <p className="text-[11px] text-muted-foreground">{fmtDate(m.date)}</p>
+                  <p className="text-caption text-muted-foreground">{fmtDate(m.date)}</p>
                 </div>
               </Link>
             ))}
@@ -191,28 +203,25 @@ export default function DashboardPage() {
             <CardTitle className="text-sm">สถานะห้องประชุม</CardTitle>
             <CardDescription className="text-xs">ภาพรวมห้องประชุมทั้งหมด</CardDescription>
           </div>
-          <Link href="/rooms" className="text-xs text-primary hover:underline flex items-center gap-0.5">
-            ดูทั้งหมด <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+          <Link href="/rooms" className="text-xs text-primary hover:underline flex items-center gap-0.5 py-2 pointer-coarse:min-h-11">
+            ดูทั้งหมด <span className="material-symbols-outlined text-sm">chevron_right</span>
           </Link>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {meetingRooms.slice(0, 4).map((r) => {
-              const statusStyle =
-                r.status === "available" ? "text-green-600 bg-green-50 border-green-200" :
-                r.status === "occupied" ? "text-amber-700 bg-amber-50 border-amber-200" :
-                "text-slate-600 bg-slate-50 border-slate-200";
-              const statusLabel = r.status === "available" ? "พร้อมใช้งาน" : r.status === "occupied" ? "ถูกจอง" : "ปิดปรับปรุง";
+              const status = roomStatusInfo[r.status];
+              // การ์ดพาไปจองห้องนั้นได้เลย — เดิมดูเหมือนกดได้แต่แค่ขึ้น toast ซ้ำข้อมูลบนการ์ด
               return (
-                <div key={r.id} className="rounded-xl border bg-muted/20 p-3 hover:bg-muted/40 cursor-pointer transition-colors" onClick={() => toast.info(r.name, { description: `${r.categoryLabel} · ${r.capacity} ที่นั่ง · ${r.location} ${r.floor}` })}>
+                <Link key={r.id} href={`/booking?room=${r.id}`} className="block rounded-xl border bg-muted/20 p-3 hover:bg-muted/40 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="material-symbols-outlined text-primary text-[22px]">meeting_room</span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${statusStyle}`}>{statusLabel}</span>
+                    <span className="material-symbols-outlined text-primary text-2xl">meeting_room</span>
+                    <span className={`text-tiny px-2 py-0.5 rounded-full border ${status.color}`}>{status.label}</span>
                   </div>
                   <p className="text-sm font-semibold">{r.name}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{r.categoryLabel} · {r.capacity} ที่นั่ง</p>
-                  <p className="text-[11px] text-muted-foreground mt-2">{r.location} {r.floor}</p>
-                </div>
+                  <p className="text-caption text-muted-foreground mt-2">{r.location} {r.floor}</p>
+                </Link>
               );
             })}
           </div>

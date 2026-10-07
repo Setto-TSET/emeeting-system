@@ -67,11 +67,11 @@ describe('GET /api/rooms/:meetingId/state', () => {
   });
 
   it('rejects a user who is not in the meeting', async () => {
-    await query('DELETE FROM meeting_participants WHERE meeting_id = ? AND user_id = ?', [MEETING, 'U-005']);
+    // สิทธิ์ตัดสินจากก้อนการประชุม (กฎเดียวกับ REST) — ใช้ผู้ใช้ที่ไม่มีชื่อในการประชุมเลย
     const token = signAccessToken({
-      sub: 'U-005',
-      email: 'decha@e-office.cloud',
-      name: 'นาย เดชา เก่งจริง',
+      sub: 'U-OUTSIDER',
+      email: 'outsider@e-office.cloud',
+      name: 'คนนอก',
       role: 'staff',
     });
 

@@ -10,6 +10,8 @@ type BookingContextType = {
   bookings: Booking[];
   /** true ระหว่างดึงรายการจาก server ครั้งแรก */
   loading: boolean;
+  /** โหลดรายการไม่สำเร็จ — ห้ามถือว่า "ไม่มีการจอง" ทุกห้องจะดูว่างทั้งที่อาจถูกจองแล้ว */
+  error: string | null;
   reload: () => Promise<void>;
   /** โยน ApiError ถ้า server ปฏิเสธ (409 = เวลาชน) — ผู้เรียกต้อง catch เพื่อแจ้งผู้ใช้ */
   addBooking: (booking: Booking) => Promise<Booking>;
@@ -32,15 +34,17 @@ export function BookingProvider({ children }: { children: ReactNode }) {
   const { currentUser } = useCurrentUser();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
       setBookings(await api.fetchBookings());
+      setError(null);
     } catch (e) {
-      // ยังไม่ล็อกอิน (หน้า login) — ไม่ใช่ความผิดพลาดที่ต้องแจ้งผู้ใช้
-      if (!(e instanceof ApiError && e.status === 401)) console.error(e);
       setBookings([]);
+      // ยังไม่ล็อกอิน (หน้า login) — ไม่ใช่ความผิดพลาดที่ต้องแจ้งผู้ใช้
+      setError(e instanceof ApiError && e.status === 401 ? null : e instanceof ApiError ? e.message : "โหลดรายการจองไม่สำเร็จ");
     } finally {
       setLoading(false);
     }
@@ -54,8 +58,12 @@ export function BookingProvider({ children }: { children: ReactNode }) {
   const addBooking = useCallback(async (booking: Booking) => {
     const saved = await api.createBooking(booking);
     // ดึงทั้งรายการใหม่ ไม่ต่อท้ายเฉยๆ — ระหว่างที่กรอกฟอร์มอาจมีคนอื่นจองเพิ่ม
-    // ปฏิทินห้องว่างที่แสดงอยู่จึงเก่าไปแล้ว
-    setBookings(await api.fetchBookings());
+    // ถ้าดึงซ้ำไม่สำเร็จ การจองก็บันทึกไปแล้ว ห้ามโยน error (หน้าจะบอกว่าจองไม่สำเร็จ แล้วผู้ใช้จองซ้ำโดน 409)
+    try {
+      setBookings(await api.fetchBookings());
+    } catch {
+      setBookings((prev) => [...prev, saved]);
+    }
     return saved;
   }, []);
 
@@ -67,7 +75,7 @@ export function BookingProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <BookingContext.Provider value={{ bookings, loading, reload, addBooking, cancelBooking }}>
+    <BookingContext.Provider value={{ bookings, loading, error, reload, addBooking, cancelBooking }}>
       {children}
     </BookingContext.Provider>
   );

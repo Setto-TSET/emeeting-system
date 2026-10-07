@@ -117,28 +117,28 @@ export function ZegoCloudEmbedStage({
   const live = Boolean(credential) && tiles.length > 0;
 
   return (
-    <div className="flex-1 min-h-[400px] rounded-2xl overflow-hidden border border-border bg-[#0a0f1e] text-white flex flex-col shadow-xl relative">
+    <div className="flex-1 min-h-100 rounded-2xl overflow-hidden border border-border bg-stage text-white flex flex-col shadow-xl relative">
       {/* จุดยึดของ engine — ตัว engine ไม่วาดอะไรลงไป แต่ต้องมี element จริงให้ mount */}
       <div ref={containerRef} className="hidden" aria-hidden />
 
       {/* Header แบรนด์ ZegoCloud */}
-      <div className="h-11 px-4 flex items-center justify-between border-b border-white/10 bg-[#0055FF]/10 shrink-0">
+      <div className="h-11 px-4 flex items-center justify-between border-b border-white/10 bg-brand-zego/10 shrink-0">
         <div className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded-full bg-[#0055FF] flex items-center justify-center">
-            <span className="material-symbols-outlined text-white text-[16px]">videocam</span>
+          <div className="h-6 w-6 rounded-full bg-brand-zego flex items-center justify-center">
+            <span className="material-symbols-outlined text-white text-base">videocam</span>
           </div>
           <span className="text-sm font-semibold">ZegoCloud Video</span>
           <Badge
             className={
               credential
-                ? "bg-white/10 text-white/80 border-white/20 text-[10px]"
-                : "bg-red-500/20 text-red-200 border-red-400/40 text-[10px]"
+                ? "bg-white/10 text-white/80 border-white/20 text-tiny"
+                : "bg-destructive/20 text-destructive/70 border-destructive/60 text-tiny"
             }
           >
             {connecting ? "กำลังเชื่อมต่อ…" : live ? `ในห้อง ${tiles.length} คน` : credential ? "เชื่อมต่อแล้ว" : "เชื่อมต่อไม่สำเร็จ"}
           </Badge>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-white/70">
+        <div className="flex items-center gap-3 text-caption text-white/70">
           <span>ห้อง: {meeting.conferenceRoomKey?.slice(0, 20) ?? meeting.id}</span>
           <span>{mm}:{ss}</span>
         </div>
@@ -146,8 +146,8 @@ export function ZegoCloudEmbedStage({
 
       {/* แถบแจ้งปัญหา — ไม่มี credential หรือ engine พัง */}
       {(error || (!credential && credentialError)) && (
-        <div className="px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 text-[11px] text-amber-200 flex items-start gap-2 shrink-0">
-          <span className="material-symbols-outlined text-[14px] mt-px">warning</span>
+        <div className="px-4 py-2 bg-warning/15 border-b border-warning/30 text-caption text-warning/70 flex items-start gap-2 shrink-0">
+          <span className="material-symbols-outlined text-sm mt-px">warning</span>
           <span>{error ?? credentialError}</span>
         </div>
       )}
@@ -156,15 +156,15 @@ export function ZegoCloudEmbedStage({
       <div className="flex-1 p-3 min-h-0 overflow-y-auto">
         {!credential ? (
           <div className="h-full flex flex-col items-center justify-center text-white/50 text-sm text-center px-6">
-            <span className="material-symbols-outlined text-[40px] mb-2">videocam_off</span>
+            <span className="material-symbols-outlined text-4xl mb-2">videocam_off</span>
             <p>ยังเข้าห้องประชุมจริงไม่ได้</p>
-            <p className="text-[11px] mt-1 text-white/40">
+            <p className="text-caption mt-1 text-white/40">
               {credentialError ?? "กำลังขอสิทธิ์เข้าห้องจากเซิร์ฟเวอร์…"}
             </p>
           </div>
         ) : tiles.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-white/50 text-sm">
-            <span className="material-symbols-outlined text-[40px] mb-2 animate-pulse">sensors</span>
+            <span className="material-symbols-outlined text-4xl mb-2 animate-pulse">sensors</span>
             <p>{connecting ? "กำลังเข้าห้องประชุม…" : "รอผู้เข้าร่วมประชุมคนแรก…"}</p>
           </div>
         ) : (
@@ -181,7 +181,7 @@ export function ZegoCloudEmbedStage({
       </div>
 
       {/* แถบควบคุม */}
-      <div className="h-16 px-4 flex items-center justify-center gap-3 border-t border-white/10 bg-[#0c1225] shrink-0">
+      <div className="h-16 px-4 flex items-center justify-center gap-3 border-t border-white/10 bg-stage-surface shrink-0">
         <ControlButton
           icon={micOn ? "mic" : "mic_off"}
           active={micOn}
@@ -199,15 +199,15 @@ export function ZegoCloudEmbedStage({
         <div className="w-4" />
         <Button
           onClick={handleLeave}
-          className="h-10 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold"
+          className="h-10 px-4 bg-destructive hover:bg-destructive text-white font-semibold"
         >
-          <span className="material-symbols-outlined text-[18px] mr-1.5">call_end</span>
+          <span className="material-symbols-outlined text-lg mr-1.5">call_end</span>
           ออกจากห้อง
         </Button>
       </div>
 
       {isHost && (
-        <div className="px-4 py-2 border-t border-white/10 bg-[#0055FF]/5 text-[11px] text-white/60">
+        <div className="px-4 py-2 border-t border-white/10 bg-brand-zego/5 text-caption text-white/60">
           คุณเป็นผู้ควบคุมห้อง — ปิดประชุมได้จากปุ่ม “จบการประชุมเลย” ด้านบน
         </div>
       )}
@@ -226,8 +226,8 @@ function TileView({ tile, speaking }: { tile: VideoTile; speaking: boolean }) {
 
   return (
     <div
-      className={`relative rounded-xl overflow-hidden bg-[#141b30] border-2 transition-all ${
-        speaking ? "border-[#0055FF] shadow-lg shadow-[#0055FF]/20" : "border-transparent"
+      className={`relative rounded-xl overflow-hidden bg-stage-raised border-2 transition-all ${
+        speaking ? "border-brand-zego shadow-lg shadow-brand-zego/20" : "border-transparent"
       }`}
     >
       <video
@@ -249,17 +249,17 @@ function TileView({ tile, speaking }: { tile: VideoTile; speaking: boolean }) {
         </div>
       )}
 
-      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-2 text-[11px] bg-black/50 backdrop-blur px-2 py-0.5 rounded">
+      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-2 text-caption bg-black/50 backdrop-blur px-2 py-0.5 rounded">
         <span className="truncate">
           {tile.userName}
           {tile.isLocal && " (คุณ)"}
         </span>
         <span className="flex items-center gap-1 shrink-0">
           {!tile.micOn && (
-            <span className="material-symbols-outlined text-[13px] text-red-400">mic_off</span>
+            <span className="material-symbols-outlined text-compact text-destructive/80">mic_off</span>
           )}
           {speaking && tile.micOn && (
-            <span className="material-symbols-outlined text-[13px] text-[#0055FF]">graphic_eq</span>
+            <span className="material-symbols-outlined text-compact text-brand-zego">graphic_eq</span>
           )}
         </span>
       </div>
@@ -286,15 +286,15 @@ function ControlButton({
       onClick={onClick}
       title={title}
       aria-label={title}
-      className={`h-11 w-11 rounded-full flex items-center justify-center transition-colors focus-visible:ring-2 focus-visible:ring-[#0055FF] focus-visible:outline-none ${
+      className={`h-11 w-11 rounded-full flex items-center justify-center transition-colors focus-visible:ring-2 focus-visible:ring-brand-zego focus-visible:outline-none ${
         danger
-          ? "bg-red-600/80 hover:bg-red-600 text-white"
+          ? "bg-destructive/80 hover:bg-destructive text-white"
           : active
           ? "bg-white/10 hover:bg-white/20 text-white"
           : "bg-white/5 hover:bg-white/10 text-white/60"
       }`}
     >
-      <span className="material-symbols-outlined text-[20px]" aria-hidden="true">{icon}</span>
+      <span className="material-symbols-outlined text-xl" aria-hidden="true">{icon}</span>
     </button>
   );
 }

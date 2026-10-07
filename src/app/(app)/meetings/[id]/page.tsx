@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, use, useEffect, useCallback } from "react";
+import { useState, useRef, use, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -26,19 +26,14 @@ import { putFile, formatBytes } from "@/services/fileStorage";
 import { can, canEditMeeting, denialReason } from "@/lib/authz";
 import { useCurrentUser } from "@/context/UserContext";
 import { useMeetings } from "@/context/MeetingContext";
-import { buildJoinUrl } from "@/lib/inviteTokens";
-import {
-  fetchInvites,
-  createInvite as createInviteOnServer,
-  revokeInvite as revokeInviteOnServer,
-  type Invite,
-} from "@/services/api/invites";
+import { fetchGuestLink, rotateGuestLink, guestLinkUrl } from "@/services/api/guestLinks";
 import { ApiError } from "@/services/api/client";
+import { PageError, PageLoading } from "@/components/layout/PageState";
 import { downloadIcs } from "@/lib/calendar";
 import { summarizeMeeting } from "@/services/api/summarize";
 import { buildReportMarkdown } from "@/services/summarize/reportBuilder";
 
-const iconSm = "material-symbols-outlined text-[16px]";
+const iconSm = "material-symbols-outlined text-base";
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
@@ -48,16 +43,20 @@ const statusOrder: MeetingStatus[] = ["prepare", "notified", "in_progress", "wai
 
 export default function MeetingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { meetings } = useMeetings();
+  const { meetings, loading, error, reload } = useMeetings();
   const meeting = meetings.find(m => m.id === id);
+
+  // ระหว่างโหลดหรือโหลดไม่สำเร็จ ห้ามแสดงว่า "ไม่พบการประชุม" — ผู้ใช้จะเข้าใจว่าข้อมูลหาย
+  if (!meeting && loading) return <PageLoading label="กำลังโหลดการประชุม..." />;
+  if (!meeting && error) return <PageError message={error} onRetry={() => void reload()} />;
 
   // เดิมเป็น `|| meetings[0]` ซึ่งทำให้ URL ผิดแสดงประชุมแรกเงียบๆ
   // อันตรายเพราะผู้ใช้เข้าใจว่ากำลังดู/แก้ประชุมที่ต้องการ ทั้งที่เป็นคนละรายการ
   if (!meeting) {
     return (
-      <div className="p-4 md:p-6 max-w-[1400px] mx-auto">
-        <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
-          <span className="material-symbols-outlined text-[48px] text-muted-foreground mb-2">search_off</span>
+      <div className="p-4 md:p-6 max-w-wide mx-auto">
+        <div className="flex min-h-[60dvh] flex-col items-center justify-center text-center">
+          <span className="material-symbols-outlined text-5xl text-muted-foreground mb-2">search_off</span>
           <h1 className="text-base font-semibold">ไม่พบการประชุมนี้</h1>
           <p className="text-xs text-muted-foreground mt-1">
             รหัสการประชุม &quot;{id}&quot; ไม่มีอยู่ในระบบ หรือถูกลบไปแล้ว
@@ -75,7 +74,7 @@ export default function MeetingDetailPage({ params }: { params: Promise<{ id: st
 
 function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const { currentUser } = useCurrentUser();
-  const { updateMeeting, removeMeeting, addMeetingFile, addMeetingComment } = useMeetings();
+  const { updateMeeting, removeMeeting, addMeetingFile, addMeetingComment, reload } = useMeetings();
   const router = useRouter();
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -116,9 +115,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const [commentText, setCommentText] = useState("");
   const [forceParticipants, setForceParticipants] = useState(shouldForce);
   const [fileDesc, setFileDesc] = useState("");
-  // ข้อมูลไฟล์สำหรับเดโม — ยังไม่เก็บตัวไฟล์จริง เก็บแค่ระเบียนเอกสาร
   const [fileName, setFileName] = useState("");
-  const [fileSizeKb, setFileSizeKb] = useState<number | null>(null);
   const [fileType, setFileType] = useState<MeetingFile["type"]>("attachment");
   const [fileVisibility, setFileVisibility] = useState<FileVisibility>("participants");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -126,71 +123,66 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const filePickerRef = useRef<HTMLInputElement>(null);
   // เปิดอ่านเอกสารในเว็บ — ระบบไม่มีการดาวน์โหลดไฟล์ออก
   const [previewFile, setPreviewFile] = useState<MeetingFile | null>(null);
-  const [previewPage, setPreviewPage] = useState(1);
-  const [previewZoom, setPreviewZoom] = useState(100);
   const openFilePreview = (f: MeetingFile) => {
-    setPreviewFile(f); setPreviewPage(1); setPreviewZoom(100);
+    setPreviewFile(f);
   };
 
-  // ─── Magic Link guest invite ───
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteName, setInviteName] = useState("");
-  const [inviteTokens, setInviteTokens] = useState<Invite[]>([]);
-  const [copiedToken, setCopiedToken] = useState<string | null>(null);
-  const [showEmailPreview, setShowEmailPreview] = useState<Invite | null>(null);
-  const [invitingBusy, setInvitingBusy] = useState(false);
+  // ─── ลิงก์เชิญบุคคลภายนอก (ลิงก์เดียวต่อการประชุม) ───
+  const [guestLink, setGuestLink] = useState<string | null>(null);
+  const [guestLinkLoaded, setGuestLinkLoaded] = useState(false);
+  const [guestLinkBusy, setGuestLinkBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  // ลิงก์เชิญอยู่ที่ server แล้ว — 403 คือ "ไม่ใช่ผู้จัด" ไม่ใช่ข้อผิดพลาด ปล่อยรายการว่างไว้เฉยๆ
-  const reloadInvites = useCallback(async () => {
-    try {
-      setInviteTokens(await fetchInvites(meeting.id));
-    } catch (e) {
-      if (!(e instanceof ApiError) || (e.status !== 403 && e.status !== 401)) {
-        toast.error(e instanceof ApiError ? e.message : "โหลดลิงก์เชิญไม่สำเร็จ");
-      }
-      setInviteTokens([]);
-    }
+  // 403 คือ "ไม่ใช่ผู้จัด" ไม่ใช่ข้อผิดพลาด — ผู้เข้าร่วมทั่วไปไม่เห็นส่วนนี้อยู่แล้ว
+  useEffect(() => {
+    let cancelled = false;
+    fetchGuestLink(meeting.id)
+      .then((token) => {
+        if (!cancelled) setGuestLink(token);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        if (!(e instanceof ApiError) || (e.status !== 403 && e.status !== 401)) {
+          toast.error(e instanceof ApiError ? e.message : "โหลดลิงก์เชิญไม่สำเร็จ");
+        }
+        setGuestLink(null);
+      })
+      .finally(() => {
+        if (!cancelled) setGuestLinkLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [meeting.id]);
 
-  useEffect(() => {
-    void reloadInvites();
-  }, [reloadInvites]);
-
-  const handleSendInvite = async () => {
-    if (!inviteEmail.trim()) {
-      toast.error("กรุณาระบุ email ของผู้ได้รับเชิญ");
-      return;
-    }
-    setInvitingBusy(true);
+  // สร้างครั้งแรก หรือสร้างใหม่เพื่อยกเลิกลิงก์เดิม (เช่น ลิงก์หลุดไปถึงคนที่ไม่ควรได้)
+  const handleRotateGuestLink = async () => {
+    setGuestLinkBusy(true);
     try {
-      const invite = await createInviteOnServer(meeting.id, inviteEmail.trim(), inviteName.trim() || undefined);
-      await reloadInvites();
-      setInviteEmail("");
-      setInviteName("");
-      setShowEmailPreview(invite);
-      toast.success("สร้าง Magic Link สำเร็จ", { description: `ส่งให้ ${inviteEmail.trim()}` });
+      const hadLink = guestLink !== null;
+      setGuestLink(await rotateGuestLink(meeting.id));
+      toast.success(hadLink ? "สร้างลิงก์ใหม่แล้ว — ลิงก์เดิมใช้ไม่ได้อีก" : "สร้างลิงก์เชิญแล้ว", {
+        description: "คัดลอกลิงก์แล้วส่งให้บุคคลภายนอกที่ต้องการเชิญ",
+      });
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "สร้างลิงก์เชิญไม่สำเร็จ");
     } finally {
-      setInvitingBusy(false);
+      setGuestLinkBusy(false);
     }
   };
 
-  const handleCopyLink = (token: string) => {
-    const url = buildJoinUrl(token);
-    navigator.clipboard.writeText(url);
-    setCopiedToken(token);
-    toast.success("คัดลอกลิงก์แล้ว");
-    setTimeout(() => setCopiedToken(null), 2000);
-  };
-
-  const handleRevokeToken = async (tokenId: string) => {
+  // clipboard ใช้ไม่ได้บน http (ไม่ใช่ https) หรือเมื่อเบราว์เซอร์ไม่อนุญาต — ต้องบอกให้คัดลอกเอง
+  // ไม่งั้นขึ้นว่า "คัดลอกแล้ว" ทั้งที่ในคลิปบอร์ดไม่มีอะไร
+  const handleCopyLink = async (token: string) => {
+    const url = guestLinkUrl(token);
     try {
-      await revokeInviteOnServer(tokenId);
-      await reloadInvites();
-      toast.success("ยกเลิกลิงก์เชิญแล้ว");
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "ยกเลิกลิงก์เชิญไม่สำเร็จ");
+      if (!navigator.clipboard) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      toast.success("คัดลอกลิงก์แล้ว");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("คัดลอกอัตโนมัติไม่ได้ — กรุณาคัดลอกลิงก์นี้เอง", { description: url, duration: 10000 });
     }
   };
 
@@ -210,7 +202,8 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
       const now         = new Date();
       const uploadedAt  = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
 
-      addMeetingFile(meeting.id, {
+      // ไฟล์กับ summaryDraftId บันทึกในครั้งเดียว — แยกสองครั้ง ถ้าครั้งหลังล้มจะได้ไฟล์ที่ไม่ผูกกับร่างรายงาน
+      const saved = await updateMeeting(meeting.id, { summaryDraftId: draftFileId, files: [...meeting.files, {
         id:          draftFileId,
         name:        `ร่างรายงาน_${meeting.shortName || meeting.name}.md`,
         description: "ร่างรายงานสรุปการประชุมโดย AI — ต้องผ่านการรับรองก่อนถือเป็นทางการ",
@@ -222,9 +215,8 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
         storageKey:  stored.storageKey,
         mimeType:    stored.mimeType,
         sizeBytes:   stored.sizeBytes,
-      });
-      updateMeeting(meeting.id, { summaryDraftId: draftFileId });
-      toast.success("สร้างร่างรายงานสรุปแล้ว", { description: "ดูได้ที่รายการเอกสารด้านบน" });
+      }] });
+      if (saved) toast.success("สร้างร่างรายงานสรุปแล้ว", { description: "ดูได้ที่รายการเอกสารด้านบน" });
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "สร้างรายงานไม่สำเร็จ");
     } finally {
@@ -232,9 +224,8 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     }
   };
 
-  const changeStatus = (s: MeetingStatus) => {
-    updateMeeting(meeting.id, { status: s });
-    toast.success(`เปลี่ยนสถานะเป็น: ${meetingStatusLabels[s]}`);
+  const changeStatus = async (s: MeetingStatus) => {
+    if (await updateMeeting(meeting.id, { status: s })) toast.success(`เปลี่ยนสถานะเป็น: ${meetingStatusLabels[s]}`);
   };
 
   const [notifyPreviewStep, setNotifyPreviewStep] = useState<"config" | "preview">("config");
@@ -242,59 +233,52 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const systemParticipants = meeting.participants.filter(p => p.inSystem);
   const externalParticipants = meeting.participants.filter(p => !p.inSystem);
 
-  const notifyAgenda = () => {
-    const sysCount = systemParticipants.length;
+  const notifyAgenda = async () => {
     const extCount = externalParticipants.length;
-    const extList = [...externalParticipants];
-
+  
     setNotifyDialog(false);
     setNotifyPreviewStep("config");
 
     const now = new Date().toISOString();
-    updateMeeting(meeting.id, { status: "notified", notifiedAt: now });
+    if (!(await updateMeeting(meeting.id, { status: "notified", notifiedAt: now }))) return;
 
-    // ออกลิงก์ให้บุคคลภายนอกทุกคนพร้อมกัน — ล้มไปคนหนึ่งไม่ควรทำให้ทั้งชุดหยุด
-    void Promise.allSettled(
-      extList
-        .filter((ext) => ext.email && ext.email !== "-")
-        .map((ext) => createInviteOnServer(meeting.id, ext.email, ext.name))
-    ).then(reloadInvites);
-
-    toast.success("ส่ง Email แจ้งวาระเรียบร้อย", {
-      description: `แจ้งคนในระบบ ${sysCount} ราย, บุคคลภายนอก ${extCount} ราย`,
+    // ระบบยังไม่มีบริการส่งอีเมล — ห้ามบอกว่า "ส่งแล้ว" ผู้จัดจะเข้าใจว่าองค์ประชุมได้รับแจ้งแล้ว
+    toast.success("บันทึกการแจ้งวาระแล้ว", {
+      description: `ผู้เข้าร่วมในระบบเห็นวาระในหน้าของตนแล้ว · ระบบยังไม่ส่งอีเมลอัตโนมัติ${extCount ? ` — ส่งลิงก์เชิญให้บุคคลภายนอก ${extCount} รายเอง (ส่วน "ข้อมูลการประชุม")` : ""}`,
+      duration: 8000,
     });
   };
 
-  const sendReminder = () => {
+  const sendReminder = async () => {
     const now = new Date().toISOString();
-    updateMeeting(meeting.id, { reminderSentAt: now });
-    toast.success("ส่ง Reminder พร้อมลิงก์ประชุมแล้ว", {
-      description: `แจ้งเตือนไปยัง ${meeting.participants.length} ราย`,
+    if (!(await updateMeeting(meeting.id, { reminderSentAt: now }))) return;
+    toast.success("บันทึกเวลาแจ้งเตือนแล้ว", {
+      description: "ระบบยังไม่ส่งอีเมลอัตโนมัติ — กรุณาแจ้งผู้เข้าร่วมทางช่องทางของหน่วยงาน",
+      duration: 8000,
     });
   };
 
-  const confirmOpenMeeting = (useCurrentTime: boolean) => {
+  const confirmOpenMeeting = async (useCurrentTime: boolean) => {
     const now = new Date();
     const nowStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    updateMeeting(meeting.id, {
+    setOpenTimeDialog(false);
+    if (!(await updateMeeting(meeting.id, {
       status: "in_progress",
       startTime: useCurrentTime ? nowStr : meeting.startTime,
-    });
-    setOpenTimeDialog(false);
+    }))) return;
     toast.success(useCurrentTime ? `เปิดการประชุมแล้ว (เวลาเริ่ม ${nowStr} น.)` : "เปิดการประชุมแล้ว (ตามเวลาที่กำหนดไว้)");
   };
 
-  const closeMeeting = () => {
-    updateMeeting(meeting.id, { status: "waiting_endorse" });
-    toast.success("ปิดการประชุมแล้ว รอการรับรอง");
+  const closeMeeting = async () => {
+    if (await updateMeeting(meeting.id, { status: "waiting_endorse" })) toast.success("ปิดการประชุมแล้ว รอการรับรอง");
   };
 
   const sendEndorseEmail = () => {
     setEndorseNotifyOpen(false);
-    toast.success("ส่ง Email แจ้งรับรองการประชุมเรียบร้อย", { description: `แจ้งไปยัง ${meeting.participants.length} ราย` });
+    toast.info("ระบบยังไม่ส่งอีเมลอัตโนมัติ", { description: "กรุณาแจ้งผู้เข้าร่วมให้เข้ามาดูร่างรายงานในระบบด้วยตนเอง" });
   };
 
-  const addPermission = () => {
+  const addPermission = async () => {
     if (!permName.trim()) { toast.error("กรุณาพิมพ์ชื่อผู้ใช้งาน"); return; }
     // ต้องผูกกับบัญชีจริง — เดิมสร้าง id ปลอม (U-<timestamp>) ทำให้สิทธิ์ที่เพิ่มไม่มีผลกับใครเลย
     const target = users.find((u) => u.name === permName.trim());
@@ -306,74 +290,64 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
       toast.error("ผู้ใช้งานนี้มีสิทธิ์อยู่แล้ว");
       return;
     }
-    updateMeeting(meeting.id, {
+    setAddPermOpen(false);
+    if (!(await updateMeeting(meeting.id, {
       permissions: [...meeting.permissions, { userId: target.id, name: target.name, type: permType }]
-    });
+    }))) return;
     toast.success(`เพิ่มสิทธิ์${permType === "manager" ? "ผู้จัดการประชุม" : "ผู้อ่าน"}สำเร็จ`);
     setPermName(""); setPermType("reader");
-    setAddPermOpen(false);
   };
 
   const closeFileDialog = () => {
     setAddFileOpen(false);
-    setFileName(""); setFileSizeKb(null); setFileDesc("");
+    setFileName(""); setFileDesc("");
     setFileType("attachment"); setFileVisibility("participants");
     setPendingFile(null); setUploading(false);
   };
 
   const submitFile = async () => {
     const name = fileName.trim();
+    // ต้องมีไฟล์จริงเสมอ — เดิมพิมพ์ชื่ออย่างเดียวได้ แล้วระบบสร้างรายการ ".pdf" ขนาดสุ่มที่เปิดไม่ได้
+    if (!pendingFile) { toast.error("กรุณาเลือกไฟล์ที่จะอัปโหลด"); return; }
     if (!name) { toast.error("กรุณาระบุชื่อเอกสาร"); return; }
 
     setUploading(true);
     try {
-      // ถ้ามี File จริง → อัปโหลดขึ้น server · ถ้าไม่มี (พิมพ์ชื่อเอง) → เก็บเฉพาะระเบียน
-      let storageMeta: { storageKey?: string; mimeType?: string; sizeBytes?: number } = {};
-      if (pendingFile) {
-        const stored = await putFile(pendingFile, meeting.id, fileVisibility);
-        storageMeta = { storageKey: stored.storageKey, mimeType: stored.mimeType, sizeBytes: stored.sizeBytes };
-      }
-
-      const displaySize = pendingFile
-        ? formatBytes(pendingFile.size)
-        : (() => {
-            const kb = fileSizeKb ?? Math.floor(120 + Math.random() * 1800);
-            return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
-          })();
-
-      addMeetingFile(meeting.id, {
+      const stored = await putFile(pendingFile, meeting.id, fileVisibility);
+      const ok = await addMeetingFile(meeting.id, {
         id: `F-${Date.now()}`,
-        name: /\.(pdf|docx|xlsx|png|jpg|jpeg)$/i.test(name) ? name : `${name}.pdf`,
+        name,
         description: fileDesc.trim() || "เอกสารประกอบการประชุม",
-        size: displaySize,
+        size: formatBytes(pendingFile.size),
         uploadedAt: today,
         uploadedBy: currentUser.name,
         type: fileType,
         visibility: fileVisibility,
-        ...storageMeta,
+        storageKey: stored.storageKey,
+        mimeType: stored.mimeType,
+        sizeBytes: stored.sizeBytes,
       });
-      toast.success("เพิ่มเอกสารเรียบร้อย", {
-        description: `${name} · ${fileVisibilityLabels[fileVisibility]}${pendingFile ? " · ไฟล์บันทึกแล้ว" : ""}`,
-      });
+      if (!ok) { setUploading(false); return; }
+      toast.success("เพิ่มเอกสารเรียบร้อย", { description: `${name} · ${fileVisibilityLabels[fileVisibility]}` });
       closeFileDialog();
     } catch (e) {
-      console.error(e);
-      toast.error("บันทึกไฟล์ไม่สำเร็จ", { description: "IndexedDB ปฏิเสธการเขียน" });
+      toast.error("อัปโหลดไฟล์ไม่สำเร็จ", { description: e instanceof ApiError ? e.message : "ตรวจสอบการเชื่อมต่อแล้วลองใหม่" });
       setUploading(false);
     }
   };
 
-  const removePermission = (index: number) => {
+  const removePermission = async (index: number) => {
     const target = meeting.permissions[index];
-    updateMeeting(meeting.id, {
+    if (!(await updateMeeting(meeting.id, {
       permissions: meeting.permissions.filter((_, i) => i !== index)
-    });
+    }))) return;
     toast.success(`ลบสิทธิ์ของ ${target.name} แล้ว`);
   };
 
-  const addAgenda = () => {
+  const addAgenda = async () => {
     if (!agendaTitle.trim()) { toast.error("กรุณากรอกชื่อวาระ"); return; }
-    updateMeeting(meeting.id, {
+    setAddAgendaOpen(false);
+    if (!(await updateMeeting(meeting.id, {
       agenda: [...meeting.agenda, {
         id: `AG-${Date.now()}`,
         no: agendaNo.trim() || String(meeting.agenda.filter(a => !a.no.includes(".")).length + 1),
@@ -381,25 +355,25 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
         detail: agendaDetail.trim() || undefined,
         comments: [],
       }]
-    });
+    }))) return;
     toast.success("เพิ่มวาระสำเร็จ");
     setAgendaNo(""); setAgendaTitle(""); setAgendaDetail("");
-    setAddAgendaOpen(false);
   };
 
-  const submitComment = (agendaId: string) => {
+  // ชื่อผู้แสดงความเห็นและเวลามาจาก server — ผู้เข้าร่วมทั่วไปส่งได้โดยไม่ต้องมีสิทธิ์แก้ทั้งการประชุม
+  const submitComment = async (agendaId: string) => {
     if (!commentText.trim()) return;
-    const now = new Date();
-    const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    addMeetingComment(meeting.id, agendaId, { by: currentUser.name, text: commentText.trim(), time });
-    setCommentText(""); setCommentFor(null);
+    if (await addMeetingComment(meeting.id, agendaId, commentText.trim())) {
+      setCommentText(""); setCommentFor(null);
+    }
   };
 
-  const saveInfo = () => {
+  const saveInfo = async () => {
     if (!editName.trim()) { toast.error("กรุณากรอกชื่อการประชุม"); return; }
-    updateMeeting(meeting.id, { name: editName.trim(), shortName: editShortName.trim(), type: editType });
     setEditInfoOpen(false);
-    toast.success("บันทึกข้อมูลการประชุมเรียบร้อย");
+    if (await updateMeeting(meeting.id, { name: editName.trim(), shortName: editShortName.trim(), type: editType })) {
+      toast.success("บันทึกข้อมูลการประชุมเรียบร้อย");
+    }
   };
 
   const openEditInfo = () => {
@@ -409,10 +383,9 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     setEditInfoOpen(true);
   };
 
-  const endorseMeeting = () => {
-    updateMeeting(meeting.id, { status: "endorsed" });
+  const endorseMeeting = async () => {
     setEndorseDialog(false);
-    toast.success("รับรองการประชุมแล้ว — ไม่สามารถแก้ไขได้อีก");
+    if (await updateMeeting(meeting.id, { status: "endorsed" })) toast.success("รับรองการประชุมแล้ว — ไม่สามารถแก้ไขได้อีก");
   };
 
   const setAttendance = (pid: string, v: "attend" | "representative" | "absent") => {
@@ -427,9 +400,10 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
     });
   };
 
-  const addExternalParticipant = () => {
+  const addExternalParticipant = async () => {
     if (!participantName.trim()) { toast.error("กรุณากรอกชื่อ"); return; }
-    updateMeeting(meeting.id, {
+    setAddParticipantOpen(false);
+    if (!(await updateMeeting(meeting.id, {
       participants: [...meeting.participants, {
         id: `P-${Date.now()}`,
         userId: null,
@@ -441,13 +415,12 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
         attendance: "pending",
         inSystem: false,
       }]
-    });
+    }))) return;
     toast.success("เพิ่มองค์ประชุมสำเร็จ");
     setParticipantName(""); setParticipantPos("กรรมการ");
-    setAddParticipantOpen(false);
   };
 
-  const addSelectedSystemUsers = () => {
+  const addSelectedSystemUsers = async () => {
     if (selectedUserIds.length === 0) { toast.error("กรุณาเลือกผู้ใช้อย่างน้อย 1 คน"); return; }
     const newParticipants = selectedUserIds.map((uid, i) => {
       const u = users.find(x => x.id === uid)!;
@@ -463,12 +436,12 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
         inSystem: true,
       };
     });
-    updateMeeting(meeting.id, {
+    setAddParticipantOpen(false);
+    if (!(await updateMeeting(meeting.id, {
       participants: [...meeting.participants, ...newParticipants]
-    });
+    }))) return;
     toast.success(`เพิ่มองค์ประชุม ${newParticipants.length} คนสำเร็จ`);
     setSelectedUserIds([]); setSelectedUsersPos({}); setParticipantSearch("");
-    setAddParticipantOpen(false);
   };
 
   const existingUserIds = new Set(meeting.participants.filter(p => p.userId).map(p => p.userId));
@@ -501,7 +474,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const noPermissionReason = denialReason(currentUser, "meeting.edit", meeting);
 
   return (
-    <div className="p-4 md:p-6 pb-16 max-w-[1400px] mx-auto">
+    <div className="p-4 md:p-6 pb-16 max-w-wide mx-auto">
       {/* Header */}
       <div className="mb-4">
         <Link href="/meetings" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1 mb-2">
@@ -510,7 +483,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1">
-              <Badge className={`${meetingStatusColors[meeting.status]} text-[11px] border`}>{meetingStatusLabels[meeting.status]}</Badge>
+              <Badge className={`${meetingStatusColors[meeting.status]} text-caption border`}>{meetingStatusLabels[meeting.status]}</Badge>
               <span className="text-xs text-muted-foreground">{meeting.committee}</span>
             </div>
             <h1 className="text-lg md:text-2xl font-semibold leading-tight">{meeting.name}</h1>
@@ -528,9 +501,9 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           </div>
           <div className="flex gap-2 flex-wrap">
             {(meeting.status === "in_progress" || meeting.status === "notified" || meeting.status === "waiting_endorse") && (
-              <Button asChild size="sm" className="bg-rose-600 hover:bg-rose-700 text-white font-medium border-none shadow-md animate-pulse">
+              <Button asChild size="sm" className="bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium border-none shadow-md animate-pulse motion-reduce:animate-none">
                 <Link href={`/live/${meeting.id}`}>
-                  <span className="material-symbols-outlined text-[16px] mr-1.5">video_call</span>
+                  <span className="material-symbols-outlined text-base mr-1.5">video_call</span>
                   เข้าห้องประชุมออนไลน์ (Live)
                 </Link>
               </Button>
@@ -544,8 +517,8 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               </Button>
             )}
             {meeting.status === "notified" && meeting.reminderSentAt && (
-              <Badge variant="secondary" className="text-[10px] h-8 px-3">
-                <span className="material-symbols-outlined text-[14px] mr-1 text-green-600">check_circle</span>
+              <Badge variant="secondary" className="text-tiny h-8 px-3">
+                <span className="material-symbols-outlined text-sm mr-1 text-success">check_circle</span>
                 ส่ง Reminder แล้ว
               </Badge>
             )}
@@ -557,7 +530,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 size="sm"
                 onClick={() => {
                   closeMeeting();
-                  toast.info("ประชุมจบแล้ว — สามารถขอ Transcript ได้", { description: "ไปที่แท็บ 'สรุปประชุม' เพื่อสร้างรายงาน" });
+                  toast.info("ประชุมจบแล้ว", { description: "สร้างร่างรายงานสรุปได้ที่แท็บ 'ไฟล์เอกสาร'" });
                 }}
               >
                 <span className={iconSm}>stop_circle</span>ปิดประชุม
@@ -646,12 +619,12 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
 
       {/* บอกเหตุผลเมื่อดูได้แต่แก้ไม่ได้ — ไม่งั้นผู้ใช้เห็นหน้าที่ปุ่มหายไปเฉยๆ โดยไม่รู้ว่าทำไม */}
       {!canEdit && (
-        <Card className="card-shadow mb-4 border-amber-300 bg-amber-50">
+        <Card className="card-shadow mb-4 border-warning/30 bg-warning/10">
           <CardContent className="p-3 flex items-start gap-2">
-            <span className="material-symbols-outlined text-[18px] text-amber-700 shrink-0">visibility</span>
+            <span className="material-symbols-outlined text-lg text-warning shrink-0">visibility</span>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-amber-900">กำลังดูในโหมดอ่านอย่างเดียว</p>
-              <p className="text-[11px] text-amber-800 mt-0.5">{noPermissionReason}</p>
+              <p className="text-xs font-medium text-warning">กำลังดูในโหมดอ่านอย่างเดียว</p>
+              <p className="text-caption text-warning mt-0.5">{noPermissionReason}</p>
             </div>
           </CardContent>
         </Card>
@@ -660,25 +633,26 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
       {/* Status stepper */}
       <Card className="card-shadow mb-4">
         <CardContent className="p-4">
-          <div className="flex items-center justify-between gap-2 overflow-x-auto">
+          <p className="sm:hidden text-tiny text-muted-foreground mb-1">เลื่อนซ้าย-ขวาเพื่อดูทุกขั้นตอน</p>
+          <div className="flex items-center justify-between gap-2 overflow-x-auto snap-x">
             {statusOrder.map((s, i) => {
               const currentIdx = statusOrder.indexOf(meeting.status);
               const done = i < currentIdx;
               const active = i === currentIdx;
               return (
                 <div key={s} className="flex items-center gap-2 flex-shrink-0">
-                  <div className={`flex flex-col items-center gap-1 min-w-[120px] ${active ? "" : done ? "opacity-80" : "opacity-40"}`}>
+                  <div className={`flex flex-col items-center gap-1 min-w-30 ${active ? "" : done ? "opacity-80" : "opacity-40"}`}>
                     <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
-                      done ? "bg-primary text-white" : active ? "bg-primary text-white ring-4 ring-primary/20" : "bg-muted text-muted-foreground"
+                      done ? "bg-primary text-primary-foreground" : active ? "bg-primary text-primary-foreground ring-4 ring-primary/20" : "bg-muted text-muted-foreground"
                     }`}>
                       {done ? <span className={iconSm}>check</span> : i + 1}
                     </div>
-                    <span className={`text-[11px] font-medium ${active ? "text-primary" : "text-muted-foreground"}`}>
+                    <span className={`text-caption font-medium ${active ? "text-primary" : "text-muted-foreground"}`}>
                       {meetingStatusLabels[s].replace(/^\d+\.\s*/, "")}
                     </span>
                   </div>
                   {i < statusOrder.length - 1 && (
-                    <div className={`h-[2px] w-8 md:w-12 ${done ? "bg-primary" : "bg-muted"}`} />
+                    <div className={`h-0.5 w-8 md:w-12 ${done ? "bg-primary" : "bg-muted"}`} />
                   )}
                 </div>
               );
@@ -689,6 +663,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={setTab}>
+        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
         <TabsList>
           <TabsTrigger value="agenda"><span className={iconSm}>list_alt</span> วาระการประชุม</TabsTrigger>
           <TabsTrigger value="participants"><span className={iconSm}>groups</span> องค์ประชุม</TabsTrigger>
@@ -696,6 +671,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           <TabsTrigger value="permissions"><span className={iconSm}>admin_panel_settings</span> สิทธิ์</TabsTrigger>
           <TabsTrigger value="info"><span className={iconSm}>info</span> ข้อมูลการประชุม</TabsTrigger>
         </TabsList>
+        </div>
 
         {/* AGENDA */}
         <TabsContent value="agenda" className="mt-4 space-y-3">
@@ -711,13 +687,13 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               {meeting.agenda.length === 0 ? (
                 <p className="text-xs text-muted-foreground py-6 text-center">ยังไม่มีวาระการประชุม</p>
               ) : meeting.agenda.map(a => (
-                <div key={a.id} className="rounded-lg border p-3" style={{ paddingLeft: a.no.includes(".") ? 24 : 12 }}>
+                <div key={a.id} className={`rounded-lg border p-3 ${a.no.includes(".") ? "pl-6" : "pl-3"}`}>
                   <div className="flex items-start gap-2">
                     <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-semibold ${a.no.includes(".") ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary"}`}>{a.no}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-sm font-semibold">{a.title}</p>
-                        {a.secretGroupId && <Badge variant="secondary" className="text-[10px]"><span className={iconSm}>lock</span>วาระลับ</Badge>}
+                        {a.secretGroupId && <Badge variant="secondary" className="text-tiny"><span className={iconSm}>lock</span>วาระลับ</Badge>}
                       </div>
                       {a.detail && <p className="text-xs text-muted-foreground mt-1">{a.detail}</p>}
                       {a.comments.length > 0 && (
@@ -797,12 +773,12 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                             </div>
                             <div>
                               <p className="font-medium">{p.name}</p>
-                              <p className="text-[11px] text-muted-foreground">{p.role} {!p.inSystem && <span className="text-amber-600">· ภายนอก</span>}</p>
+                              <p className="text-caption text-muted-foreground">{p.role} {!p.inSystem && <span className="text-warning">· ภายนอก</span>}</p>
                             </div>
                           </div>
                         </td>
                         <td className="py-2 px-2 text-xs">
-                          <Badge variant={p.position === "ประธาน" ? "default" : "secondary"} className="text-[10px]">{p.position}</Badge>
+                          <Badge variant={p.position === "ประธาน" ? "default" : "secondary"} className="text-tiny">{p.position}</Badge>
                         </td>
                         <td className="py-2 px-2 text-xs text-muted-foreground">{p.department}</td>
                         <td className="py-2 px-2 text-xs">
@@ -830,6 +806,49 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               </div>
             </CardContent>
           </Card>
+
+          {/* ผู้ยอมรับข้อตกลงรักษาความลับ — server ส่ง confidentialityAcks มาเฉพาะผู้จัด */}
+          {canEdit && (
+            <Card className="card-shadow">
+              <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm">ผู้ยอมรับข้อตกลงรักษาความลับ ({meeting.confidentialityAcks?.length ?? 0})</CardTitle>
+                  <CardDescription className="text-xs">บันทึกทุกครั้งที่กดยอมรับก่อนเข้าห้องประชุม รวมบุคคลภายนอก</CardDescription>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => void reload()}>
+                  <span className={iconSm}>refresh</span> โหลดใหม่
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {meeting.confidentialityAcks?.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-xs text-muted-foreground">
+                          <th className="text-left py-2 px-2">ชื่อ</th>
+                          <th className="text-left py-2 px-2">ประเภท</th>
+                          <th className="text-left py-2 px-2">เวลาที่ยอมรับ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...meeting.confidentialityAcks].reverse().map((a) => (
+                          <tr key={`${a.userId}-${a.at}`} className="border-b last:border-b-0">
+                            <td className="py-2 px-2 font-medium">{a.name}</td>
+                            <td className="py-2 px-2 text-xs">
+                              {a.userId.startsWith("guest-") ? <span className="text-warning">ภายนอก</span> : "ในระบบ"}
+                            </td>
+                            <td className="py-2 px-2 text-xs text-muted-foreground">{new Date(a.at).toLocaleString("th-TH")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">ยังไม่มีผู้กดยอมรับ</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* FILES */}
@@ -853,7 +872,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 <div className="space-y-2">
                   {hiddenFileCount > 0 && (
                     <div className="rounded-lg border border-dashed p-3 flex items-center gap-2 bg-muted/30">
-                      <span className="material-symbols-outlined text-muted-foreground text-[18px]">visibility_off</span>
+                      <span className="material-symbols-outlined text-muted-foreground text-lg">visibility_off</span>
                       <p className="text-xs text-muted-foreground">
                         มีเอกสารอีก <span className="font-semibold text-foreground">{hiddenFileCount}</span> ไฟล์ที่คุณไม่มีสิทธิ์เข้าถึงในการประชุมนี้
                       </p>
@@ -869,16 +888,16 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{f.name}</p>
                         <p className="text-xs text-muted-foreground truncate">{f.description}</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                        <p className="text-caption text-muted-foreground mt-0.5">
                           {f.uploadedBy} · {f.uploadedAt} · {f.size}
                         </p>
                       </div>
                       <div className="hidden md:flex flex-col items-end gap-1">
-                        <Badge className={`text-[10px] border ${fileVisibilityColors[f.visibility]}`} variant="secondary">
-                          <span className="material-symbols-outlined text-[12px] mr-0.5">{fileVisibilityIcons[f.visibility]}</span>
+                        <Badge className={`text-tiny border ${fileVisibilityColors[f.visibility]}`} variant="secondary">
+                          <span className="material-symbols-outlined text-xs mr-0.5">{fileVisibilityIcons[f.visibility]}</span>
                           {fileVisibilityLabels[f.visibility]}
                         </Badge>
-                        <Badge variant="secondary" className="text-[10px]">
+                        <Badge variant="secondary" className="text-tiny">
                           {f.type === "regulation" ? "ระเบียบ/คำสั่ง" :
                            f.type === "attachment" ? "เอกสารประกอบ" :
                            f.type === "report_draft" ? "ร่างรายงาน" :
@@ -930,10 +949,10 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 {/* Generate summary */}
                 <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[18px] text-muted-foreground">summarize</span>
+                    <span className="material-symbols-outlined text-lg text-muted-foreground">summarize</span>
                     <div>
                       <p className="text-xs font-medium">ร่างรายงานสรุป</p>
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-caption text-muted-foreground">
                         {meeting.summaryDraftId ? "สร้างแล้ว — ดูได้ที่รายการเอกสาร" : "สรุปจากคำบรรยายสดที่บันทึกไว้ระหว่างประชุม"}
                       </p>
                     </div>
@@ -945,13 +964,13 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                     title={meeting.status === "in_progress" ? "ต้องปิดประชุมก่อน" : undefined}
                   >
                     {summaryBusy
-                      ? <><span className="material-symbols-outlined animate-spin text-[14px] mr-1">progress_activity</span>กำลังสร้าง...</>
+                      ? <><span className="material-symbols-outlined animate-spin text-sm mr-1">progress_activity</span>กำลังสร้าง...</>
                       : "สร้างร่างรายงาน"}
                   </Button>
                 </div>
 
-                <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[13px]">info</span>
+                <p className="text-caption text-muted-foreground flex items-center gap-1">
+                  <span className="material-symbols-outlined text-compact">info</span>
                   ร่างนี้สร้างโดย AI อัตโนมัติ — เลขานุการต้องตรวจสอบ แก้ไข และรับรองก่อนใช้งานจริง
                 </p>
               </CardContent>
@@ -1033,13 +1052,13 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   {meeting.secretGroups.map(g => (
                     <div key={g.id} className="rounded-lg border p-3">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className={iconSm + " text-amber-600"}>lock</span>
+                        <span className={iconSm + " text-warning"}>lock</span>
                         <p className="text-sm font-semibold">{g.name}</p>
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {g.participantIds.map(pid => {
                           const p = meeting.participants.find(x => x.id === pid);
-                          return p ? <Badge key={pid} variant="secondary" className="text-[10px]">{p.name}</Badge> : null;
+                          return p ? <Badge key={pid} variant="secondary" className="text-tiny">{p.name}</Badge> : null;
                         })}
                       </div>
                     </div>
@@ -1100,114 +1119,72 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">ชื่อผู้ส่ง Email</p>
                   <p className="font-medium">{emailSender}</p>
-                  <p className="text-xs text-muted-foreground">(อีเมลระบบ: notify@e-office.cloud)</p>
+                  <p className="text-xs text-muted-foreground">ใช้เมื่อเปิดบริการส่งอีเมล — ขณะนี้ระบบยังไม่ส่งอีเมลอัตโนมัติ</p>
                 </div>
                 <div className="md:col-span-2 rounded-lg border p-3 bg-muted/30">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-xs font-medium mb-0.5">เปิดให้บุคคลภายนอกเข้าห้องประชุมเองได้</p>
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-caption text-muted-foreground">
                         เปิดเมื่อมีวิทยากรหรือผู้ทรงคุณวุฒิภายนอกที่ไม่มีบัญชีในระบบ —
-                        ผู้ที่ได้รับลิงก์จะกรอกชื่อแล้วเข้าห้องได้เลย
-                        {!meeting.allowGuestJoin && " ขณะนี้ปิดอยู่ เข้าได้เฉพาะองค์ประชุมเท่านั้น"}
+                        ผู้ที่ได้รับลิงก์เชิญจะกรอกชื่อแล้วเข้าห้องได้เลย
+                        {!meeting.allowGuestJoin && " ขณะนี้ปิดอยู่ เข้าได้เฉพาะองค์ประชุม — ลิงก์เชิญที่ออกไปแล้วจะใช้ไม่ได้จนกว่าจะเปิดอีกครั้ง"}
                       </p>
                     </div>
                     <Switch
                       checked={!!meeting.allowGuestJoin}
                       disabled={!canEdit}
-                      onCheckedChange={(v) => {
-                        updateMeeting(meeting.id, { allowGuestJoin: v });
-                        toast.success(v ? "เปิดให้บุคคลภายนอกเข้าร่วมได้แล้ว" : "ปิดรับบุคคลภายนอกแล้ว");
+                      onCheckedChange={async (v) => {
+                        if (await updateMeeting(meeting.id, { allowGuestJoin: v })) {
+                          toast.success(v ? "เปิดให้บุคคลภายนอกเข้าร่วมได้แล้ว" : "ปิดรับบุคคลภายนอกแล้ว");
+                        }
                       }}
                     />
                   </div>
                 </div>
 
-                {/* ─── Magic Link Invite Section ─── */}
+                {/* ─── ลิงก์เชิญบุคคลภายนอก — ลิงก์เดียวต่อการประชุม ─── */}
                 {meeting.allowGuestJoin && canEdit && (
                   <div className="md:col-span-2 rounded-lg border p-3 bg-primary/5 space-y-3">
                     <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[18px] text-primary">link</span>
-                      <p className="text-xs font-semibold">เชิญบุคคลภายนอกผ่าน Magic Link</p>
+                      <span className="material-symbols-outlined text-lg text-primary">link</span>
+                      <p className="text-xs font-semibold">ลิงก์เชิญบุคคลภายนอก</p>
                     </div>
 
-                    {/* Invite form */}
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <Input
-                        value={inviteEmail}
-                        onChange={(e) => setInviteEmail(e.target.value)}
-                        placeholder="Email ผู้รับเชิญ *"
-                        type="email"
-                        className="h-9 text-sm flex-1"
-                      />
-                      <Input
-                        value={inviteName}
-                        onChange={(e) => setInviteName(e.target.value)}
-                        placeholder="ชื่อ (ไม่บังคับ)"
-                        className="h-9 text-sm sm:w-44"
-                      />
-                      <Button size="sm" onClick={handleSendInvite} disabled={invitingBusy} className="h-9 px-4 flex-shrink-0">
-                        <span className="material-symbols-outlined text-[16px] mr-1">send</span>
-                        สร้างลิงก์เชิญ
-                      </Button>
-                    </div>
-
-                    {/* Existing tokens */}
-                    {inviteTokens.length > 0 && (
-                      <div className="space-y-1.5">
-                        <p className="text-[11px] text-muted-foreground font-medium">ลิงก์ที่สร้างแล้ว ({inviteTokens.length})</p>
-                        <div className="space-y-1">
-                          {inviteTokens.map((t) => (
-                            <div key={t.token} className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11px] ${t.status !== "active" ? "bg-muted/50 opacity-60" : "bg-background"}`}>
-                              <span className="material-symbols-outlined text-[14px] text-muted-foreground">
-                                {t.status === "used" ? "check_circle" : t.status === "active" ? "link" : "link_off"}
-                              </span>
-                              <span className="truncate flex-1 font-medium">{t.guestEmail}</span>
-                              {t.guestName && <span className="text-muted-foreground">({t.guestName})</span>}
-                              <span className="text-muted-foreground flex-shrink-0">
-                                {t.status === "used" ? `ใช้แล้ว — ${t.usedByName ?? ""}` : t.status === "revoked" ? "ยกเลิกแล้ว" : t.status === "expired" ? "หมดอายุแล้ว" : `หมดอายุ ${new Date(t.expiresAt).toLocaleDateString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`}
-                              </span>
-                              {t.status === "active" && (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 px-1.5"
-                                    onClick={() => handleCopyLink(t.token)}
-                                    title="คัดลอกลิงก์"
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">
-                                      {copiedToken === t.token ? "check" : "content_copy"}
-                                    </span>
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 px-1.5"
-                                    onClick={() => setShowEmailPreview(t)}
-                                    title="ดูตัวอย่าง Email"
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">visibility</span>
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 px-1.5 text-destructive hover:text-destructive"
-                                    onClick={() => handleRevokeToken(t.token)}
-                                    title="ยกเลิก"
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">close</span>
-                                  </Button>
-                                </>
-                              )}
-                            </div>
-                          ))}
+                    {!guestLinkLoaded ? (
+                      <p role="status" className="text-caption text-muted-foreground">กำลังโหลดลิงก์เชิญ...</p>
+                    ) : guestLink ? (
+                      <div className="space-y-2">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <code className="min-w-0 flex-1 break-all rounded-md border bg-background px-2.5 py-2 text-caption">
+                            {guestLinkUrl(guestLink)}
+                          </code>
+                          <Button size="sm" onClick={() => void handleCopyLink(guestLink)} className="shrink-0">
+                            <span className="material-symbols-outlined text-base mr-1">{copied ? "check" : "content_copy"}</span>
+                            {copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}
+                          </Button>
                         </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleRotateGuestLink()}
+                          disabled={guestLinkBusy}
+                          className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                        >
+                          <span className="material-symbols-outlined text-base mr-1">autorenew</span>
+                          {guestLinkBusy ? "กำลังสร้าง..." : "สร้างลิงก์ใหม่ (ยกเลิกลิงก์เดิม)"}
+                        </Button>
                       </div>
+                    ) : (
+                      <Button size="sm" onClick={() => void handleRotateGuestLink()} disabled={guestLinkBusy}>
+                        <span className="material-symbols-outlined text-base mr-1">add_link</span>
+                        {guestLinkBusy ? "กำลังสร้าง..." : "สร้างลิงก์เชิญ"}
+                      </Button>
                     )}
 
-                    <p className="text-[10px] text-muted-foreground">
-                      ลิงก์ใช้ได้ครั้งเดียว หมดอายุ 48 ชม. · ในระบบจริงจะส่ง Email อัตโนมัติ · ตอนนี้คัดลอกลิงก์ส่งเองได้
+                    <p className="text-tiny text-muted-foreground">
+                      ส่งลิงก์นี้ให้วิทยากรหรือผู้สังเกตการณ์ทุกคนได้ — ผู้ที่ได้ลิงก์ใส่ชื่อแล้วเข้าห้องประชุมได้ทันทีโดยไม่ต้องมีบัญชี ·
+                      ปิด &quot;รับบุคคลภายนอก&quot; เมื่อไรลิงก์ใช้ไม่ได้ทันที · ระบบยังไม่ส่งอีเมลให้อัตโนมัติ
                     </p>
                   </div>
                 )}
@@ -1215,7 +1192,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">การเก็บบันทึกลง Drive</p>
                   <div className="flex items-center gap-1.5">
-                    <span className={`h-2 w-2 rounded-full ${meeting.savedToDrive ? "bg-green-500" : "bg-slate-400"}`} />
+                    <span className={`h-2 w-2 rounded-full ${meeting.savedToDrive ? "bg-success" : "bg-muted-foreground"}`} />
                     <p className="font-medium">{meeting.savedToDrive ? "บันทึกแล้ว" : "รอบันทึก"}</p>
                   </div>
                 </div>
@@ -1226,7 +1203,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   ) : (
                     <div className="flex flex-wrap gap-1">
                       {textBoxes.map(b => (
-                        <Badge key={b.id} variant="secondary" className="text-[10px]">{b.name}</Badge>
+                        <Badge key={b.id} variant="secondary" className="text-tiny">{b.name}</Badge>
                       ))}
                     </div>
                   )}
@@ -1252,7 +1229,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
 
       {/* Notify Dialog — Enhanced */}
       <Dialog open={notifyDialog} onOpenChange={(open) => { setNotifyDialog(open); if (!open) setNotifyPreviewStep("config"); }}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+        <DialogContent className="max-w-2xl max-h-[85dvh] flex flex-col">
           <DialogHeader>
             <DialogTitle>แจ้งวาระการประชุม</DialogTitle>
             <DialogDescription>ส่ง Email รายละเอียดวาระ + ปฏิทิน (.ics) ไปยังองค์ประชุมทั้งหมด</DialogDescription>
@@ -1264,42 +1241,42 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               {/* ผู้รับ — คนในระบบ */}
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[14px]">group</span>
+                  <span className="material-symbols-outlined text-sm">group</span>
                   ผู้ใช้ในระบบ ({systemParticipants.length} คน)
                 </label>
                 <div className="rounded-md border p-2 bg-muted/30 max-h-28 overflow-y-auto">
                   <div className="flex flex-wrap gap-1.5">
                     {systemParticipants.map(p => (
-                      <Badge key={p.id} variant="secondary" className="text-[11px] gap-1">
-                        <span className="material-symbols-outlined text-[12px]">person</span>
+                      <Badge key={p.id} variant="secondary" className="text-caption gap-1">
+                        <span className="material-symbols-outlined text-xs">person</span>
                         {p.name}
                         <span className="text-muted-foreground">({p.email})</span>
                       </Badge>
                     ))}
                   </div>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1">ระบบดึงอีเมลจากข้อมูลผู้ใช้อัตโนมัติ + แสดงแจ้งเตือนในหน้าพอร์ทัลของแต่ละคน</p>
+                <p className="text-caption text-muted-foreground mt-1">ระบบดึงอีเมลจากข้อมูลผู้ใช้อัตโนมัติ + แสดงแจ้งเตือนในหน้าพอร์ทัลของแต่ละคน</p>
               </div>
 
               {/* ผู้รับ — บุคคลภายนอก */}
               {externalParticipants.length > 0 && (
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[14px]">person_add</span>
-                    บุคคลภายนอก ({externalParticipants.length} คน) — ส่ง Magic Link
+                    <span className="material-symbols-outlined text-sm">person_add</span>
+                    บุคคลภายนอก ({externalParticipants.length} คน) — ส่งลิงก์เชิญเอง
                   </label>
-                  <div className="rounded-md border p-2 bg-amber-50/50 dark:bg-amber-950/20 max-h-28 overflow-y-auto">
+                  <div className="rounded-md border p-2 bg-warning/10  max-h-28 overflow-y-auto">
                     <div className="flex flex-wrap gap-1.5">
                       {externalParticipants.map(p => (
-                        <Badge key={p.id} variant="outline" className="text-[11px] gap-1 border-amber-300 text-amber-700 dark:text-amber-400">
-                          <span className="material-symbols-outlined text-[12px]">link</span>
+                        <Badge key={p.id} variant="outline" className="text-caption gap-1 border-warning/30 text-warning ">
+                          <span className="material-symbols-outlined text-xs">link</span>
                           {p.name}
                           {p.email !== "-" && <span className="text-muted-foreground">({p.email})</span>}
                         </Badge>
                       ))}
                     </div>
                   </div>
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">ผู้ใช้ภายนอกจะได้รับ Magic Link เข้าประชุมโดยไม่ต้องสร้างบัญชี</p>
+                  <p className="text-caption text-warning mt-1">ส่งลิงก์เชิญจากส่วน &quot;ข้อมูลการประชุม&quot; ให้บุคคลภายนอก — ใส่ชื่อแล้วเข้าห้องได้โดยไม่ต้องมีบัญชี</p>
                 </div>
               )}
 
@@ -1308,28 +1285,28 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 <label className="text-xs font-medium text-muted-foreground mb-1.5 block">สิ่งที่จะส่งในอีเมล</label>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 rounded-md border px-3 py-2 bg-muted/20">
-                    <span className="material-symbols-outlined text-[18px] text-primary">description</span>
+                    <span className="material-symbols-outlined text-lg text-primary">description</span>
                     <div className="flex-1">
                       <p className="text-sm font-medium">รายละเอียดวาระการประชุม</p>
-                      <p className="text-[11px] text-muted-foreground">{meeting.agenda.length} วาระ · {meeting.date} · {meeting.startTime}-{meeting.endTime} · {meeting.location}</p>
+                      <p className="text-caption text-muted-foreground">{meeting.agenda.length} วาระ · {meeting.date} · {meeting.startTime}-{meeting.endTime} · {meeting.location}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 rounded-md border px-3 py-2 bg-muted/20">
-                    <span className="material-symbols-outlined text-[18px] text-blue-600">calendar_add_on</span>
+                    <span className="material-symbols-outlined text-lg text-info">calendar_add_on</span>
                     <div className="flex-1">
                       <p className="text-sm font-medium">ไฟล์ปฏิทิน (.ics)</p>
-                      <p className="text-[11px] text-muted-foreground">ผู้รับกดเพิ่มลง Google Calendar / Outlook ได้ทันที · มี alarm แจ้ง 1 วันก่อน + 30 นาทีก่อน</p>
+                      <p className="text-caption text-muted-foreground">ผู้รับกดเพิ่มลง Google Calendar / Outlook ได้ทันที · มี alarm แจ้ง 1 วันก่อน + 30 นาทีก่อน</p>
                     </div>
-                    <Button variant="outline" size="sm" className="text-[11px] h-7" onClick={() => downloadIcs(meeting)}>
-                      <span className="material-symbols-outlined text-[14px] mr-1">download</span>ทดลองดาวน์โหลด
+                    <Button variant="outline" size="sm" className="text-caption h-7" onClick={() => downloadIcs(meeting)}>
+                      <span className="material-symbols-outlined text-sm mr-1">download</span>ทดลองดาวน์โหลด
                     </Button>
                   </div>
                   {meeting.conferenceLink && (
                     <div className="flex items-center gap-2 rounded-md border px-3 py-2 bg-muted/20">
-                      <span className="material-symbols-outlined text-[18px] text-green-600">video_call</span>
+                      <span className="material-symbols-outlined text-lg text-success">video_call</span>
                       <div className="flex-1">
                         <p className="text-sm font-medium">ลิงก์ประชุมออนไลน์</p>
-                        <p className="text-[11px] text-muted-foreground break-all">{meeting.conferenceLink}</p>
+                        <p className="text-caption text-muted-foreground break-all">{meeting.conferenceLink}</p>
                       </div>
                     </div>
                   )}
@@ -1337,15 +1314,15 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               </div>
 
               {/* Reminder */}
-              <div className="rounded-lg border border-dashed border-blue-300 bg-blue-50/50 dark:bg-blue-950/20 px-3 py-2.5">
+              <div className="rounded-lg border border-dashed border-info/30 bg-info/10  px-3 py-2.5">
                 <div className="flex items-start gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-blue-600 mt-0.5">notifications_active</span>
+                  <span className="material-symbols-outlined text-lg text-info mt-0.5">notifications_active</span>
                   <div>
-                    <p className="text-sm font-medium text-blue-700 dark:text-blue-400">Reminder อัตโนมัติ</p>
-                    <p className="text-[11px] text-blue-600/80 dark:text-blue-400/80">
+                    <p className="text-sm font-medium text-info ">Reminder อัตโนมัติ</p>
+                    <p className="text-caption text-info/80 ">
                       ระบบจะส่งอีเมลเตือนพร้อมลิงก์เข้าประชุม <strong>1 วันก่อนวันประชุม</strong> อัตโนมัติ
                       {meeting.reminderSentAt && (
-                        <span className="ml-1 text-green-600">✓ ส่งแล้วเมื่อ {new Date(meeting.reminderSentAt).toLocaleString("th-TH")}</span>
+                        <span className="ml-1 text-success">✓ ส่งแล้วเมื่อ {new Date(meeting.reminderSentAt).toLocaleString("th-TH")}</span>
                       )}
                     </p>
                   </div>
@@ -1367,7 +1344,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
             <>
             {/* Email Preview */}
             <div className="space-y-3 py-2 overflow-y-auto flex-1 min-h-0">
-              <div className="rounded-lg border bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
+              <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
                 {/* Email Header */}
                 <div className="border-b px-4 py-3 bg-muted/30 space-y-1.5">
                   <div className="flex items-center gap-2 text-xs">
@@ -1384,8 +1361,8 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <span className="font-medium text-muted-foreground w-12">แนบ:</span>
-                    <Badge variant="secondary" className="text-[10px] gap-1">
-                      <span className="material-symbols-outlined text-[12px]">event</span>
+                    <Badge variant="secondary" className="text-tiny gap-1">
+                      <span className="material-symbols-outlined text-xs">event</span>
                       {meeting.shortName}.ics
                     </Badge>
                   </div>
@@ -1396,46 +1373,46 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   <p>เรียน ผู้เข้าร่วมประชุมทุกท่าน</p>
                   <p>ขอเรียนเชิญเข้าร่วม<strong>{meeting.name}</strong></p>
 
-                  <div className="rounded-md border px-3 py-2.5 bg-muted/20 space-y-1 text-[13px]">
+                  <div className="rounded-md border px-3 py-2.5 bg-muted/20 space-y-1 text-compact">
                     <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[14px] text-muted-foreground">calendar_today</span>
+                      <span className="material-symbols-outlined text-sm text-muted-foreground">calendar_today</span>
                       <span>วันที่: <strong>{meeting.date}</strong></span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[14px] text-muted-foreground">schedule</span>
+                      <span className="material-symbols-outlined text-sm text-muted-foreground">schedule</span>
                       <span>เวลา: <strong>{meeting.startTime} - {meeting.endTime} น.</strong></span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[14px] text-muted-foreground">place</span>
+                      <span className="material-symbols-outlined text-sm text-muted-foreground">place</span>
                       <span>สถานที่: <strong>{meeting.location}</strong></span>
                     </div>
                     {meeting.conferenceLink && (
                       <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[14px] text-muted-foreground">video_call</span>
-                        <span>ประชุมออนไลน์: <span className="text-blue-600 underline">{meeting.conferenceLink.slice(0, 50)}…</span></span>
+                        <span className="material-symbols-outlined text-sm text-muted-foreground">video_call</span>
+                        <span>ประชุมออนไลน์: <span className="text-info underline">{meeting.conferenceLink.slice(0, 50)}…</span></span>
                       </div>
                     )}
                   </div>
 
                   <div>
                     <p className="font-medium mb-1.5">วาระการประชุม:</p>
-                    <ol className="list-none space-y-1 text-[13px]">
+                    <ol className="list-none space-y-1 text-compact">
                       {meeting.agenda.map(a => (
                         <li key={a.id} className="flex items-start gap-2">
-                          <Badge variant="outline" className="text-[10px] mt-0.5 flex-shrink-0">{a.no}</Badge>
+                          <Badge variant="outline" className="text-tiny mt-0.5 flex-shrink-0">{a.no}</Badge>
                           <span>{a.title}</span>
                         </li>
                       ))}
                     </ol>
                   </div>
 
-                  <div className="rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-[12px] text-blue-700 dark:text-blue-400">
-                    <span className="material-symbols-outlined text-[14px] align-middle mr-1">calendar_add_on</span>
+                  <div className="rounded-md border border-info/30 bg-info/10  px-3 py-2 text-xs text-info ">
+                    <span className="material-symbols-outlined text-sm align-middle mr-1">calendar_add_on</span>
                     กดไฟล์แนบ <strong>{meeting.shortName}.ics</strong> เพื่อเพิ่มกิจกรรมลงปฏิทินของท่านอัตโนมัติ
                   </div>
 
                   <hr />
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-caption text-muted-foreground">
                     อีเมลนี้ส่งจากระบบ e-Meeting อัตโนมัติ · ระบบจะส่งเตือนอีกครั้ง 1 วันก่อนวันประชุม พร้อมลิงก์เข้าห้องประชุม
                   </p>
                 </div>
@@ -1460,7 +1437,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>ยืนยันการรับรองการประชุม</DialogTitle>
-            <DialogDescription className="text-amber-600">
+            <DialogDescription className="text-warning">
               เมื่อรับรองแล้ว จะไม่สามารถแก้ไขรายละเอียดใดๆ ของการประชุมนี้ได้อีก
             </DialogDescription>
           </DialogHeader>
@@ -1484,18 +1461,18 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           <Tabs defaultValue="system" className="w-full">
             <TabsList className="w-full">
               <TabsTrigger value="system" className="flex-1 gap-1">
-                <span className="material-symbols-outlined text-[16px]">group</span>
+                <span className="material-symbols-outlined text-base">group</span>
                 ผู้ใช้ในระบบ
               </TabsTrigger>
               <TabsTrigger value="external" className="flex-1 gap-1">
-                <span className="material-symbols-outlined text-[16px]">person_add</span>
+                <span className="material-symbols-outlined text-base">person_add</span>
                 บุคคลภายนอก
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="system" className="mt-3 space-y-3">
               <div className="relative">
-                <span className="material-symbols-outlined text-[18px] text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2">search</span>
+                <span className="material-symbols-outlined text-lg text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2">search</span>
                 <Input
                   value={participantSearch}
                   onChange={e => setParticipantSearch(e.target.value)}
@@ -1504,10 +1481,10 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 />
               </div>
 
-              <div className="border rounded-lg max-h-[280px] overflow-y-auto">
+              <div className="border rounded-lg max-h-70 overflow-y-auto">
                 {filteredUsers.length === 0 ? (
                   <div className="p-6 text-center text-sm text-muted-foreground">
-                    <span className="material-symbols-outlined text-[28px] block mb-1">person_off</span>
+                    <span className="material-symbols-outlined text-3xl block mb-1">person_off</span>
                     {participantSearch ? "ไม่พบผู้ใช้ที่ตรงกับคำค้น" : "ผู้ใช้ทั้งหมดอยู่ในที่ประชุมแล้ว"}
                   </div>
                 ) : (
@@ -1520,18 +1497,18 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                         onClick={() => toggleUserSelection(u.id)}
                       >
                         <div className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${selected ? "bg-primary border-primary" : "border-muted-foreground/30"}`}>
-                          {selected && <span className="material-symbols-outlined text-[14px] text-primary-foreground">check</span>}
+                          {selected && <span className="material-symbols-outlined text-sm text-primary-foreground">check</span>}
                         </div>
                         <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                           <span className="text-primary text-xs font-semibold">{u.name.charAt(u.name.indexOf(" ") + 1)}</span>
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{u.name}</p>
-                          <p className="text-[11px] text-muted-foreground truncate">{u.position} · {u.department}</p>
+                          <p className="text-caption text-muted-foreground truncate">{u.position} · {u.department}</p>
                         </div>
                         {selected && (
                           <select
-                            className="border rounded px-1.5 py-0.5 text-[11px] bg-transparent flex-shrink-0"
+                            className="border rounded px-1.5 py-0.5 text-caption bg-transparent flex-shrink-0"
                             value={selectedUsersPos[u.id] || "กรรมการ"}
                             onClick={e => e.stopPropagation()}
                             onChange={e => setSelectedUsersPos(prev => ({ ...prev, [u.id]: e.target.value }))}
@@ -1557,7 +1534,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               <DialogFooter>
                 <Button variant="outline" onClick={() => setAddParticipantOpen(false)}>ยกเลิก</Button>
                 <Button onClick={addSelectedSystemUsers} disabled={selectedUserIds.length === 0}>
-                  <span className="material-symbols-outlined text-[16px] mr-1">group_add</span>
+                  <span className="material-symbols-outlined text-base mr-1">group_add</span>
                   เพิ่ม {selectedUserIds.length > 0 ? `${selectedUserIds.length} คน` : "ผู้ใช้ที่เลือก"}
                 </Button>
               </DialogFooter>
@@ -1582,7 +1559,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               <DialogFooter>
                 <Button variant="outline" onClick={() => setAddParticipantOpen(false)}>ยกเลิก</Button>
                 <Button onClick={addExternalParticipant}>
-                  <span className="material-symbols-outlined text-[16px] mr-1">person_add</span>
+                  <span className="material-symbols-outlined text-base mr-1">person_add</span>
                   เพิ่มบุคคลภายนอก
                 </Button>
               </DialogFooter>
@@ -1600,21 +1577,19 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="border-2 border-dashed border-border rounded-lg p-8 text-center bg-muted/20">
-              <span className="material-symbols-outlined text-primary text-[36px] mb-2">cloud_upload</span>
-              {fileName ? (
+              <span className="material-symbols-outlined text-primary text-4xl mb-2">cloud_upload</span>
+              {pendingFile ? (
                 <>
-                  <p className="text-sm font-medium truncate">{fileName}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {fileSizeKb !== null ? `${fileSizeKb.toLocaleString()} KB` : "ระบุขนาดอัตโนมัติ"}
-                  </p>
+                  <p className="text-sm font-medium break-all">{pendingFile.name}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{formatBytes(pendingFile.size)}</p>
                 </>
               ) : (
                 <>
-                  <p className="text-sm font-medium">เลือกไฟล์จากเครื่อง หรือพิมพ์ชื่อเอกสารด้านล่าง</p>
-                  <p className="text-xs text-muted-foreground mt-1">รองรับ PDF, DOCX, XLSX</p>
+                  <p className="text-sm font-medium">เลือกไฟล์จากเครื่อง</p>
+                  <p className="text-xs text-muted-foreground mt-1">PDF และรูปภาพเปิดอ่านในเว็บได้ · DOCX/XLSX แนบได้แต่ต้องเปิดในโปรแกรม · ไม่เกิน 20 MB</p>
                 </>
               )}
-              {/* เลือกไฟล์แล้วจะบันทึกจริงลง IndexedDB ตอนกด "บันทึก" */}
+              {/* ไฟล์อัปโหลดขึ้น server ตอนกด "บันทึก" */}
               <input
                 ref={filePickerRef}
                 type="file"
@@ -1629,7 +1604,6 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   }
                   setPendingFile(f);
                   setFileName(f.name);
-                  setFileSizeKb(Math.max(1, Math.round(f.size / 1024)));
                 }}
               />
               <Button
@@ -1639,7 +1613,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                 className="mt-3"
                 onClick={() => filePickerRef.current?.click()}
               >
-                {fileName ? "เปลี่ยนไฟล์" : "เลือกไฟล์"}
+                {pendingFile ? "เปลี่ยนไฟล์" : "เลือกไฟล์"}
               </Button>
             </div>
 
@@ -1730,7 +1704,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEmailSenderOpen(false)}>ยกเลิก</Button>
-            <Button onClick={() => { updateMeeting(meeting.id, { emailSenderName: emailSender }); setEmailSenderOpen(false); toast.success("บันทึกเรียบร้อย"); }}>บันทึก</Button>
+            <Button onClick={async () => { setEmailSenderOpen(false); if (await updateMeeting(meeting.id, { emailSenderName: emailSender })) toast.success("บันทึกเรียบร้อย"); }}>บันทึก</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1943,14 +1917,14 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   <input type="radio" checked={permType === "reader"} onChange={() => setPermType("reader")} className="accent-primary" />
                   <div>
                     <p className="text-sm font-medium">สิทธิ์ผู้อ่าน</p>
-                    <p className="text-[11px] text-muted-foreground">อ่านวาระและเอกสารได้</p>
+                    <p className="text-caption text-muted-foreground">อ่านวาระและเอกสารได้</p>
                   </div>
                 </label>
                 <label className={`flex items-center gap-2 rounded-lg border p-3 cursor-pointer transition-colors ${permType === "manager" ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}>
                   <input type="radio" checked={permType === "manager"} onChange={() => setPermType("manager")} className="accent-primary" />
                   <div>
                     <p className="text-sm font-medium">สิทธิ์ผู้จัดประชุม</p>
-                    <p className="text-[11px] text-muted-foreground">จัดการการประชุมได้ทั้งหมด</p>
+                    <p className="text-caption text-muted-foreground">จัดการการประชุมได้ทั้งหมด</p>
                   </div>
                 </label>
               </div>
@@ -2031,86 +2005,11 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
         <DocumentLightbox
           file={previewFile}
           onClose={() => setPreviewFile(null)}
-          currentPage={previewPage}
-          setCurrentPage={setPreviewPage}
-          zoom={previewZoom}
-          setZoom={setPreviewZoom}
           viewerName={currentUser.name}
           confidentialityLevel={meeting.confidentialityLevel ?? "normal"}
         />
       )}
 
-      {/* Magic Link — Email Preview Dialog */}
-      <Dialog open={!!showEmailPreview} onOpenChange={(v) => !v && setShowEmailPreview(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[20px] text-primary">mail</span>
-              ตัวอย่าง Email เชิญประชุม
-            </DialogTitle>
-            <DialogDescription>
-              ในระบบจริง Email นี้จะถูกส่งอัตโนมัติ · ตอนนี้คัดลอกลิงก์ส่งเองได้
-            </DialogDescription>
-          </DialogHeader>
-          {showEmailPreview && (
-            <div className="space-y-3 py-2">
-              <div className="rounded-lg border bg-background overflow-hidden">
-                {/* Email header */}
-                <div className="border-b px-4 py-2 bg-muted/30 space-y-1 text-xs">
-                  <div className="flex gap-2"><span className="text-muted-foreground w-12">From:</span><span className="font-medium">e-Meeting &lt;notify@e-office.cloud&gt;</span></div>
-                  <div className="flex gap-2"><span className="text-muted-foreground w-12">To:</span><span className="font-medium">{showEmailPreview.guestEmail}</span></div>
-                  <div className="flex gap-2"><span className="text-muted-foreground w-12">Subject:</span><span className="font-medium">คุณได้รับเชิญเข้าร่วมประชุม: {meeting.name}</span></div>
-                </div>
-                {/* Email body */}
-                <div className="p-4 text-sm space-y-3">
-                  <p>เรียน {showEmailPreview.guestName || showEmailPreview.guestEmail}</p>
-                  <p>
-                    {meeting.organizer} ขอเชิญท่านเข้าร่วมประชุม <strong>{meeting.name}</strong>
-                  </p>
-                  <div className="rounded-lg bg-muted/40 border p-3 space-y-1 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[14px]">calendar_today</span>
-                      วันที่: {meeting.date}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[14px]">schedule</span>
-                      เวลา: {meeting.startTime} - {meeting.endTime} น.
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[14px]">place</span>
-                      สถานที่: {meeting.location}
-                    </div>
-                  </div>
-                  <div className="py-2">
-                    <Button
-                      className="w-full"
-                      onClick={() => handleCopyLink(showEmailPreview.token)}
-                    >
-                      <span className="material-symbols-outlined text-[16px] mr-1.5">
-                        {copiedToken === showEmailPreview.token ? "check" : "link"}
-                      </span>
-                      {copiedToken === showEmailPreview.token ? "คัดลอกแล้ว!" : "คัดลอก Magic Link"}
-                    </Button>
-                    <p className="text-[10px] text-center text-muted-foreground mt-1.5">
-                      {buildJoinUrl(showEmailPreview.token).replace(/^https?:\/\//, "")}
-                    </p>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    ลิงก์นี้ใช้ได้ครั้งเดียว หมดอายุภายใน 48 ชั่วโมง
-                    <br />ท่านไม่จำเป็นต้องสร้างบัญชี — คลิกลิงก์แล้วกรอกชื่อเพื่อเข้าร่วม
-                  </p>
-                  <div className="border-t pt-2 text-[10px] text-muted-foreground">
-                    ส่งจากระบบ e-Meeting · ระบบบริหารการประชุมและจองห้องประชุม
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEmailPreview(null)}>ปิด</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

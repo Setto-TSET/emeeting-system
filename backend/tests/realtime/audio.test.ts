@@ -42,8 +42,17 @@ async function openClient(sub: string, name: string, role = 'admin'): Promise<We
   return socket;
 }
 
+// room_state ถูกประกาศทุกครั้งที่มีคนเข้า/ออกห้อง — ข้ามไป ไม่งั้นแย่งที่ข้อความที่เทสต์รออยู่
 function nextMessage(socket: WebSocket): Promise<any> {
-  return new Promise((resolve) => socket.once('message', (raw) => resolve(JSON.parse(raw.toString()))));
+  return new Promise((resolve) => {
+    const onMessage = (raw: WebSocket.RawData) => {
+      const message = JSON.parse(raw.toString());
+      if (message.type === 'room_state') return;
+      socket.off('message', onMessage);
+      resolve(message);
+    };
+    socket.on('message', onMessage);
+  });
 }
 
 describe('audio frames', () => {
@@ -65,6 +74,8 @@ describe('audio frames', () => {
     // แล้ว jest ค้างไม่จบ (handlers.test ไม่เจอเพราะทุกเคสที่นั่นปิด socket ครบก่อน assert สุดท้าย)
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    // event 'close' ฝั่ง server มาช้ากว่าฝั่งเทสต์ แล้วยิง room_state ไป query DB — รอให้จบก่อนปิด pool
+    await new Promise((resolve) => setTimeout(resolve, 200));
     await close();
   });
 

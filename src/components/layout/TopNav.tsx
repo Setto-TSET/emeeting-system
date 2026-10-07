@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { notificationsData, systemRoleLabels, systemRoleColors } from "@/data";
+import { systemRoleLabels, systemRoleColors } from "@/data";
 import { useCurrentUser } from "@/context/UserContext";
 import {
   Breadcrumb,
@@ -23,7 +22,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
+
+// ไม่มีช่องค้นหาและกระดิ่งแจ้งเตือนแล้ว — ทั้งสองอย่างเป็นของจำลอง (ค้นหาขึ้นว่า "กำลังพัฒนา",
+// แจ้งเตือนเป็นข้อความตายตัวชุดเดียวกันทุกคน) ใส่กลับเมื่อมีบริการจริงฝั่ง server
 
 const breadcrumbMap: Record<string, { trail: { label: string; href: string }[]; current: string }> = {
   "/dashboard": { trail: [{ label: "หน้าหลัก", href: "/dashboard" }], current: "ภาพรวม" },
@@ -35,14 +36,12 @@ const breadcrumbMap: Record<string, { trail: { label: string; href: string }[]; 
   "/committees": { trail: [{ label: "หน้าหลัก", href: "/dashboard" }], current: "คณะทำงาน" },
   "/reports": { trail: [{ label: "หน้าหลัก", href: "/dashboard" }], current: "รายงานการประชุม" },
   "/documents": { trail: [{ label: "หน้าหลัก", href: "/dashboard" }], current: "คลังเอกสาร" },
+  "/portal": { trail: [], current: "การประชุมของฉัน" },
 };
 
 export default function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const [searchText, setSearchText] = useState("");
-  const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [notifications, setNotifications] = useState(notificationsData);
   const { currentUser, signOut } = useCurrentUser();
 
   let bc = breadcrumbMap[pathname];
@@ -60,139 +59,65 @@ export default function TopNav() {
     }
   }
 
-  const handleSearch = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && searchText.trim()) {
-      toast.info(`ค้นหา: "${searchText}"`, { description: "ฟีเจอร์ค้นหาทั้งระบบอยู่ระหว่างการพัฒนา" });
-      setSearchText("");
-    }
-  };
-
   return (
-    <header className="fixed top-4 right-2 left-2 z-50 flex h-14 items-center justify-between rounded-2xl glass-panel px-4 md:left-[280px] md:right-4 border-none shadow-sm">
-      <Breadcrumb>
-        <BreadcrumbList className="text-sm">
+    // มือถือเว้นซ้าย (left-16) ให้ปุ่มเมนูของ Sidebar — เดิม header กว้างเต็มแล้วทับปุ่มจนกดเมนูไม่ได้
+    <header className="fixed top-[calc(1rem+env(safe-area-inset-top))] right-2 left-16 z-50 flex h-14 items-center justify-between gap-2 rounded-2xl glass-panel px-3 md:px-4 md:left-sidebar md:right-4 border-none shadow-sm">
+      <Breadcrumb className="min-w-0">
+        <BreadcrumbList className="text-sm flex-nowrap">
+          {/* มือถือแสดงเฉพาะหน้าปัจจุบัน — เส้นทางเต็มขึ้นหลายบรรทัดจนล้น header สูง 56px */}
           {bc.trail.map((item, i) => (
-            <span key={i} className="flex items-center gap-1.5">
+            <span key={i} className="hidden sm:flex items-center gap-1.5">
               <BreadcrumbItem>
                 <BreadcrumbLink asChild>
-                  <Link href={item.href} className="text-muted-foreground hover:text-foreground transition-colors">
+                  <Link href={item.href} className="text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
                     {item.label}
                   </Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator>
-                <span className="material-symbols-outlined text-[14px] text-muted-foreground/50">chevron_right</span>
+                <span className="material-symbols-outlined text-sm text-muted-foreground/50">chevron_right</span>
               </BreadcrumbSeparator>
             </span>
           ))}
-          <BreadcrumbItem>
-            <BreadcrumbPage className="font-semibold text-primary text-sm">{bc.current}</BreadcrumbPage>
+          <BreadcrumbItem className="min-w-0">
+            <BreadcrumbPage className="font-semibold text-primary text-sm truncate">{bc.current}</BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
-      <div className="flex items-center gap-1">
-        <div className="hidden sm:flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2.5 h-7 mr-1">
-          <span className="material-symbols-outlined text-[16px] text-muted-foreground">search</span>
-          <input
-            type="text"
-            placeholder="ค้นหาการประชุม / ห้อง..."
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            onKeyDown={handleSearch}
-            className="w-36 lg:w-48 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
-          />
-        </div>
-
-        {/* ผู้ใช้ที่ล็อกอินอยู่ (อ่านอย่างเดียว) — สลับบัญชีต้องล็อกอินใหม่ที่หน้าเข้าสู่ระบบ
-            เพื่อให้ JWT ตรงกับตัวตนเสมอ ไม่งั้น backend ปฏิเสธการเขียนทุกอย่าง (สร้าง/บันทึกประชุม) */}
-        <div className="flex items-center gap-1.5 h-8 px-2 mr-1">
-          <span className={`inline-flex items-center rounded-md border px-1.5 text-[10px] font-semibold ${systemRoleColors[currentUser.systemRole]}`}>
+      <div className="flex items-center gap-1 shrink-0">
+        {/* ผู้ใช้ที่ล็อกอินอยู่ (อ่านอย่างเดียว) — สลับบัญชีต้องล็อกอินใหม่เพื่อให้ JWT ตรงกับตัวตนเสมอ */}
+        <div className="flex items-center gap-1.5 h-8 px-1 sm:px-2">
+          <span className={`inline-flex items-center rounded-md border px-1.5 text-tiny font-semibold whitespace-nowrap ${systemRoleColors[currentUser.systemRole]}`}>
             {systemRoleLabels[currentUser.systemRole]}
           </span>
-          <span className="hidden md:inline text-xs font-medium max-w-[110px] truncate">{currentUser.name}</span>
+          <span className="hidden md:inline text-xs font-medium max-w-28 truncate">{currentUser.name}</span>
         </div>
-
-        <DropdownMenu open={isNotifOpen} onOpenChange={setIsNotifOpen}>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-lg">
-              <span className="material-symbols-outlined text-[20px] text-muted-foreground">notifications</span>
-              {notifications.some(n => !n.isRead) && (
-                <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-destructive ring-1 ring-card" />
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80 rounded-xl">
-            <div className="flex items-center justify-between px-4 py-3 border-b">
-              <span className="font-semibold text-sm">การแจ้งเตือน</span>
-              {notifications.filter(n => !n.isRead).length > 0 && (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{notifications.filter(n => !n.isRead).length} ใหม่</Badge>
-              )}
-            </div>
-            <div className="max-h-[320px] overflow-y-auto custom-scrollbar">
-              {notifications.map(notif => (
-                <div
-                  key={notif.id}
-                  className={`flex items-start gap-3 p-4 hover:bg-muted/50 cursor-pointer transition-colors ${!notif.isRead ? 'bg-primary/5' : ''}`}
-                  onClick={() => { setIsNotifOpen(false); router.push("/meetings"); }}
-                >
-                  <div className={`${notif.type === 'warning' ? 'bg-destructive/10' : notif.type === 'success' ? 'bg-green-500/10' : 'bg-primary/10'} p-2 rounded-full mt-0.5 flex-shrink-0`}>
-                    <span className={`material-symbols-outlined ${notif.type === 'warning' ? 'text-destructive' : notif.type === 'success' ? 'text-green-600' : 'text-primary'} text-[16px]`}>
-                      {notif.type === 'warning' ? 'warning' : notif.type === 'success' ? 'check_circle' : 'info'}
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">{notif.title}</p>
-                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{notif.message}</p>
-                    <p className="text-[10px] text-muted-foreground mt-2">{notif.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="p-2 border-t text-center">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full text-xs text-primary h-8"
-                onClick={() => {
-                  setIsNotifOpen(false);
-                  setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-                  toast.success('อ่านทั้งหมดแล้ว');
-                }}
-              >
-                ทำเครื่องหมายว่าอ่านแล้ว
-              </Button>
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          className="hidden sm:inline-flex h-8 w-8 rounded-lg"
-          onClick={() => toast.info("ศูนย์ช่วยเหลือ", { description: "ติดต่อ: notify@e-office.cloud | โทร: 0-2591-9992" })}
-        >
-          <span className="material-symbols-outlined text-[20px] text-muted-foreground">help</span>
-        </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="hidden sm:inline-flex h-8 w-8 rounded-lg">
-              <span className="material-symbols-outlined text-[20px] text-muted-foreground">settings</span>
+            <Button variant="ghost" size="icon" className="rounded-lg" aria-label="บัญชีผู้ใช้">
+              <span className="material-symbols-outlined text-xl text-muted-foreground">account_circle</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44 text-sm">
-            <DropdownMenuLabel>ตั้งค่า</DropdownMenuLabel>
+          <DropdownMenuContent align="end" className="w-56 text-sm">
+            <DropdownMenuLabel className="space-y-0.5">
+              <p className="truncate">{currentUser.name}</p>
+              <p className="truncate text-xs font-normal text-muted-foreground">{currentUser.email}</p>
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => toast.info("โปรไฟล์ผู้ใช้", { description: `${currentUser.name} (${currentUser.email})` })}>
-              <span className="material-symbols-outlined text-[16px] mr-2">person</span> โปรไฟล์
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => toast.info("การตั้งค่า", { description: "เมนูตั้งค่ากำลังพัฒนา" })}>
-              <span className="material-symbols-outlined text-[16px] mr-2">tune</span> การตั้งค่า
+            <DropdownMenuItem
+              onClick={() =>
+                toast.info("ต้องการความช่วยเหลือ", {
+                  description: "ติดต่อผู้ดูแลระบบของสภาเภสัชกรรม เช่น ลืมรหัสผ่าน หรือต้องการสิทธิ์จัดการประชุม",
+                })
+              }
+            >
+              <span className="material-symbols-outlined text-base mr-2">help</span> ความช่วยเหลือ
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive" onClick={() => { signOut(); router.push("/"); }}>
-              <span className="material-symbols-outlined text-[16px] mr-2">logout</span> ออกจากระบบ
+              <span className="material-symbols-outlined text-base mr-2">logout</span> ออกจากระบบ
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

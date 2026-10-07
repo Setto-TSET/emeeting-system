@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, use } from "react";
+import { useState, useEffect, useRef, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,44 +13,40 @@ import { useCurrentUser } from "@/context/UserContext";
 import { RoomSignalingProvider } from "@/context/RoomSignalingContext";
 import { RoomSignalBridge, type Broadcast } from "./RoomSignalBridge";
 import { HandRaiseList } from "@/components/meeting/HandRaiseList";
-import { SimulatedDocumentViewer, DocumentLightbox } from "@/components/meeting/DocumentPreview";
+import { DocumentContent, DocumentLightbox, DocumentWatermark } from "@/components/meeting/DocumentPreview";
 import { ExternalConferenceStage } from "@/components/meeting/ExternalConferenceStage";
 import { ZegoCloudEmbedStage } from "@/components/meeting/ZegoCloudEmbedStage";
 import { SubtitleBar } from "@/components/meeting/SubtitleBar";
 import { VotePanel } from "@/components/meeting/VotePanel";
+import { ConfidentialityGate } from "@/components/meeting/ConfidentialityGate";
+import { PageError, PageLoading } from "@/components/layout/PageState";
 import { resolveConference } from "@/lib/conference";
 import { resolveVideoSurface } from "@/services/video";
 import { requestVideoCredential, type VideoCredential } from "@/services/credentials";
 import { isCaptureSupported, startCapture } from "@/services/speech/audioCapture";
 import { fetchRoomSnapshot } from "@/services/rooms/snapshot";
-import type { RoomSignal, RaisedHandDto } from "@/services/signaling/types";
+import type { RoomSignal, RaisedHandDto, ChatMessageDto } from "@/services/signaling/types";
 import { can } from "@/lib/authz";
+import { getHomeRoute } from "@/lib/access";
 import { MeetingParticipant, MeetingFile, canViewFile } from "@/data";
+
+type RoomState = RoomSignal<"room_state">["payload"];
 
 export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const { meetings, updateMeeting, updateActiveAgenda, joinMeetingAsExternal, addChatMessage } = useMeetings();
-  const { currentUser } = useCurrentUser();
+  const { meetings, loading, error, reload, updateMeeting, updateActiveAgenda, patchLocal } = useMeetings();
+  const { currentUser, signOut } = useCurrentUser();
 
-  // Find meeting
   const meeting = meetings.find((m) => m.id === id);
 
-  // Guest Join State
-  const [hasJoined, setHasJoined] = useState(false);
-  const [guestName, setGuestName] = useState("");
-  const [guestRole, setGuestRole] = useState("ผู้ทรงคุณวุฒิภายนอก");
-  const [localParticipant, setLocalParticipant] = useState<MeetingParticipant | null>(null);
-
-  // UI Control states
   // server เป็นเจ้าของสถานะมือที่ยกอยู่: ส่งเจตนา (hand_raise/hand_lower) แล้วรอ hand_state
   // กลับมาทับของเดิม ไม่มีการอัปเดตแบบ optimistic ในเครื่องนี้
   const [raisedHands, setRaisedHands] = useState<RaisedHandDto[]>([]);
   const handRaised = raisedHands.some((h) => h.userId === currentUser.id);
   const broadcastRef = useRef<Broadcast | null>(null);
-  // Fix 1 (code review รอบที่ 1): snapshot fetch กับสัญญาณสด (hand_state/doc_share_state) แข่งกัน
-  // ได้โดยไม่มีการรับประกันลำดับ — ถ้าสัญญาณสดมาถึงก่อน snapshot ตอบกลับ ต้องไม่ให้ snapshot ที่เก่ากว่า
-  // มาทับ ธงนี้ตั้งเป็น true ใน useSignal handler ที่เกี่ยวข้อง แล้ว snapshot effect เช็คก่อนเซ็ตสเตท
+  // snapshot fetch กับสัญญาณสด (hand_state/doc_share_state) แข่งกันได้โดยไม่มีการรับประกันลำดับ —
+  // ถ้าสัญญาณสดมาถึงก่อน snapshot ตอบกลับ ต้องไม่ให้ snapshot ที่เก่ากว่ามาทับ
   const handSignalReceivedRef = useRef(false);
   const docShareSignalReceivedRef = useRef(false);
   const [subtitleOn, setSubtitleOn] = useState(false);
@@ -64,83 +60,34 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const startingCaptureRef = useRef(false);
   const [activeTab, setActiveTab] = useState("agenda");
   const [chatInput, setChatInput] = useState("");
-  
-  // Document Viewer states
+  // คนที่ต่อห้องอยู่จริงตามที่ server ประกาศ — ใช้แทน participant.present ที่ต้องเขียนลงการประชุม
+  const [connectedUserIds, setConnectedUserIds] = useState<string[]>([]);
+  const [connectionFailed, setConnectionFailed] = useState(false);
+
   const [viewingFile, setViewingFile] = useState<MeetingFile | null>(null);
-  // เวทีเอกสารที่แชร์ร่วมกัน (ขับเคลื่อนจากสัญญาณ doc_share/doc_share_page ของโฮสต์) กับ
-  // lightbox เอกสารส่วนตัวของผู้ใช้แต่ละคน (ขับเคลื่อนจากการเปิดไฟล์ของตัวเอง) ต้องแยกหน้ากันคนละตัว —
-  // ไม่งั้นหน้าที่โฮสต์เลื่อนจะไปทับหน้าที่ผู้ใช้กำลังเปิดดูเอกสารคนละไฟล์อยู่ (ดู Fix 4)
-  const [sharedViewerPage, setSharedViewerPage] = useState(1);
-  const [lightboxPage, setLightboxPage] = useState(1);
-  const [viewerZoom, setViewerZoom] = useState(100);
-  const [sharedFileId, setSharedFileId] = useState<string | null>(null); // For simulated presentation share
-  // VotePanel อ่าน snapshot โหวตจาก server ตอน mount และทุกครั้งที่ meetingId หรือตัวนับนี้เปลี่ยน
-  // (ผ่าน listTopics -> GET /api/rooms/:meetingId/state) — การอัปเดตแบบ real-time หลังจากนั้นมาทาง
-  // vote_state ที่ VotePanel ฟังเองโดยตรง ไม่ผ่านตัวนับนี้
-  // ตัวนับนี้ถูกเรียกจาก effect ที่ดึง room snapshot ตอนห้อง mount (ดูด้านล่าง) เพื่อให้คนที่เข้าห้องทีหลัง
-  // เห็นหัวข้อโหวตที่มีอยู่ก่อนหน้าด้วย ไม่ใช่แค่ที่ถูกสร้าง/ปิดหลังจากที่เข้ามาแล้ว
+  const [sharedFileId, setSharedFileId] = useState<string | null>(null);
+  // VotePanel อ่าน snapshot โหวตจาก server ตอน mount และทุกครั้งที่ตัวนับนี้เปลี่ยน — คนที่เข้าห้องทีหลัง
+  // จึงเห็นหัวข้อโหวตที่มีอยู่ก่อนหน้าด้วย ส่วนการอัปเดตสดมาทาง vote_state ที่ VotePanel ฟังเอง
   const [voteRefreshToken, setVoteRefreshToken] = useState(0);
 
   // Credential สำหรับ engine ฝัง — null = เข้าห้องจริงไม่ได้ พร้อมเหตุผลใน credentialError
   const [videoCredential, setVideoCredential] = useState<VideoCredential | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
 
-  // ตัวตนในห้องประชุมของผู้ให้บริการ — ต้องเป็นค่าเดียวกันทั้งตอนขอ token และตอน login
-  // เพราะ token ของ ZegoCloud ผูกกับ user_id ถ้าไม่ตรงจะ login ไม่ผ่าน
-  // แขกภายนอกไม่มีบัญชี จึงใช้ id ของ session ตัวเอง ไม่งั้นแขกทุกคนชนกันแล้วเตะกันออก
-  const roomIdentityId = localParticipant?.userId ?? localParticipant?.id ?? currentUser.id;
-  const roomIdentityName = localParticipant?.name ?? currentUser.name;
+  const isGuest = currentUser.id.startsWith("guest-");
+  const canJoin = meeting ? isGuest || can(currentUser, "meeting.join", meeting) : false;
+  // ต้องยอมรับข้อตกลงรักษาความลับทุกครั้งที่เข้าห้อง — ก่อนนั้นยังไม่ต่อวิดีโอ/สัญญาณ/สถานะห้องใดๆ
+  const [consented, setConsented] = useState(false);
+  const inRoom = canJoin && consented;
 
-  useEffect(() => {
-    if (!meeting) return;
-    const surface = resolveVideoSurface(meeting);
-    if (surface.kind !== "embed") return;
-    let cancelled = false;
-    // เคลียร์ credential เก่าทันที — ไม่งั้นช่วงที่ roomIdentityId เพิ่งเปลี่ยน (เช่น guest join
-    // เพิ่ง resolve) แต่ยังรอ token ใหม่ ZegoCloudEmbedStage จะได้ credential ของ identity เก่า
-    // คู่กับ userId ใหม่ ไปพร้อมกัน — token ผูกกับ user_id เดิม ไม่ตรงกับที่ engine ใช้ login
-    setVideoCredential(null);
-    setCredentialError(null);
-    requestVideoCredential(surface.engineId, meeting.id).then((result) => {
-      if (cancelled) return;
-      if (result.ok) {
-        setVideoCredential(result.credential);
-        setCredentialError(null);
-      } else {
-        setVideoCredential(null);
-        setCredentialError(result.reason);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meeting?.id, roomIdentityId]);
-
-  // Initialize presence
-  useEffect(() => {
-    if (!meeting) return;
-
-    // Check if current user is listed in participants
-    const existing = meeting.participants.find(
-      (p) => p.userId !== null && p.userId === currentUser.id
-    );
-
-    if (existing) {
-      setLocalParticipant(existing);
-      setHasJoined(true);
-      // Mark as present in context
-      const updatedParticipants = meeting.participants.map((p) =>
-        p.id === existing.id ? { ...p, present: true } : p
-      );
-      updateMeeting(meeting.id, { participants: updatedParticipants });
-    } else if (currentUser.id.startsWith("guest-")) {
-      // แขกที่มาจากลิงก์เชิญกรอกชื่อไปแล้วที่หน้า /join — ไม่ต้องถามซ้ำ
-      // ตัวตนต้องเป็น id ที่ backend ออกให้เท่านั้น ถ้าสร้าง id ใหม่ตรงนี้ ZegoCloud จะปฏิเสธ
-      // ตอน login (token ผูกกับ user_id เดิม — error 50122 token userId err)
-      // ⚠️ ไม่เขียนกลับเข้า roster เหมือนกรณีผู้จัด — แขกไม่มีบัญชี เขียนแล้ว server ปฏิเสธ
-      setLocalParticipant({
-        id: `P-guest-${currentUser.id}`,
+  // ตัวตนในห้องประชุม — ผู้ที่อยู่ในรายชื่อใช้แถวของตัวเอง คนอื่นที่มีสิทธิ์เข้า (ผู้จัด ผู้รับมอบสิทธิ์
+  // admin จอหน้าห้อง แขกจากลิงก์เชิญ) ใช้ตัวตนชั่วคราวที่ไม่ถูกเขียนกลับเข้ารายชื่อองค์ประชุม
+  // (ถ้าเขียนกลับ ทุกครั้งที่ผู้จัดเปิดดูจะถูกนับเป็นองค์ประชุมถาวร)
+  const listedParticipant = meeting?.participants.find((p) => p.userId !== null && p.userId === currentUser.id);
+  const localParticipant: MeetingParticipant | null = !meeting || !canJoin
+    ? null
+    : listedParticipant ?? {
+        id: `P-visitor-${currentUser.id}`,
         userId: currentUser.id,
         name: currentUser.name,
         position: currentUser.position,
@@ -149,40 +96,41 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
         email: currentUser.email,
         attendance: "attend",
         present: true,
-        inSystem: false,
-      });
-      setHasJoined(true);
-    } else if (currentUser.systemRole === "admin" || currentUser.systemRole === "secretary") {
-      // ผู้จัดการเข้าห้องได้เลยโดยไม่ต้องผ่านฟอร์ม guest
-      // ⚠️ ห้ามเขียนกลับเข้า roster ของประชุม — ไม่งั้นทุกครั้งที่ admin เปิดดู
-      // จะถูกเติมเป็นองค์ประชุมถาวร ทำให้ยอด "N คนในสาย" บวม
-      // และถูกนับรวมตอนแจ้งวาระทางอีเมล
-      const managerParticipant: MeetingParticipant = {
-        id: `P-visitor-${currentUser.id}`,
-        userId: currentUser.id,
-        name: currentUser.name,
-        position: currentUser.systemRole === "secretary" ? "เลขานุการ" : "ผู้จัดประชุม",
-        role: currentUser.position,
-        department: currentUser.department,
-        email: currentUser.email,
-        attendance: "attend",
-        present: true,
-        inSystem: true,
+        inSystem: !isGuest,
       };
-      setLocalParticipant(managerParticipant);
-      setHasJoined(true);
-    }
-  }, [meeting?.id, currentUser]);
+
+  useEffect(() => {
+    if (!meeting || !inRoom) return;
+    const surface = resolveVideoSurface(meeting);
+    if (surface.kind !== "embed") return;
+    let cancelled = false;
+    setVideoCredential(null);
+    setCredentialError(null);
+    requestVideoCredential(surface.engineId, meeting.id).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setVideoCredential(result.credential);
+      } else {
+        setCredentialError(result.reason);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meeting?.id, inRoom]);
 
   // คนที่เข้าห้องทีหลังต้องได้สถานะปัจจุบันทั้งก้อนก่อน — ดึง snapshot ครั้งเดียวตอนห้อง mount
   // แล้วค่อยฟังสัญญาณ live ต่อ (RoomSignalBridge) ไม่งั้นจะไม่เห็นมือที่ยกอยู่/เอกสารที่แชร์ค้างไว้ก่อนหน้า
   useEffect(() => {
-    if (!meeting) return;
+    if (!meeting || !inRoom) return;
     let cancelled = false;
     fetchRoomSnapshot(meeting.id).then((snapshot) => {
       if (cancelled) return;
-      // ถ้าสัญญาณสดมาถึงระหว่างที่ fetch นี้ยังค้างอยู่ ให้สัญญาณสดชนะ — ไม่งั้น snapshot ที่เก่ากว่า
-      // จะมาทับข้อมูลที่เพิ่งได้รับสดๆ อย่างเงียบๆ (ดู handSignalReceivedRef/docShareSignalReceivedRef)
+      if (snapshot.failed) {
+        toast.error("โหลดสถานะห้องประชุมไม่สำเร็จ — มือที่ยก เอกสารที่แชร์ และโหวตอาจยังไม่ครบ");
+        return;
+      }
       if (!handSignalReceivedRef.current) setRaisedHands(snapshot.raisedHands);
       if (!docShareSignalReceivedRef.current) setSharedFileId(snapshot.docShare?.fileId ?? null);
       setVoteRefreshToken((n) => n + 1);
@@ -190,35 +138,8 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     return () => {
       cancelled = true;
     };
-  }, [meeting?.id]);
-
-  // Detect when meeting ends (organizer ended it) — show notification to guests
-  // Can't use isManager here because it's after early returns, so compute inline
-  const isHost = meeting ? can(currentUser, "meeting.host", meeting) : false;
-  useEffect(() => {
-    if (!meeting || !hasJoined) return;
-    if (meeting.status === "waiting_endorse" && !isHost) {
-      toast.info("ผู้จัดประชุมได้ปิดห้องประชุมแล้ว", {
-        description: "กรุณาออกจากห้องประชุม",
-        duration: 5000,
-      });
-    }
-  }, [meeting?.status, hasJoined, isHost]);
-
-  // Handle guest join submit
-  const handleGuestJoinSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!meeting) return;
-    if (!guestName.trim()) {
-      toast.error("กรุณาระบุชื่อของคุณ");
-      return;
-    }
-
-    const p = joinMeetingAsExternal(meeting.id, guestName.trim(), guestRole);
-    setLocalParticipant(p);
-    setHasJoined(true);
-    toast.success("เข้าร่วมประชุมสำเร็จ", { description: "คุณได้เข้าร่วมในฐานะบุคคลภายนอก" });
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meeting?.id, inRoom]);
 
   // หยุดจับเสียงเมื่อออกจากคอมโพเนนต์ — กันไมค์ค้างฟังหลัง unmount
   useEffect(() => {
@@ -228,59 +149,77 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     };
   }, []);
 
+  const meetingId = meeting?.id;
+  const isHost = meeting ? can(currentUser, "meeting.host", meeting) : false;
+
+  const handleChatMessage = useCallback(
+    (message: ChatMessageDto) => {
+      if (!meetingId) return;
+      patchLocal(meetingId, (m) =>
+        m.chatMessages?.some((c) => c.id === message.id)
+          ? m
+          : { ...m, chatMessages: [...(m.chatMessages ?? []), message] }
+      );
+    },
+    [meetingId, patchLocal]
+  );
+
+  // server ประกาศสถานะจาก DB — วาระที่กำลังพูด, การจบประชุม และรายชื่อคนที่ต่ออยู่
+  const handleRoomState = useCallback(
+    (state: RoomState) => {
+      if (!meetingId) return;
+      setConnectedUserIds(state.connectedUserIds);
+      let ended = false;
+      patchLocal(meetingId, (m) => {
+        ended = m.status === "in_progress" && state.status === "waiting_endorse";
+        return {
+          ...m,
+          ...(state.status ? { status: state.status as typeof m.status } : {}),
+          activeAgendaId: state.activeAgendaId,
+        };
+      });
+      if (ended && !isHost) {
+        toast.info("ผู้จัดประชุมได้ปิดห้องประชุมแล้ว", { description: "กรุณาออกจากห้องประชุม", duration: 5000 });
+      }
+    },
+    [meetingId, patchLocal, isHost]
+  );
+
   if (!meeting) {
+    if (loading) return <PageLoading label="กำลังเข้าห้องประชุม..." className="min-h-dvh" />;
+    if (error) return <PageError message={error} onRetry={() => void reload()} className="min-h-dvh" />;
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground">
-        <span className="material-symbols-outlined text-red-500 text-5xl mb-2 animate-bounce">error</span>
+      <div className="min-h-dvh flex flex-col items-center justify-center gap-4 bg-background text-foreground px-4 text-center">
+        <span className="material-symbols-outlined text-destructive text-5xl">error</span>
         <h2 className="text-xl font-bold">ไม่พบการประชุมนี้</h2>
-        <Button onClick={() => router.push("/portal")} className="mt-4 bg-primary hover:bg-primary/90">
-          กลับสู่พอร์ทัล
-        </Button>
+        <p className="text-sm text-muted-foreground">การประชุมอาจถูกลบไปแล้ว หรือคุณไม่มีสิทธิ์เข้าถึง</p>
+        <Button onClick={() => router.push(getHomeRoute(currentUser.systemRole))}>กลับหน้าหลัก</Button>
       </div>
     );
   }
 
-  // สิทธิ์คุมห้อง — เดิมให้แค่ admin/secretary ทำให้ผู้จัดที่เป็นบทบาทอื่นคุมห้องตัวเองไม่ได้
-  const isManager = can(currentUser, "meeting.host", meeting);
-
-  // เข้าห้องได้ในฐานะองค์ประชุมไหม
-  const isInvited = can(currentUser, "meeting.join", meeting);
-  // ผู้จัดเปิดให้คนนอกเข้าเองได้หรือไม่ (ค่าเริ่มต้นคือปิด)
-  const guestJoinAllowed = meeting.allowGuestJoin === true;
-
-  // เอกสารที่ผู้ใช้คนนี้มีสิทธิ์เห็น — ผู้เข้าร่วมดูได้อย่างเดียว ไม่มีดาวน์โหลด
-  const visibleFiles = meeting.files.filter((f) => canViewFile(f, currentUser, meeting));
-
-  // เอกสารที่โฮสต์กำลังแชร์ให้ทุกคนดูพร้อมกัน (ถ้าผู้ใช้คนนี้มีสิทธิ์เห็น)
-  const sharedFile = sharedFileId ? visibleFiles.find((f) => f.id === sharedFileId) : undefined;
-
-  // การประชุมนี้วิ่งบนแพลตฟอร์มไหน
-  const conference = resolveConference(meeting);
-  const videoSurface = resolveVideoSurface(meeting);
-  const isExternalConference = videoSurface.kind === "external";
-  const isEmbedConference = videoSurface.kind === "embed";
-
-  // กันคนที่ไม่ได้ถูกเชิญ — เดิมใครเปิด URL ก็เห็นฟอร์มแล้วเติมชื่อตัวเองเข้า roster ได้เลย
-  if (!hasJoined && !isInvited && !guestJoinAllowed) {
+  // กันคนที่ไม่ได้ถูกเชิญ — บุคคลภายนอกต้องเข้าผ่านลิงก์เชิญเท่านั้น ไม่มีฟอร์มกรอกชื่อเข้าเองแล้ว
+  // (ฟอร์มเดิมเขียนชื่อลงรายชื่อด้วยสิทธิ์ที่ server ไม่ให้ แล้วขึ้นว่าเข้าร่วมสำเร็จทั้งที่ถูกปฏิเสธ)
+  if (!localParticipant) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center pb-2">
             <div className="mx-auto h-12 w-12 rounded-2xl bg-muted border flex items-center justify-center mb-3">
-              <span className="material-symbols-outlined text-[28px] text-muted-foreground">lock</span>
+              <span className="material-symbols-outlined text-3xl text-muted-foreground">lock</span>
             </div>
             <CardTitle className="text-lg font-semibold">คุณไม่ได้อยู่ในองค์ประชุมนี้</CardTitle>
             <CardDescription>{meeting.name}</CardDescription>
           </CardHeader>
           <CardContent className="text-center space-y-4 pt-2">
             <p className="text-xs text-muted-foreground">
-              ห้องประชุมนี้เปิดเฉพาะผู้ที่ได้รับเชิญ
-              หากคุณควรเข้าร่วมได้ กรุณาติดต่อ{" "}
-              <span className="font-medium text-foreground">{meeting.organizer}</span> เพื่อขอเพิ่มชื่อ
+              ห้องประชุมนี้เปิดเฉพาะผู้ที่ได้รับเชิญ หากคุณควรเข้าร่วมได้ กรุณาติดต่อ{" "}
+              <span className="font-medium text-foreground">{meeting.organizer}</span>{" "}
+              เพื่อขอเพิ่มชื่อหรือขอลิงก์เชิญ
             </p>
-            <Button variant="outline" onClick={() => router.push("/portal")} className="w-full">
-              <span className="material-symbols-outlined text-[18px] mr-1.5">arrow_back</span>
-              กลับไปหน้าการประชุมของฉัน
+            <Button variant="outline" onClick={() => router.push(getHomeRoute(currentUser.systemRole))} className="w-full">
+              <span className="material-symbols-outlined text-lg mr-1.5">arrow_back</span>
+              กลับหน้าหลัก
             </Button>
           </CardContent>
         </Card>
@@ -288,88 +227,49 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     );
   }
 
-  // Guest join prompt UI
-  if (!hasJoined) {
+  if (!consented) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md bg-muted border-border text-foreground shadow-2xl">
-          <CardHeader className="text-center pb-2">
-            <div className="mx-auto h-12 w-12 rounded-2xl bg-primary flex items-center justify-center mb-3 shadow-lg shadow-primary/20">
-              <span className="material-symbols-outlined text-white text-3xl">groups</span>
-            </div>
-            <CardTitle className="text-xl font-bold text-foreground">เข้าร่วมการประชุมออนไลน์</CardTitle>
-            <CardDescription className="text-muted-foreground">
-              {meeting.name} ({meeting.shortName})
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-muted/50 p-4 rounded-xl border border-border text-xs text-muted-foreground space-y-2">
-              <div className="flex justify-between">
-                <span>วันที่:</span>
-                <span className="text-foreground">{meeting.date}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>เวลา:</span>
-                <span className="text-foreground">{meeting.startTime} - {meeting.endTime} น.</span>
-              </div>
-              <div className="flex justify-between">
-                <span>สถานที่/ห้อง:</span>
-                <span className="text-foreground">{meeting.location}</span>
-              </div>
-            </div>
-
-            <form onSubmit={handleGuestJoinSubmit} className="space-y-4 pt-2">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground block">ชื่อ-นามสกุล ของท่าน</label>
-                <Input
-                  required
-                  placeholder="เช่น นาย สมศักดิ์ รักดี (บุคคลภายนอก)…"
-                  value={guestName}
-                  onChange={(e) => setGuestName(e.target.value)}
-                  className="bg-card border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-primary focus-visible:border-primary"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground block">บทบาท / หน่วยงานที่เกี่ยวข้อง</label>
-                <select
-                  value={guestRole}
-                  onChange={(e) => setGuestRole(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-border bg-card text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option>ผู้ทรงคุณวุฒิภายนอก</option>
-                  <option>ผู้สังเกตการณ์</option>
-                  <option>ผู้แทนหน่วยงานภายนอก</option>
-                  <option>ที่ปรึกษาโครงการ</option>
-                </select>
-              </div>
-
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-white font-bold h-11 shadow-lg shadow-primary/20 mt-2">
-                เข้าร่วมประชุม
-              </Button>
-            </form>
-          </CardContent>
-          <CardFooter className="flex justify-center border-t border-border py-3 bg-muted rounded-b-2xl">
-            <button onClick={() => router.push("/portal")} className="text-xs text-primary font-semibold hover:underline flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px]">arrow_back</span> กลับหน้ารายการ
-            </button>
-          </CardFooter>
-        </Card>
-      </div>
+      <ConfidentialityGate
+        meetingId={meeting.id}
+        meetingName={meeting.name}
+        onAccepted={() => setConsented(true)}
+        onCancel={() => {
+          if (isGuest) {
+            signOut();
+            window.location.assign("/?reason=left");
+            return;
+          }
+          router.push(getHomeRoute(currentUser.systemRole));
+        }}
+      />
     );
   }
 
-  // Handle chat submission
+  const isManager = isHost;
+
+  // เอกสารที่ผู้ใช้คนนี้มีสิทธิ์เห็น — ผู้เข้าร่วมดูได้อย่างเดียว ไม่มีดาวน์โหลด
+  const visibleFiles = meeting.files.filter((f) => canViewFile(f, currentUser, meeting));
+  // เอกสารที่โฮสต์กำลังแชร์ให้ทุกคนดูพร้อมกัน (ถ้าผู้ใช้คนนี้มีสิทธิ์เห็น)
+  const sharedFile = sharedFileId ? visibleFiles.find((f) => f.id === sharedFileId) : undefined;
+
+  const conference = resolveConference(meeting);
+  const videoSurface = resolveVideoSurface(meeting);
+  const isExternalConference = videoSurface.kind === "external";
+  const isEmbedConference = videoSurface.kind === "embed";
+
+  const isOnline = (userId: string | null) => (userId ? connectedUserIds.includes(userId) : false);
+  const onlineCount = new Set([currentUser.id, ...connectedUserIds]).size;
+
+  // แชทผ่าน WebSocket — server เติมชื่อผู้ส่งและเวลาเอง บันทึกลงการประชุม แล้วกระจายให้ทุกคน
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
-
-    const time = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
-    addChatMessage(meeting.id, {
-      sender: localParticipant?.name || currentUser.name,
-      text: chatInput.trim(),
-      time,
-    });
+    const text = chatInput.trim();
+    if (!text) return;
+    if (connectionFailed || !broadcastRef.current) {
+      toast.error("ยังไม่ได้เชื่อมต่อห้องประชุม ส่งข้อความไม่ได้");
+      return;
+    }
+    broadcastRef.current({ type: "chat_send", payload: { text } });
     setChatInput("");
   };
 
@@ -377,27 +277,45 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
   const toggleMyHand = (next: boolean) => broadcastRef.current?.({ type: "hand_raise", payload: { raised: next } });
   const lowerOther = (targetUserId: string) => broadcastRef.current?.({ type: "hand_lower", payload: { targetUserId } });
 
-  // แชร์เอกสารให้ผู้เข้าร่วมทั้งหมดในห้อง — broadcast แล้วให้ผู้เข้าร่วมคนอื่นตามหน้าจอโฮสต์อัตโนมัติ
   const handleShareFile = (file: MeetingFile) => {
-    const isShared = sharedFileId === file.id;
-    if (isShared) {
+    if (sharedFileId === file.id) {
       setSharedFileId(null);
       toast.success("หยุดแชร์เอกสารแล้ว");
       broadcastRef.current?.({ type: "doc_share_stop", payload: {} });
       return;
     }
     setSharedFileId(file.id);
-    setSharedViewerPage(1);
     toast.success(`กำลังแชร์: ${file.name}`);
     broadcastRef.current?.({ type: "doc_share", payload: { fileId: file.id, fileName: file.name } });
   };
 
-  // เปลี่ยนหน้าเอกสารที่กำลังแชร์อยู่ — broadcast ให้ผู้เข้าร่วมคนอื่นเลื่อนตาม (เฉพาะตอนกำลังแชร์)
-  const handleSharedPageChange = (page: number) => {
-    setSharedViewerPage(page);
-    if (sharedFileId) {
-      broadcastRef.current?.({ type: "doc_share_page", payload: { fileId: sharedFileId, page } });
+  // บันทึกผ่าน REST แล้วขอให้ server ประกาศสถานะใหม่ให้ทุกคนในห้อง — เดิมบันทึกอย่างเดียว
+  // ผู้เข้าร่วมคนอื่นจึงไม่เคยเห็นวาระที่เปลี่ยนหรือรู้ว่าการประชุมจบแล้ว
+  const announce = () => broadcastRef.current?.({ type: "meeting_refresh", payload: {} });
+
+  const handleSetAgenda = async (agendaId: string | null) => {
+    if (await updateActiveAgenda(meeting.id, agendaId)) announce();
+  };
+
+  const handleEndMeeting = async () => {
+    if (!(await updateMeeting(meeting.id, { status: "waiting_endorse" }))) return;
+    announce();
+    toast.success("จบการประชุมแล้ว", { description: "สร้างร่างรายงานสรุปได้ที่หน้าจัดการประชุม" });
+    setTimeout(() => router.push("/meetings/" + meeting.id), 1500);
+  };
+
+  const leaveRoom = () => {
+    if (handRaised) toggleMyHand(false);
+    stopCaptureRef.current?.();
+    stopCaptureRef.current = null;
+    // แขกมีสิทธิ์แค่ห้องนี้ห้องเดียว — หน้ารายการประชุมไม่มีอะไรให้เขา จะกลับเข้ามาใช้ลิงก์เชิญเดิมได้
+    if (isGuest) {
+      signOut();
+      window.location.assign("/?reason=left");
+      return;
     }
+    toast.info("คุณได้ออกจากห้องประชุมเรียบร้อย");
+    router.push(getHomeRoute(currentUser.systemRole));
   };
 
   const handleToggleSubtitle = async () => {
@@ -408,20 +326,18 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       return;
     }
 
-    // subtitleOn ยังไม่เป็น true จนกว่า startCapture จะเสร็จ ระหว่างนั้นหน้าต่างขอสิทธิ์ไมค์
-    // ค้างอยู่และปุ่มยังกดได้ ถ้ากดซ้ำจะได้ capture สองชุด แล้วชุดแรกไม่มีใครถือฟังก์ชันหยุดไว้
-    // ไมค์ตัวนั้นจะค้างเปิดไปทั้งประชุม
-    if (startingCaptureRef.current) return;
-    startingCaptureRef.current = true;
-
     if (!isCaptureSupported()) {
       toast.error("เบราว์เซอร์นี้ไม่รองรับการจับเสียงไมค์สำหรับคำบรรยาย");
       return;
     }
 
+    // subtitleOn ยังไม่เป็น true จนกว่า startCapture จะเสร็จ ระหว่างนั้นหน้าต่างขอสิทธิ์ไมค์
+    // ค้างอยู่และปุ่มยังกดได้ ถ้ากดซ้ำจะได้ capture สองชุด แล้วชุดแรกไม่มีใครถือฟังก์ชันหยุดไว้
+    if (startingCaptureRef.current) return;
+    startingCaptureRef.current = true;
+
     try {
       // เสียงถูกถอดที่ server แล้วส่ง subtitle_text กลับมาให้ทุกคนรวมทั้งผู้พูดเอง
-      // หน้านี้จึงไม่เซ็ต latestSubtitle ของตัวเองอีก ไม่งั้นจะเห็นข้อความซ้ำสองรอบ
       stopCaptureRef.current = await startCapture({
         sendAudio: (frame) => sendAudioRef.current?.(frame),
         startedAt: meetingStartRef.current,
@@ -434,6 +350,8 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
     }
   };
 
+  const activeAgendaTitle = meeting.agenda.find((a) => a.id === meeting.activeAgendaId)?.title;
+
   return (
     <RoomSignalingProvider meetingId={meeting.id}>
     <RoomSignalBridge
@@ -444,136 +362,95 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
       setRaisedHands={setRaisedHands}
       setLatestSubtitle={setLatestSubtitle}
       setSharedFileId={setSharedFileId}
-      setSharedViewerPage={setSharedViewerPage}
       handSignalReceivedRef={handSignalReceivedRef}
       docShareSignalReceivedRef={docShareSignalReceivedRef}
+      onChatMessage={handleChatMessage}
+      onRoomState={handleRoomState}
+      onConnectionFailed={setConnectionFailed}
     />
-    <div className="fixed inset-0 bg-background text-foreground flex flex-col font-sans overflow-hidden z-[1000]">
+    <div className="fixed inset-0 bg-background text-foreground flex flex-col font-sans overflow-hidden z-[1000] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       {/* Top Header */}
-      <header className="h-14 bg-card border-b border-border px-4 flex items-center justify-between shrink-0">
+      <header className="h-14 bg-card border-b border-border px-4 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <div className="h-7 w-7 rounded bg-primary flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-white text-base">videocam</span>
+            <span className="material-symbols-outlined text-primary-foreground text-base">videocam</span>
           </div>
           <div className="min-w-0">
             <h2 className="text-sm font-bold truncate text-foreground">{meeting.name}</h2>
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
-              <span>{meeting.location}</span>
+            <div className="flex items-center gap-2 text-tiny text-muted-foreground mt-0.5 min-w-0">
+              <span className="truncate">{meeting.location}</span>
               <span>•</span>
-              <span className="flex items-center text-red-500 font-semibold gap-1">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-600 animate-ping motion-reduce:animate-none"></span>
-                LIVE {meeting.participants.filter(p => p.present).length} คนในสาย
+              <span className="flex items-center text-destructive font-semibold gap-1 shrink-0">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive animate-ping motion-reduce:animate-none"></span>
+                LIVE {onlineCount} คนในสาย
               </span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Active Agenda Banner */}
-          {meeting.activeAgendaId && (
+        <div className="flex items-center gap-2 shrink-0">
+          {activeAgendaTitle && (
             <div className="hidden md:flex items-center gap-1.5 bg-primary/10 border border-primary/40 px-3 py-1 rounded-full">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse"></span>
-              <span className="text-[10px] text-primary font-semibold truncate max-w-[240px]">
-                หัวข้อกำลังพูดคุย: {meeting.agenda.find(a => a.id === meeting.activeAgendaId)?.title}
+              <span className="text-tiny text-primary font-semibold truncate max-w-60">
+                หัวข้อกำลังพูดคุย: {activeAgendaTitle}
               </span>
             </div>
           )}
 
-          {/* End Meeting Button (Host only) */}
           {isManager && meeting.status === "in_progress" && (
             <Button
               size="sm"
-              onClick={() => {
-                // Force all participants out
-                const updatedParticipants = meeting.participants.map((p) => ({
-                  ...p,
-                  present: false,
-                }));
-                updateMeeting(meeting.id, { participants: updatedParticipants, status: "waiting_endorse" });
-                toast.success("จบการประชุมแล้ว", {
-                  description: "สามารถขอ Transcript ได้ที่หน้าจัดการประชุม"
-                });
-                // Delay before redirecting to allow notification
-                setTimeout(() => router.push("/meetings/" + meeting.id), 1500);
-              }}
-              className="h-8 font-semibold bg-orange-600 hover:bg-orange-700 text-white rounded-lg px-3"
+              onClick={() => void handleEndMeeting()}
+              className="h-8 font-semibold bg-warning hover:bg-warning/90 text-warning-foreground rounded-lg px-3"
               title="จบการประชุมสำหรับทุกคน"
+              aria-label="จบการประชุมสำหรับทุกคน"
             >
-              <span className="material-symbols-outlined text-[16px] mr-1">stop_circle</span>
-              จบการประชุมเลย
+              <span className="material-symbols-outlined text-base sm:mr-1">stop_circle</span>
+              <span className="hidden sm:inline">จบการประชุมเลย</span>
             </Button>
           )}
 
           <Button
-            variant="destructive"
             size="sm"
-            onClick={() => {
-              // Lower own raised hand for everyone else before leaving
-              if (handRaised) {
-                toggleMyHand(false);
-              }
-              // Set present false in context on leave
-              if (localParticipant) {
-                const updatedParticipants = meeting.participants.map((p) =>
-                  p.id === localParticipant.id ? { ...p, present: false } : p
-                );
-                updateMeeting(meeting.id, { participants: updatedParticipants });
-              }
-              toast.info("คุณได้ออกจากห้องประชุมเรียบร้อย");
-              router.push("/portal");
-            }}
-            className="h-8 font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg px-3"
+            onClick={leaveRoom}
+            className="h-8 font-semibold bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-lg px-3"
+            aria-label="ออกจากห้องประชุม"
           >
-            <span className="material-symbols-outlined text-[16px] mr-1">logout</span>
-            ออกจากห้องประชุม
+            <span className="material-symbols-outlined text-base sm:mr-1">logout</span>
+            <span className="hidden sm:inline">ออกจากห้องประชุม</span>
           </Button>
         </div>
       </header>
 
-      {/* Main Workspace */}
-      <div className="flex-1 flex overflow-hidden min-h-0 relative">
-        
+      {connectionFailed && (
+        <div role="alert" className="shrink-0 border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-xs text-destructive">
+          เชื่อมต่อห้องประชุมไม่ได้ — ยกมือ โหวต แชท และคำบรรยายจะยังไม่ทำงาน
+          ลองออกแล้วเข้าห้องใหม่ หรือเข้าสู่ระบบอีกครั้งถ้าเซสชันหมดอายุ
+        </div>
+      )}
+
+      {/* Main Workspace — stack แนวตั้งบนมือถือ, วางข้างกันตั้งแต่ md ขึ้นไป */}
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0 relative">
+
         {/* Left Side: Video Grid & Shared Presentation */}
-        <div className="flex-1 flex flex-col p-4 space-y-4 overflow-y-auto relative">
-          
-          {/* Main content pane: เอกสารที่แชร์ > engine ฝัง (ZegoCloud) > เวทีประชุมภายนอก
-              ไม่มีห้องจำลอง (mockup) ให้ fallback แล้ว — ทุก meeting ต้องผ่าน engine จริงหรือลิงก์จริง */}
-          {isEmbedConference && !sharedFile ? (
-            <ZegoCloudEmbedStage
-              meeting={meeting}
-              isHost={isManager}
-              credential={videoCredential}
-              credentialError={credentialError}
-              userId={videoCredential?.userId ?? roomIdentityId}
-              displayName={roomIdentityName}
-              onLeave={() => {
-                if (handRaised) {
-                  toggleMyHand(false);
-                }
-                if (localParticipant) {
-                  const updatedParticipants = meeting.participants.map((p) =>
-                    p.id === localParticipant.id ? { ...p, present: false } : p
-                  );
-                  updateMeeting(meeting.id, { participants: updatedParticipants });
-                }
-                toast.info("คุณได้ออกจากห้องประชุม ZegoCloud เรียบร้อย");
-                router.push("/portal");
-              }}
-            />
-          ) : isExternalConference && !sharedFile ? (
-            <ExternalConferenceStage conference={conference} meetingName={meeting.name} />
-          ) : sharedFile ? (
-            <div className="flex-1 min-h-[300px] border border-border rounded-2xl bg-card overflow-hidden flex flex-col relative">
-              <div className="bg-muted px-4 py-2 border-b border-border flex items-center justify-between text-xs">
-                <span className="text-muted-foreground flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[16px] text-primary">present_to_all</span>
-                  {isManager ? "คุณกำลังแชร์เอกสารนี้ให้ผู้เข้าร่วมทั้งหมด" : `${meeting.organizer} กำลังแชร์หน้าจอเอกสาร`}
+        <div className="flex-1 flex flex-col p-2 md:p-4 space-y-4 overflow-y-auto relative min-h-0">
+
+          {/* Main content pane: เอกสารที่แชร์ > engine ฝัง (ZegoCloud) > เวทีประชุมภายนอก */}
+          {sharedFile ? (
+            <div className="flex-1 min-h-72 border border-border rounded-2xl bg-card overflow-hidden flex flex-col relative">
+              <div className="bg-muted px-4 py-2 border-b border-border flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="text-muted-foreground flex items-center gap-1 min-w-0">
+                  <span className="material-symbols-outlined text-base text-primary">present_to_all</span>
+                  <span className="truncate">
+                    {isManager ? "คุณกำลังแชร์เอกสารนี้ให้ผู้เข้าร่วมทั้งหมด" : `${meeting.organizer} กำลังแชร์เอกสาร`}
+                  </span>
                 </span>
                 {isManager && (
                   <Button
                     size="xs"
                     variant="ghost"
-                    className="h-6 text-destructive hover:text-red-300 hover:bg-secondary"
+                    className="text-destructive hover:bg-destructive/10"
                     onClick={() => {
                       setSharedFileId(null);
                       broadcastRef.current?.({ type: "doc_share_stop", payload: {} });
@@ -583,54 +460,61 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                   </Button>
                 )}
               </div>
-              <div className="flex-1 p-6 flex flex-col justify-between overflow-y-auto">
-                {/* Renders simulated document view */}
-                <SimulatedDocumentViewer
-                  file={sharedFile}
-                  currentPage={sharedViewerPage}
-                  setCurrentPage={isManager ? handleSharedPageChange : setSharedViewerPage}
-                  zoom={viewerZoom}
-                  setZoom={setViewerZoom}
-                />
+              {/* ลายน้ำทับเหมือน lightbox — จอที่แชร์ให้ทั้งห้องเห็นก็ถูกถ่ายภาพออกไปได้เช่นกัน */}
+              <div className="flex-1 p-2 md:p-4 flex flex-col min-h-0 relative" onContextMenu={(e) => e.preventDefault()}>
+                <DocumentContent file={sharedFile} />
+                <DocumentWatermark viewerName={localParticipant.name} />
               </div>
             </div>
+          ) : isEmbedConference ? (
+            <ZegoCloudEmbedStage
+              meeting={meeting}
+              isHost={isManager}
+              credential={videoCredential}
+              credentialError={credentialError}
+              userId={videoCredential?.userId ?? localParticipant.userId ?? currentUser.id}
+              displayName={localParticipant.name}
+              onLeave={leaveRoom}
+            />
+          ) : isExternalConference ? (
+            <ExternalConferenceStage conference={conference} meetingName={meeting.name} />
           ) : (
-            /* ไม่มีห้องประชุมจำลองให้ fallback อีกต่อไป — ทุก meeting ต้องแก้ปัญหาผ่าน engine จริง
-               (ZegoCloud) หรือลิงก์ภายนอก ถ้าตกมาถึง branch นี้แปลว่า resolveVideoSurface
-               คืนค่าที่ไม่รู้จัก ให้บอกตรงๆ แทนการแสดงวิดีโอปลอม */
             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground text-sm gap-2 border border-dashed border-border rounded-2xl">
               <span className="material-symbols-outlined text-4xl">videocam_off</span>
               <p>ไม่สามารถระบุช่องทางวิดีโอของการประชุมนี้ได้</p>
             </div>
           )}
 
-          {/* แถบควบคุมฟีเจอร์ห้องประชุม — ยกมือ/ซับไตเติล ใช้ได้ทุกโหมด ไม่ผูกกับ engine วิดีโอ
-              (ไมค์/กล้องคุมผ่าน UI ของ engine เอง เช่น ZegoCloudEmbedStage — ไม่ซ้ำปุ่มที่นี่) */}
+          {/* แถบควบคุมฟีเจอร์ห้องประชุม — ยกมือ/คำบรรยาย ใช้ได้ทุกโหมด ไม่ผูกกับ engine วิดีโอ */}
           <div className="h-16 bg-card border border-border rounded-2xl items-center justify-center gap-2 sm:gap-4 px-4 shrink-0 shadow-lg flex">
             <Button
               onClick={() => toggleMyHand(!handRaised)}
               size="icon"
               className={`rounded-xl h-10 w-10 border transition-all ${
                 handRaised
-                  ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+                  ? "bg-warning/10 border-warning/30 text-warning hover:bg-warning/15"
                   : "bg-secondary border-border text-foreground hover:bg-secondary/80"
               }`}
-              title="Raise Hand"
+              title={handRaised ? "ลดมือ" : "ยกมือ"}
+              aria-label={handRaised ? "ลดมือ" : "ยกมือ"}
+              aria-pressed={handRaised}
             >
-              <span className="material-symbols-outlined text-[20px]">{handRaised ? "pan_tool" : "pan_tool_alt"}</span>
+              <span className="material-symbols-outlined text-xl">{handRaised ? "pan_tool" : "pan_tool_alt"}</span>
             </Button>
 
             <Button
-              onClick={handleToggleSubtitle}
+              onClick={() => void handleToggleSubtitle()}
               size="icon"
               className={`rounded-xl h-10 w-10 border transition-all ${
                 subtitleOn
                   ? "bg-primary/10 border-primary/40 text-primary hover:bg-primary/20"
                   : "bg-secondary border-border text-foreground hover:bg-secondary/80"
               }`}
-              title="คำบรรยายสด (Subtitle)"
+              title="คำบรรยายสด"
+              aria-label={subtitleOn ? "ปิดคำบรรยายสด" : "เปิดคำบรรยายสด"}
+              aria-pressed={subtitleOn}
             >
-              <span className="material-symbols-outlined text-[20px]">closed_caption</span>
+              <span className="material-symbols-outlined text-xl">closed_caption</span>
             </Button>
           </div>
 
@@ -638,36 +522,24 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
         </div>
 
         {/* Right Side: Tab Drawers for Agenda, Files, Chat, and Participants */}
-        <div className="w-80 md:w-96 bg-card border-l border-border flex flex-col shrink-0">
+        <div className="w-full md:w-80 lg:w-96 h-[45%] md:h-auto bg-card border-t md:border-t-0 md:border-l border-border flex flex-col shrink-0 min-h-0">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
             <div className="px-3 pt-3 border-b border-border bg-muted flex shrink-0">
-              <TabsList className="bg-muted border border-border p-0.5 rounded-lg flex-1 h-9">
-                <TabsTrigger value="agenda" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">
-                  วาระ
-                </TabsTrigger>
-                <TabsTrigger value="files" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">
-                  เอกสาร
-                </TabsTrigger>
-                <TabsTrigger value="chat" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">
-                  แชท
-                </TabsTrigger>
-                <TabsTrigger value="people" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">
-                  ผู้ร่วม
-                </TabsTrigger>
-                <TabsTrigger value="vote" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">
-                  โหวต
-                </TabsTrigger>
+              <TabsList className="bg-muted border border-border p-0.5 rounded-lg flex-1 h-9 w-full">
+                <TabsTrigger value="agenda" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">วาระ</TabsTrigger>
+                <TabsTrigger value="files" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">เอกสาร</TabsTrigger>
+                <TabsTrigger value="chat" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">แชท</TabsTrigger>
+                <TabsTrigger value="people" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">ผู้ร่วม</TabsTrigger>
+                <TabsTrigger value="vote" className="text-xs data-[state=active]:bg-secondary rounded-md py-1.5 flex-1">โหวต</TabsTrigger>
               </TabsList>
             </div>
 
-            {/* AGENDA CONTENT */}
+            {/* AGENDA */}
             <TabsContent value="agenda" className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 mt-0">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">ระเบียบวาระการประชุม</h3>
                 {isManager && (
-                  <Badge className="bg-muted border border-border text-indigo-700 text-[9px] py-0 px-2">
-                    สิทธิ์โฮสต์ (Host)
-                  </Badge>
+                  <Badge className="bg-muted border border-border text-info text-micro py-0 px-2">สิทธิ์โฮสต์</Badge>
                 )}
               </div>
 
@@ -681,33 +553,31 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                       <div
                         key={ag.id}
                         className={`rounded-xl border p-3 transition-all ${
-                          isActive
-                            ? "bg-primary/10 border-primary/50 shadow-md shadow-primary/10"
-                            : "bg-muted border-border"
+                          isActive ? "bg-primary/10 border-primary/50 shadow-md shadow-primary/10" : "bg-muted border-border"
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                              <Badge className={`text-[9px] py-0 ${isActive ? "bg-primary text-white" : "bg-card border border-border text-muted-foreground"}`}>
+                              <Badge className={`text-micro py-0 ${isActive ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground"}`}>
                                 วาระ {ag.no}
                               </Badge>
                               {isActive && (
-                                <span className="text-[9px] text-primary font-bold animate-pulse flex items-center gap-0.5">
-                                  <span className="material-symbols-outlined text-[10px]">volume_up</span> กำลังพูดคุย
+                                <span className="text-micro text-primary font-bold animate-pulse flex items-center gap-0.5">
+                                  <span className="material-symbols-outlined text-tiny">volume_up</span> กำลังพูดคุย
                                 </span>
                               )}
                             </div>
                             <p className="text-xs font-bold text-foreground leading-tight">{ag.title}</p>
-                            {ag.detail && <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{ag.detail}</p>}
+                            {ag.detail && <p className="text-tiny text-muted-foreground mt-1 line-clamp-2">{ag.detail}</p>}
                           </div>
 
                           {isManager && (
                             <Button
-                              onClick={() => updateActiveAgenda(meeting.id, isActive ? null : ag.id)}
+                              onClick={() => void handleSetAgenda(isActive ? null : ag.id)}
                               size="xs"
                               variant="outline"
-                              className={`text-[9px] font-semibold h-6 shrink-0 ${
+                              className={`text-micro font-semibold shrink-0 ${
                                 isActive
                                   ? "bg-primary/15 border-primary/50 text-primary hover:bg-primary/20"
                                   : "border-border hover:bg-card text-foreground"
@@ -724,7 +594,7 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               )}
             </TabsContent>
 
-            {/* DOCUMENTS TAB CONTENT */}
+            {/* DOCUMENTS */}
             <TabsContent value="files" className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 mt-0">
               <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">เอกสารประกอบการประชุม</h3>
 
@@ -739,15 +609,11 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                         key={file.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => {
-                          setViewingFile(file);
-                          setLightboxPage(1);
-                        }}
+                        onClick={() => setViewingFile(file)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
                             setViewingFile(file);
-                            setLightboxPage(1);
                           }
                         }}
                         className={`rounded-xl border bg-muted p-3 hover:border-border cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none ${
@@ -762,13 +628,12 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-bold truncate text-foreground">{file.name}</p>
-                            <p className="text-[10px] text-muted-foreground truncate mt-0.5">{file.description || "ไม่มีคำอธิบาย"}</p>
-                            <p className="text-[9px] text-muted-foreground mt-1">{file.size} · อัปโหลดโดย: {file.uploadedBy}</p>
+                            <p className="text-tiny text-muted-foreground truncate mt-0.5">{file.description || "ไม่มีคำอธิบาย"}</p>
+                            <p className="text-micro text-muted-foreground mt-1">{file.size} · อัปโหลดโดย: {file.uploadedBy}</p>
                           </div>
                         </div>
 
-                        {/* Document controls */}
-                        <div className="flex justify-end gap-1.5 mt-2.5 pt-2 border-t border-border">
+                        <div className="flex flex-wrap justify-end gap-1.5 mt-2.5 pt-2 border-t border-border">
                           {isManager && (
                             <Button
                               onClick={(e) => {
@@ -777,23 +642,22 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
                               }}
                               size="xs"
                               variant="ghost"
-                              className={`h-6 text-[10px] ${isShared ? "text-destructive hover:bg-card" : "text-indigo-700 hover:bg-card"}`}
+                              className={`text-tiny ${isShared ? "text-destructive hover:bg-card" : "text-info hover:bg-card"}`}
                             >
-                              <span className="material-symbols-outlined text-[14px] mr-1">present_to_all</span>
-                              {isShared ? "หยุดแชร์" : "แชร์หน้าจอ"}
+                              <span className="material-symbols-outlined text-sm mr-1">present_to_all</span>
+                              {isShared ? "หยุดแชร์" : "แชร์ให้ทุกคน"}
                             </Button>
                           )}
                           <Button
                             onClick={(e) => {
                               e.stopPropagation();
                               setViewingFile(file);
-                              setLightboxPage(1);
                             }}
                             size="xs"
                             variant="ghost"
-                            className="h-6 text-foreground hover:bg-card text-[10px]"
+                            className="text-foreground hover:bg-card text-tiny"
                           >
-                            <span className="material-symbols-outlined text-[14px] mr-1">menu_book</span>
+                            <span className="material-symbols-outlined text-sm mr-1">menu_book</span>
                             อ่านในเว็บ
                           </Button>
                         </div>
@@ -804,119 +668,107 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
               )}
             </TabsContent>
 
-            {/* CHAT TAB CONTENT */}
+            {/* CHAT */}
             <TabsContent value="chat" className="flex-1 flex flex-col min-h-0 mt-0 bg-muted/40">
               <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-                <div className="text-center py-2 text-[10px] text-muted-foreground">
-                  ยินดีต้อนรับสู่ห้องแชทสำหรับการประชุมออนไลน์
-                </div>
-                
-                {/* Mock historical messages */}
-                <div className="space-y-1">
-                  <span className="text-[10px] font-semibold text-primary">นางสาว มาลี รักษาสัตย์</span>
-                  <div className="bg-card border border-border p-2.5 rounded-2xl rounded-tl-none text-xs text-foreground">
-                    สวัสดีค่ะ คณะกรรมการทุกท่าน เอกสารแนบได้อัปโหลดลงในระบบครบถ้วนแล้วนะคะ
+                {(meeting.chatMessages ?? []).length === 0 ? (
+                  <div className="text-center py-10 text-xs text-muted-foreground">
+                    ยังไม่มีข้อความ — ข้อความที่ส่งที่นี่ทุกคนในห้องเห็นและถูกเก็บไว้กับการประชุม
                   </div>
-                  <span className="text-[9px] text-muted-foreground text-right block pr-1">12:55</span>
-                </div>
-
-                {meeting.chatMessages?.map((msg) => {
-                  const isMe = msg.sender === (localParticipant?.name || currentUser.name);
-                  return (
-                    <div key={msg.id} className="space-y-1">
-                      <span className={`text-[10px] font-semibold block ${isMe ? "text-indigo-700 text-right pr-1" : "text-primary"}`}>
-                        {msg.sender}
-                      </span>
-                      <div className={`p-2.5 rounded-2xl border text-xs max-w-[85%] ${
-                        isMe 
-                          ? "bg-secondary border-border text-foreground ml-auto rounded-tr-none" 
-                          : "bg-card border-border text-foreground rounded-tl-none"
-                      }`}>
-                        {msg.text}
+                ) : (
+                  meeting.chatMessages!.map((msg) => {
+                    const isMe = msg.senderId ? msg.senderId === currentUser.id : msg.sender === localParticipant.name;
+                    return (
+                      <div key={msg.id} className="space-y-1">
+                        <span className={`text-tiny font-semibold block ${isMe ? "text-info text-right pr-1" : "text-primary"}`}>
+                          {msg.sender}
+                        </span>
+                        <div
+                          className={`p-2.5 rounded-2xl border text-xs max-w-[85%] break-words ${
+                            isMe
+                              ? "bg-secondary border-border text-foreground ml-auto rounded-tr-none"
+                              : "bg-card border-border text-foreground rounded-tl-none"
+                          }`}
+                        >
+                          {msg.text}
+                        </div>
+                        <span className={`text-micro text-muted-foreground block ${isMe ? "text-right pr-1" : "pl-1"}`}>{msg.time}</span>
                       </div>
-                      <span className={`text-[9px] text-muted-foreground block ${isMe ? "text-right pr-1" : "pl-1"}`}>
-                        {msg.time}
-                      </span>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
 
-              {/* Chat Input block */}
               <form onSubmit={handleSendChat} className="p-3 border-t border-border bg-card flex gap-2 shrink-0">
                 <Input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   placeholder="พิมพ์ข้อความที่นี่…"
+                  maxLength={1000}
+                  aria-label="ข้อความแชท"
                   className="bg-muted border-border text-xs text-foreground"
                 />
-                <Button type="submit" size="sm" className="bg-primary hover:bg-primary/90 text-white shrink-0">
-                  ส่ง
-                </Button>
+                <Button type="submit" className="shrink-0">ส่ง</Button>
               </form>
             </TabsContent>
 
-            {/* PEOPLE TAB CONTENT */}
+            {/* PEOPLE */}
             <TabsContent value="people" className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 mt-0">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">รายชื่อผู้เข้าร่วมประชุม</h3>
-                <Badge className="bg-card border border-border text-muted-foreground text-[9px] py-0 px-2">
-                  มาเข้าร่วม {meeting.participants.filter(p => p.present || p.id === localParticipant?.id).length} คน
+                <Badge className="bg-card border border-border text-muted-foreground text-micro py-0 px-2">
+                  ออนไลน์ {onlineCount} คน
                 </Badge>
               </div>
 
               <HandRaiseList raised={raisedHands} isHost={isManager} onLower={lowerOther} />
 
               <div className="space-y-2">
-                {/* Local user */}
                 <div className="rounded-xl border border-border bg-muted p-2.5 flex items-center justify-between">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="h-7 w-7 rounded-full bg-primary/10 border border-primary/40 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                      {localParticipant?.name.split(" ")[1]?.charAt(0) || "U"}
+                      {localParticipant.name.split(" ")[1]?.charAt(0) || localParticipant.name.charAt(0) || "U"}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-bold truncate text-foreground">
-                        {localParticipant?.name || currentUser.name} (คุณ)
-                      </p>
-                      <p className="text-[9px] text-muted-foreground truncate">{localParticipant?.position || currentUser.position}</p>
+                      <p className="text-xs font-bold truncate text-foreground">{localParticipant.name} (คุณ)</p>
+                      <p className="text-micro text-muted-foreground truncate">{localParticipant.position}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    {handRaised && <span className="material-symbols-outlined text-amber-500 text-[14px] animate-bounce">pan_tool</span>}
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                    <span className="text-[9px] text-muted-foreground">เข้าชม</span>
+                    {handRaised && <span className="material-symbols-outlined text-warning text-sm animate-bounce">pan_tool</span>}
+                    <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse"></span>
+                    <span className="text-micro text-muted-foreground">ออนไลน์</span>
                   </div>
                 </div>
 
-                {/* Rest of the participant roster */}
                 {meeting.participants
-                  .filter((p) => p.id !== localParticipant?.id)
+                  .filter((p) => p.id !== localParticipant.id)
                   .map((p) => {
-                    const isPresent = p.present;
+                    const online = isOnline(p.userId);
                     const raised = p.userId ? raisedHands.some((h) => h.userId === p.userId) : false;
                     return (
                       <div
                         key={p.id}
                         className={`rounded-xl border p-2.5 flex items-center justify-between transition-opacity ${
-                          isPresent ? "border-border bg-muted" : "border-border opacity-40 bg-muted/20"
+                          online ? "border-border bg-muted" : "border-border opacity-40 bg-muted/20"
                         }`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold border shrink-0 ${
-                            isPresent ? "bg-secondary border-border text-foreground" : "bg-card border-border text-muted-foreground"
+                            online ? "bg-secondary border-border text-foreground" : "bg-card border-border text-muted-foreground"
                           }`}>
                             {p.name.split(" ")[1]?.charAt(0) || p.name.charAt(0)}
                           </div>
                           <div className="min-w-0">
                             <p className="text-xs font-bold truncate text-foreground">{p.name}</p>
-                            <p className="text-[9px] text-muted-foreground truncate">{p.position} {!p.inSystem && "· ภายนอก"}</p>
+                            <p className="text-micro text-muted-foreground truncate">{p.position} {!p.inSystem && "· ภายนอก"}</p>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-1.5">
-                          {raised && <span className="material-symbols-outlined text-amber-500 text-[14px] animate-bounce">pan_tool</span>}
-                          <span className={`h-1.5 w-1.5 rounded-full ${isPresent ? "bg-green-500" : "bg-muted-foreground/40"}`}></span>
-                          <span className="text-[9px] text-muted-foreground">{isPresent ? "เข้าชม" : "ออฟไลน์"}</span>
+                          {raised && <span className="material-symbols-outlined text-warning text-sm animate-bounce">pan_tool</span>}
+                          <span className={`h-1.5 w-1.5 rounded-full ${online ? "bg-success" : "bg-muted-foreground/40"}`}></span>
+                          <span className="text-micro text-muted-foreground">{online ? "ออนไลน์" : "ออฟไลน์"}</span>
                         </div>
                       </div>
                     );
@@ -935,15 +787,10 @@ export default function LiveMeetingRoomPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
-      {/* Embedded Document Viewer Lightbox — อ่านอย่างเดียว */}
       {viewingFile && (
         <DocumentLightbox
           file={viewingFile}
           onClose={() => setViewingFile(null)}
-          currentPage={lightboxPage}
-          setCurrentPage={setLightboxPage}
-          zoom={viewerZoom}
-          setZoom={setViewerZoom}
           viewerName={currentUser.name}
           confidentialityLevel={meeting.confidentialityLevel ?? "normal"}
         />

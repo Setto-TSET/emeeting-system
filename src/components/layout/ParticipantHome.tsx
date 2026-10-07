@@ -8,6 +8,7 @@ import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
 import { canViewFile, isMyMeeting } from "@/data";
 import { today } from "@/lib/clock";
+import { PageError, PageLoading } from "@/components/layout/PageState";
 
 // ═══════════════════════════════════════════
 // หน้าหลักของ "ผู้เข้าร่วมประชุม"
@@ -20,7 +21,7 @@ function fmtDate(d: string) {
 }
 
 export default function ParticipantHome() {
-  const { meetings } = useMeetings();
+  const { meetings, loading: meetingsLoading, error: meetingsError, reload: reloadMeetings } = useMeetings();
   const { currentUser } = useCurrentUser();
 
   // เฉพาะการประชุมที่ตัวเองเกี่ยวข้อง — เกณฑ์เดียวกับหน้า /portal
@@ -37,8 +38,12 @@ export default function ParticipantHome() {
     0
   );
 
+  // ระหว่างโหลดหรือโหลดไม่สำเร็จ ห้ามแสดงสถานะว่าง — ผู้ใช้จะเข้าใจว่าไม่มีการประชุม
+  if (meetingsLoading && meetings.length === 0) return <PageLoading />;
+  if (meetingsError && meetings.length === 0) return <PageError message={meetingsError} onRetry={() => void reloadMeetings()} />;
+
   return (
-    <div className="p-4 md:p-6 pb-16 max-w-[900px] mx-auto">
+    <div className="p-4 md:p-6 pb-16 max-w-narrow mx-auto">
       <header className="mb-5">
         <h1 className="text-lg md:text-xl font-semibold mb-0.5">สวัสดี, {currentUser.name}</h1>
         <p className="text-xs text-muted-foreground">
@@ -50,38 +55,46 @@ export default function ParticipantHome() {
       {next ? (
         <Card className="card-shadow overflow-hidden mb-5 border-none relative">
           <div className="absolute inset-0 bg-gradient-to-r from-primary via-primary/85 to-primary/60" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_50%)]" />
+          <div className="absolute inset-0 hero-glow" />
           <div className="relative p-5 md:p-7">
-            <Badge className="w-fit mb-2 bg-white/20 text-white border border-white/30 text-[10px]">
+            <Badge className="w-fit mb-2 bg-primary-foreground/20 text-primary-foreground border border-primary-foreground/30 text-tiny">
               {live ? "กำลังประชุมอยู่ตอนนี้" : "การประชุมครั้งถัดไปของคุณ"}
             </Badge>
-            <h2 className="text-lg md:text-2xl font-bold text-white mb-2 drop-shadow-sm">{next.name}</h2>
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-white/90 mb-5">
+            <h2 className="text-lg md:text-2xl font-bold text-primary-foreground mb-2 drop-shadow-sm break-words">{next.name}</h2>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-primary-foreground/90 mb-5">
               <span className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[16px]">calendar_today</span>
+                <span className="material-symbols-outlined text-base">calendar_today</span>
                 {fmtDate(next.date)}
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[16px]">schedule</span>
+                <span className="material-symbols-outlined text-base">schedule</span>
                 {next.startTime} - {next.endTime} น.
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[16px]">place</span>
+                <span className="material-symbols-outlined text-base">place</span>
                 {next.location}
               </span>
             </div>
-            <Button asChild size="lg" className="bg-white text-primary hover:bg-white/90 font-bold">
-              <Link href={`/live/${next.id}`}>
-                <span className="material-symbols-outlined text-[20px] mr-1.5">video_call</span>
-                เข้าห้องประชุม
-              </Link>
-            </Button>
+            {live ? (
+              <Button asChild size="lg" className="bg-card text-primary hover:bg-card/90 font-bold">
+                <Link href={`/live/${next.id}`}>
+                  <span className="material-symbols-outlined text-xl mr-1.5">video_call</span>
+                  เข้าห้องประชุม
+                </Link>
+              </Button>
+            ) : (
+              // ห้องยังไม่เปิด — เดิมมีปุ่มเข้าห้องเสมอ แต่หน้า portal บอกว่ายังไม่เปิด ข้อมูลสองหน้าขัดกัน
+              <p className="inline-flex items-center gap-1.5 rounded-lg bg-primary-foreground/15 px-3 py-2 text-sm text-primary-foreground">
+                <span className="material-symbols-outlined text-lg">schedule</span>
+                ห้องประชุมจะเปิดเมื่อผู้จัดเริ่มการประชุม
+              </p>
+            )}
           </div>
         </Card>
       ) : (
         <Card className="card-shadow mb-5">
           <CardContent className="py-10 text-center">
-            <span className="material-symbols-outlined text-[40px] text-muted-foreground mb-2">event_busy</span>
+            <span className="material-symbols-outlined text-4xl text-muted-foreground mb-2">event_busy</span>
             <p className="text-sm font-medium">ยังไม่มีการประชุมที่จะมาถึง</p>
             <p className="text-xs text-muted-foreground mt-1">เมื่อมีผู้เชิญคุณเข้าประชุม จะแสดงที่นี่</p>
           </CardContent>

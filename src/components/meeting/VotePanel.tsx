@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { InlineError } from "@/components/layout/PageState";
 import { VoteCreateDialog } from "./VoteCreateDialog";
 import { VoteTopicCard } from "./VoteTopicCard";
 import { VoteResultsDialog } from "./VoteResultsDialog";
@@ -27,10 +28,24 @@ export function VotePanel({
   const [topics, setTopics] = useState<VoteTopic[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [resultsTopic, setResultsTopic] = useState<VoteTopic | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
-    listTopics(meetingId).then(setTopics);
-  }, [meetingId, voteRefreshToken]);
+    let cancelled = false;
+    listTopics(meetingId)
+      .then((list) => {
+        if (cancelled) return;
+        setTopics(list);
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [meetingId, voteRefreshToken, retryToken]);
 
   const applyTopic = useCallback((incoming: VoteTopic) => {
     setTopics((prev) => {
@@ -71,7 +86,13 @@ export function VotePanel({
           + สร้างโหวต
         </Button>
       )}
-      {topics.length === 0 && (
+      {status === "loading" && topics.length === 0 && (
+        <p role="status" className="text-xs text-muted-foreground text-center py-4">กำลังโหลดหัวข้อโหวต...</p>
+      )}
+      {status === "error" && (
+        <InlineError message="โหลดหัวข้อโหวตไม่สำเร็จ" onRetry={() => setRetryToken((n) => n + 1)} />
+      )}
+      {status === "ready" && topics.length === 0 && (
         <p className="text-xs text-muted-foreground text-center py-4">ยังไม่มีโหวตในการประชุมนี้</p>
       )}
       {topics

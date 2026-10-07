@@ -4,20 +4,25 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { committees } from "@/data";
+import { PageError, PageLoading } from "@/components/layout/PageState";
 import { useMeetings } from "@/context/MeetingContext";
 
 export default function CommitteesPage() {
-  const { meetings } = useMeetings();
+  const { meetings, loading: meetingsLoading, error: meetingsError, reload: reloadMeetings } = useMeetings();
+
+  // ระหว่างโหลดหรือโหลดไม่สำเร็จ ห้ามแสดงสถานะว่าง — ผู้ใช้จะเข้าใจว่าไม่มีการประชุม
+  if (meetingsLoading && meetings.length === 0) return <PageLoading />;
+  if (meetingsError && meetings.length === 0) return <PageError message={meetingsError} onRetry={() => void reloadMeetings()} />;
 
   return (
-    <div className="p-4 md:p-6 pb-16 max-w-[1280px] mx-auto">
+    <div className="p-4 md:p-6 pb-16 max-w-page mx-auto">
       <header className="mb-5 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
         <div>
           <h1 className="text-lg md:text-xl font-semibold mb-0.5">คณะทำงาน</h1>
           <p className="text-xs text-muted-foreground">รายการคณะทำงาน / คณะกรรมการทั้งหมด</p>
         </div>
         <Button asChild size="sm">
-          <Link href="/meetings/new"><span className="material-symbols-outlined text-[18px]">add</span>สร้างการประชุม</Link>
+          <Link href="/meetings/new"><span className="material-symbols-outlined text-lg">add</span>สร้างการประชุม</Link>
         </Button>
       </header>
 

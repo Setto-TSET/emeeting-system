@@ -34,12 +34,12 @@ export const systemRoleLabels: Record<SystemRole, string> = {
 };
 
 export const systemRoleColors: Record<SystemRole, string> = {
-  admin: "bg-rose-100 text-rose-700 border-rose-300",
-  executive: "bg-indigo-100 text-indigo-700 border-indigo-300",
-  secretary: "bg-blue-100 text-blue-700 border-blue-300",
-  staff: "bg-slate-100 text-slate-700 border-slate-300",
-  external: "bg-amber-100 text-amber-800 border-amber-300",
-  room: "bg-teal-100 text-teal-700 border-teal-300",
+  admin: "bg-destructive/15 text-destructive border-destructive/30",
+  executive: "bg-info/15 text-info border-info/30",
+  secretary: "bg-info/15 text-info border-info/30",
+  staff: "bg-muted text-foreground border-border",
+  external: "bg-warning/15 text-warning border-warning/30",
+  room: "bg-success/15 text-success border-success/30",
 };
 
 export const systemRoleDescriptions: Record<SystemRole, string> = {
@@ -163,14 +163,6 @@ export const users: AppUser[] = [
 // ลบออกเพราะเป็นต้นเหตุที่หน้าจองแสดงข้อมูลของผู้ใช้คนแรกเสมอไม่ว่าจะล็อกอินเป็นใคร
 // ต้องการผู้ใช้ปัจจุบันให้ใช้ useCurrentUser() จาก @/context/UserContext เท่านั้น
 
-// ===== Notifications =====
-export const notificationsData = [
-  { id: 1, type: "info", title: "แจ้งวาระการประชุม", message: "คุณได้รับแจ้งวาระการประชุมคณะกรรมการบริหาร ครั้งที่ 7/2569", time: "5 นาทีที่แล้ว", isRead: false },
-  { id: 2, type: "success", title: "จองห้องสำเร็จ", message: "จองห้องประชุม A-301 วันที่ 20 ก.ค. 2569 เวลา 13:00-15:00 น. สำเร็จ", time: "1 ชั่วโมงที่แล้ว", isRead: false },
-  { id: 3, type: "warning", title: "รอรับรองการประชุม", message: "การประชุมคณะทำงานฯ ครั้งที่ 3/2569 รอการรับรอง", time: "3 ชั่วโมงที่แล้ว", isRead: true },
-  { id: 4, type: "info", title: "การประชุมใกล้ถึง", message: "การประชุมทีมพัฒนาผลิตภัณฑ์ จะเริ่มในอีก 30 นาที", time: "เมื่อวานนี้", isRead: true },
-];
-
 // ===== Meeting Rooms =====
 export type Room = {
   id: string;
@@ -195,6 +187,13 @@ export const meetingRooms: Room[] = [
   { id: "R-808", name: "ห้องประชุม 808", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคารสำนักงาน", floor: "ชั้น 8", amenities: ["โปรเจกเตอร์", "ระบบเสียง", "Video Conference"], status: "available", accountId: "U-ROOM-808" },
   { id: "R-901", name: "ห้องประชุม 901", category: "medium", categoryLabel: "ห้องประชุมกลาง", capacity: 20, location: "อาคารสำนักงาน", floor: "ชั้น 9", amenities: ["โปรเจกเตอร์", "ระบบเสียง", "Video Conference"], status: "available", accountId: "U-ROOM-901" },
 ];
+
+/** ป้ายสถานะห้อง (สภาพห้อง ไม่ใช่การจอง) — ใช้ทุกหน้าที่แสดงสถานะห้อง */
+export const roomStatusInfo: Record<Room["status"], { label: string; color: string }> = {
+  available: { label: "พร้อมใช้งาน", color: "bg-success/15 text-success border-success/30" },
+  occupied: { label: "ไม่ว่าง", color: "bg-warning/15 text-warning border-warning/30" },
+  maintenance: { label: "ปิดปรับปรุง", color: "bg-muted text-muted-foreground border-border" },
+};
 
 // ===== Room Bookings =====
 export type Booking = {
@@ -235,11 +234,11 @@ export const meetingStatusLabels: Record<MeetingStatus, string> = {
 };
 
 export const meetingStatusColors: Record<MeetingStatus, string> = {
-  prepare: "bg-slate-100 text-slate-700 border-slate-300",
-  notified: "bg-blue-100 text-blue-700 border-blue-300",
-  in_progress: "bg-amber-100 text-amber-800 border-amber-300",
-  waiting_endorse: "bg-purple-100 text-purple-700 border-purple-300",
-  endorsed: "bg-green-100 text-green-700 border-green-300",
+  prepare: "bg-muted text-foreground border-border",
+  notified: "bg-info/15 text-info border-info/30",
+  in_progress: "bg-warning/15 text-warning border-warning/30",
+  waiting_endorse: "bg-info/15 text-info border-info/30",
+  endorsed: "bg-success/15 text-success border-success/30",
 };
 
 export type MeetingParticipant = {
@@ -270,10 +269,10 @@ export const fileVisibilityLabels: Record<FileVisibility, string> = {
 };
 
 export const fileVisibilityColors: Record<FileVisibility, string> = {
-  public: "bg-green-100 text-green-700 border-green-300",
-  committee: "bg-blue-100 text-blue-700 border-blue-300",
-  participants: "bg-amber-100 text-amber-800 border-amber-300",
-  restricted: "bg-rose-100 text-rose-700 border-rose-300",
+  public: "bg-success/15 text-success border-success/30",
+  committee: "bg-info/15 text-info border-info/30",
+  participants: "bg-warning/15 text-warning border-warning/30",
+  restricted: "bg-destructive/15 text-destructive border-destructive/30",
 };
 
 export const fileVisibilityIcons: Record<FileVisibility, string> = {
@@ -313,7 +312,7 @@ export type MeetingAgendaItem = {
   title: string;
   detail?: string;
   secretGroupId?: string | null;
-  comments: { by: string; text: string; time: string }[];
+  comments: { by: string; byId?: string; text: string; time: string }[];
 };
 
 export type ZoomRoomDevice = {
@@ -362,6 +361,8 @@ export type Meeting = {
    * ผู้จัดเปิดสวิตช์นี้เมื่อมีวิทยากร/ผู้ทรงคุณวุฒิภายนอกที่ไม่ได้อยู่ในระบบ
    */
   allowGuestJoin?: boolean;
+  /** ผู้ที่กดยอมรับข้อตกลงรักษาความลับก่อนเข้าห้อง — server ส่งมาเฉพาะผู้จัด */
+  confidentialityAcks?: { userId: string; name: string; at: number }[];
   /**
    * กุญแจห้องประชุมที่เดาไม่ได้ — สำหรับเครื่องยนต์ที่ฝังในเว็บ (ZegoCloud)
    * ห้ามใช้ meeting.id เป็นชื่อห้องตรงๆ ไม่งั้นใครเดา id ได้ก็เข้าห้องลับได้
@@ -393,6 +394,8 @@ export type Meeting = {
 
 export type MeetingChatMessage = {
   id: string;
+  /** id ผู้ส่งจาก JWT — server เติมให้ ใช้แยกว่าข้อความไหนเป็นของเรา (ชื่อซ้ำกันได้) */
+  senderId?: string;
   sender: string;
   text: string;
   time: string;
@@ -482,7 +485,8 @@ export function canViewFile(file: MeetingFile, user: AppUser, meeting: Meeting):
     (p) => p.userId !== null && p.userId === user.id
   );
   const isOrganizer = meeting.organizerId === user.id;
-  const isInCommittee = user.committeeIds.includes(meeting.committeeId);
+  // ไม่มีกฎที่อิง "คณะทำงาน" — server ไม่มีข้อมูลคณะของผู้ใช้ จึงปฏิเสธไฟล์ที่หน้านี้เคยบอกว่าเปิดได้
+  // กฎชุดนี้ต้องตรงกับ canViewFile ใน backend/src/services/meetingAccess.ts ทุกข้อ
 
   // 1. admin เห็นทุกอย่าง
   if (user.systemRole === "admin") return true;
@@ -505,25 +509,12 @@ export function canViewFile(file: MeetingFile, user: AppUser, meeting: Meeting):
       );
       if (myParticipant && file.allowedPositions.includes(myParticipant.position)) return true;
     }
-    if (isOrganizer) return true;
-    // ผู้บริหารที่อยู่ในคณะเดียวกันเห็นได้ (เดิมเขียนคอมเมนต์ไว้แต่ไม่ได้ทำ)
-    if (user.systemRole === "executive" && isInCommittee) return true;
-    return false;
+    return isOrganizer;
   }
 
-  // 4. participants — ต้องเป็นผู้เข้าร่วมประชุมนั้น
-  if (file.visibility === "participants") {
-    if (isParticipantOfMeeting) return true;
-    if (isOrganizer) return true;
-    return false;
-  }
-
-  // 5. committee — ต้องอยู่ในคณะทำงานเดียวกัน
-  if (file.visibility === "committee") {
-    if (isInCommittee) return true;
-    if (isParticipantOfMeeting) return true;
-    if (isOrganizer) return true;
-    return false;
+  // 4. participants / committee — ผู้เข้าร่วมประชุมนั้นหรือผู้จัด
+  if (file.visibility === "participants" || file.visibility === "committee") {
+    return isParticipantOfMeeting || isOrganizer;
   }
 
   return false;

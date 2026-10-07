@@ -12,6 +12,8 @@ export type RoomSnapshot = {
   raisedHands: RaisedHandDto[];
   transcript: TranscriptSegment[];
   docShare: DocShareDto | null;
+  /** true = ดึงไม่สำเร็จ ค่าข้างบนเป็นค่าว่างเพื่อให้ห้องยังเปิดได้ — ผู้เรียกต้องบอกผู้ใช้ */
+  failed?: boolean;
 };
 
 export const EMPTY_SNAPSHOT: RoomSnapshot = {
@@ -31,6 +33,7 @@ export async function fetchRoomSnapshot(meetingId: string): Promise<RoomSnapshot
       docShare: state.docShare ?? null,
     };
   } catch {
-    return EMPTY_SNAPSHOT;
+    // ห้องต้องเปิดได้แม้ backend สะดุด แต่ห้ามแกล้งทำเป็นว่า "ไม่มีใครยกมือ/ไม่มีโหวต" — ส่งธงไปด้วย
+    return { ...EMPTY_SNAPSHOT, failed: true };
   }
 }

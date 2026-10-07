@@ -9,12 +9,8 @@ import type { VoteTopic } from "./types";
 
 type RoomStateResponse = { voteTopics: VoteTopic[] };
 
+/** โยน error ต่อให้ผู้เรียก — เดิมกลืนแล้วคืน [] ทำให้หน้าโหวตขึ้นว่า "ยังไม่มีโหวต" ทั้งที่โหลดไม่สำเร็จ */
 export async function listTopics(meetingId: string): Promise<VoteTopic[]> {
-  try {
-    const state = await apiFetch<RoomStateResponse>(`/api/rooms/${encodeURIComponent(meetingId)}/state`);
-    return state.voteTopics ?? [];
-  } catch {
-    // ห้องต้องเปิดได้แม้ backend ล่ม — ผู้ใช้จะเห็นรายการว่างแทนที่จะเจอหน้าพัง
-    return [];
-  }
+  const state = await apiFetch<RoomStateResponse>(`/api/rooms/${encodeURIComponent(meetingId)}/state`);
+  return state.voteTopics ?? [];
 }

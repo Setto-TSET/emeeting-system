@@ -10,10 +10,11 @@ import { useCurrentUser } from "@/context/UserContext";
 import { meetingStatusLabels, meetingStatusColors, meetingRooms } from "@/data";
 import { today, currentClockTime } from "@/lib/clock";
 import { can } from "@/lib/authz";
+import { PageError, PageLoading } from "@/components/layout/PageState";
 
 export default function KioskPage() {
   const router = useRouter();
-  const { meetings } = useMeetings();
+  const { meetings, loading: meetingsLoading, error: meetingsError, reload: reloadMeetings } = useMeetings();
   const { currentUser } = useCurrentUser();
   const [clockTime, setClockTime] = useState(currentClockTime());
 
@@ -21,6 +22,13 @@ export default function KioskPage() {
     const interval = setInterval(() => setClockTime(currentClockTime()), 30_000);
     return () => clearInterval(interval);
   }, []);
+
+  // จอหน้าห้องเปิดค้างทั้งวันโดยไม่มีใครกดรีเฟรช — ดึงรายการใหม่ทุกนาที ทั้งเพื่อเห็นประชุมที่เพิ่งเปิด
+  // และเพื่อหายจากหน้าข้อผิดพลาดเองเมื่อ server กลับมา
+  useEffect(() => {
+    const interval = setInterval(() => void reloadMeetings(), 60_000);
+    return () => clearInterval(interval);
+  }, [reloadMeetings]);
 
   const room = meetingRooms.find((r) => r.id === currentUser.roomId);
   const roomName = room?.name ?? currentUser.name;
@@ -38,13 +46,17 @@ export default function KioskPage() {
   const canJoin = (m: typeof meetings[0]) =>
     m.status === "in_progress" || m.status === "notified";
 
+  // ระหว่างโหลดหรือโหลดไม่สำเร็จ ห้ามแสดงสถานะว่าง — ผู้ใช้จะเข้าใจว่าไม่มีการประชุม
+  if (meetingsLoading && meetings.length === 0) return <PageLoading />;
+  if (meetingsError && meetings.length === 0) return <PageError message={meetingsError} onRetry={() => void reloadMeetings()} />;
+
   return (
-    <div className="min-h-screen bg-background p-6 md:p-10">
+    <div className="min-h-dvh bg-background p-6 md:p-10">
       {/* Header — ชื่อห้อง + นาฬิกา */}
       <header className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-teal-100">
-            <span className="material-symbols-outlined text-[32px] text-teal-700">tv</span>
+          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
+            <span className="material-symbols-outlined text-3xl text-primary">tv</span>
           </div>
           <div>
             <h1 className="text-2xl md:text-3xl font-bold">{roomName}</h1>
@@ -71,12 +83,12 @@ export default function KioskPage() {
         <section className="mb-8">
           <div className="flex items-center gap-2 mb-3">
             <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive/70 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-destructive" />
             </span>
-            <h2 className="text-lg font-semibold text-red-600">กำลังประชุม</h2>
+            <h2 className="text-lg font-semibold text-destructive">กำลังประชุม</h2>
           </div>
-          <Card className="border-2 border-red-300 bg-red-50/50">
+          <Card className="border-2 border-destructive/30 bg-destructive/10">
             <CardContent className="p-6">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
@@ -85,15 +97,15 @@ export default function KioskPage() {
                   </h3>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[18px]">schedule</span>
+                      <span className="material-symbols-outlined text-lg">schedule</span>
                       {currentMeeting.startTime} – {currentMeeting.endTime}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[18px]">groups</span>
+                      <span className="material-symbols-outlined text-lg">groups</span>
                       {currentMeeting.participants.length} คน
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[18px]">person</span>
+                      <span className="material-symbols-outlined text-lg">person</span>
                       {currentMeeting.organizer}
                     </span>
                   </div>
@@ -106,7 +118,7 @@ export default function KioskPage() {
                 </div>
                 <Button
                   size="lg"
-                  className="text-base px-8 py-6 bg-red-600 hover:bg-red-700 flex-shrink-0"
+                  className="text-base px-8 py-6 bg-destructive hover:bg-destructive flex-shrink-0"
                   onClick={() => router.push(`/live/${currentMeeting.id}`)}
                 >
                   <span className="material-symbols-outlined mr-2">videocam</span>
@@ -122,7 +134,7 @@ export default function KioskPage() {
       {upcomingMeetings.length > 0 && (
         <section className="mb-8">
           <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-            <span className="material-symbols-outlined text-[22px]">event</span>
+            <span className="material-symbols-outlined text-2xl">event</span>
             ประชุมวันนี้ ({upcomingMeetings.length})
           </h2>
           <div className="grid gap-3">
@@ -156,7 +168,7 @@ export default function KioskPage() {
                           size="sm"
                           onClick={() => router.push(`/live/${m.id}`)}
                         >
-                          <span className="material-symbols-outlined text-[16px] mr-1">
+                          <span className="material-symbols-outlined text-base mr-1">
                             videocam
                           </span>
                           เข้าร่วม
@@ -197,8 +209,8 @@ export default function KioskPage() {
 
       {/* ไม่มีประชุมวันนี้ */}
       {todayMeetings.length === 0 && (
-        <div className="flex flex-col items-center justify-center min-h-[40vh] text-center">
-          <span className="material-symbols-outlined text-[64px] text-muted-foreground/40 mb-4">
+        <div className="flex flex-col items-center justify-center min-h-[40dvh] text-center">
+          <span className="material-symbols-outlined text-6xl text-muted-foreground/40 mb-4">
             event_busy
           </span>
           <p className="text-xl font-medium text-muted-foreground">

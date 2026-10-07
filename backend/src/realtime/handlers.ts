@@ -11,8 +11,10 @@ import { send, broadcast } from './server';
 import * as votes from '../repositories/votes';
 import * as hands from '../repositories/handRaises';
 import * as docShare from '../repositories/docShare';
+import { appendChatMessage, getMeeting } from '../repositories/meetings';
+import { clientsIn } from './rooms';
 
-const MANAGER_ROLES = new Set(['admin', 'secretary', 'executive']);
+const MAX_CHAT_LENGTH = 1000;
 
 function envelope(client: RoomClient, type: string, payload: unknown) {
   return { type, senderId: client.userId, senderName: client.userName, timestamp: Date.now(), payload };
@@ -32,7 +34,7 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
 
   switch (type) {
     case 'vote_create': {
-      if (!MANAGER_ROLES.has(client.role)) return fail(client, 'ไม่มีสิทธิ์สร้างโหวต');
+      if (!client.canManage) return fail(client, 'ไม่มีสิทธิ์สร้างโหวต');
       const title = typeof data.title === 'string' ? data.title.trim() : '';
       const rawOptions = Array.isArray(data.options) ? data.options : [];
       const options = rawOptions
@@ -59,6 +61,9 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
       const topicId = typeof data.topicId === 'string' ? data.topicId : '';
       const optionId = typeof data.optionId === 'string' ? data.optionId : '';
       if (!topicId || !optionId) return fail(client, 'ข้อมูลโหวตไม่ครบ');
+      // หัวข้อต้องเป็นของห้องที่ socket นี้ต่ออยู่ ไม่งั้นคนจากห้องอื่นที่รู้ topicId ลงคะแนนข้ามห้องได้
+      const target = await votes.getTopic(topicId);
+      if (!target || target.meetingId !== client.meetingId) return fail(client, 'ไม่พบหัวข้อโหวตนี้');
 
       const topic = await votes.castVote(topicId, client.userId, client.userName, optionId);
       if (!topic) return fail(client, 'โหวตไม่สำเร็จ — หัวข้อปิดแล้วหรือไม่มีตัวเลือกนี้');
@@ -71,8 +76,8 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
       if (!topicId) return fail(client, 'ไม่ระบุหัวข้อ');
 
       const existing = await votes.getTopic(topicId);
-      if (!existing) return fail(client, 'ไม่พบหัวข้อโหวตนี้');
-      if (existing.createdBy !== client.userId && !MANAGER_ROLES.has(client.role)) {
+      if (!existing || existing.meetingId !== client.meetingId) return fail(client, 'ไม่พบหัวข้อโหวตนี้');
+      if (existing.createdBy !== client.userId && !client.canManage) {
         return fail(client, 'ไม่มีสิทธิ์ปิดโหวตนี้');
       }
 
@@ -100,7 +105,7 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
       // ประธาน/เลขาเอามือคนอื่นลงได้ คนทั่วไปลงได้เฉพาะของตัวเอง
       const targetUserId = typeof data.targetUserId === 'string' ? data.targetUserId : '';
       if (!targetUserId) return fail(client, 'ไม่ระบุผู้ใช้');
-      if (targetUserId !== client.userId && !MANAGER_ROLES.has(client.role)) {
+      if (targetUserId !== client.userId && !client.canManage) {
         return fail(client, 'ไม่มีสิทธิ์เอามือผู้อื่นลง');
       }
 
@@ -125,7 +130,7 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
       // ใครก็เริ่มแชร์ได้, มีคนแชร์อยู่แล้วแต่เป็นตัวเอง — เปลี่ยนไฟล์ได้ (ไปเอกสารถัดไป),
       // มีคนอื่นแชร์อยู่ — เริ่มแชร์ทับไม่ได้เว้นแต่เป็น manager ห้ามแยกกฎนี้ออกจากกันอีก
       const current = await docShare.getShare(client.meetingId);
-      if (current && current.sharedBy !== client.userId && !MANAGER_ROLES.has(client.role)) {
+      if (current && current.sharedBy !== client.userId && !client.canManage) {
         return fail(client, `ไม่มีสิทธิ์เริ่มแชร์ทับ — ${current.sharedName} กำลังแชร์เอกสารอยู่`);
       }
 
@@ -146,7 +151,7 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
 
       const current = await docShare.getShare(client.meetingId);
       if (!current) return fail(client, 'ยังไม่มีเอกสารที่แชร์อยู่');
-      if (current.sharedBy !== client.userId && !MANAGER_ROLES.has(client.role)) {
+      if (current.sharedBy !== client.userId && !client.canManage) {
         return fail(client, 'ไม่มีสิทธิ์เปลี่ยนหน้าเอกสารของผู้อื่น');
       }
 
@@ -158,7 +163,7 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
     case 'doc_share_stop': {
       const current = await docShare.getShare(client.meetingId);
       if (!current) return;
-      if (current.sharedBy !== client.userId && !MANAGER_ROLES.has(client.role)) {
+      if (current.sharedBy !== client.userId && !client.canManage) {
         return fail(client, 'ไม่มีสิทธิ์หยุดแชร์ของผู้อื่น');
       }
 
@@ -166,10 +171,55 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
       return broadcast(client.meetingId, envelope(client, 'doc_share_state', { share: null }));
     }
 
+    case 'chat_send': {
+      const text = typeof data.text === 'string' ? data.text.trim() : '';
+      if (!text) return;
+      if (text.length > MAX_CHAT_LENGTH) return fail(client, `ข้อความยาวเกิน ${MAX_CHAT_LENGTH} ตัวอักษร`);
+
+      // ผู้ส่งและเวลามาจาก server — client ปลอมชื่อหรือย้อนเวลาข้อความไม่ได้
+      const message = {
+        id: `msg-${Date.now()}-${randomUUID().slice(0, 8)}`,
+        senderId: client.userId,
+        sender: client.userName,
+        text,
+        time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }),
+      };
+      await appendChatMessage(client.meetingId, message);
+      return broadcast(client.meetingId, envelope(client, 'chat_message', { message }));
+    }
+
+    // ผู้จัดเปลี่ยนวาระที่กำลังพูดหรือจบการประชุมผ่าน REST แล้ว ขอให้ server ประกาศสถานะล่าสุดจาก DB
+    // ใครส่งก็ได้ เพราะ server อ่านของจริงเอง ไม่เชื่อค่าใน payload
+    case 'meeting_refresh':
+      return broadcastRoomState(client.meetingId);
+
     // subtitle_text ไม่รับจาก client อีกแล้ว — คำบรรยายมาจาก ASR ฝั่ง server (audio.ts) เท่านั้น
     // ถ้ารับไว้ ใครในห้องก็พิมพ์ "มติ" ปลอมลง transcript ที่ใช้ทำร่างรายงานได้
     default:
       // สัญญาณที่ไม่รู้จัก — ปล่อยผ่าน ไม่ปิด socket เพื่อให้ deploy คนละเวอร์ชันอยู่ร่วมกันได้
       return;
   }
+}
+
+/**
+ * ประกาศสถานะห้องจาก DB + คนที่ต่ออยู่จริงให้ทุกคน — เรียกตอนมีคนเข้า/ออก และเมื่อผู้จัดขอ refresh
+ * รายชื่อ "ในสาย" มาจาก socket ที่ต่ออยู่ ไม่ต้องให้ผู้เข้าร่วมเขียน present ลงการประชุมเอง (ซึ่งโดน 403)
+ */
+export async function broadcastRoomState(meetingId: string): Promise<void> {
+  // คนสุดท้ายออกแล้วไม่มีใครให้แจ้ง — ไม่ต้อง query DB
+  if (clientsIn(meetingId).length === 0) return;
+  const meeting = await getMeeting(meetingId);
+  if (!meeting) return;
+  const connectedUserIds = Array.from(new Set(clientsIn(meetingId).map((c) => c.userId)));
+  broadcast(meetingId, {
+    type: 'room_state',
+    senderId: 'server',
+    senderName: 'server',
+    timestamp: Date.now(),
+    payload: {
+      status: meeting.status ?? null,
+      activeAgendaId: (meeting.activeAgendaId as string | null | undefined) ?? null,
+      connectedUserIds,
+    },
+  });
 }

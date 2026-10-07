@@ -35,20 +35,14 @@ export async function POST(request: NextRequest) {
       process.env.ZEGO_SERVER_URL?.trim() ||
       `wss://webliveroom${appId}-api.coolzcloud.com/ws`;
 
-    if (!appId || !secret) {
-      return NextResponse.json(
-        {
-          error:
-            "ยังไม่ได้ตั้งค่า ZEGO_APP_ID / ZEGO_SERVER_SECRET ใน .env.local — ระบบประชุมจะทำงานในโหมดสาธิตเท่านั้น",
-        },
-        { status: 500 }
+    // รายละเอียดการตั้งค่าเขียนลง log ของ server เท่านั้น — ผู้ใช้ไม่ต้องเห็นชื่อตัวแปรหรือไฟล์ config
+    if (!appId || !secret || secret.length !== 32) {
+      console.error(
+        "[/api/video/token] ZEGO_APP_ID / ZEGO_SERVER_SECRET ไม่ได้ตั้งหรือรูปแบบผิด (secret ต้องยาว 32 ตัวอักษร)"
       );
-    }
-
-    if (secret.length !== 32) {
       return NextResponse.json(
-        { error: "ZEGO_SERVER_SECRET ต้องยาว 32 ตัวอักษร (ค่าปัจจุบันยาว " + secret.length + ")" },
-        { status: 500 }
+        { error: "ระบบวิดีโอยังไม่พร้อมใช้งาน — กรุณาติดต่อผู้ดูแลระบบ" },
+        { status: 503 }
       );
     }
 
@@ -91,15 +85,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ token, appId, serverUrl, expiresAt, roomId, userId });
   } catch (error) {
     console.error("[/api/video/token] Token generation failed:", error);
-    const detail =
-      error instanceof Error
-        ? error.message
-        : typeof error === "object" && error !== null && "errorMessage" in error
-        ? String((error as { errorMessage: unknown }).errorMessage)
-        : "unknown error";
-    return NextResponse.json(
-      { error: `สร้าง token ไม่สำเร็จ: ${detail}` },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "สร้างสิทธิ์เข้าห้องวิดีโอไม่สำเร็จ — ลองใหม่อีกครั้ง" }, { status: 500 });
   }
 }
