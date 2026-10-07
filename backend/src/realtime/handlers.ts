@@ -206,6 +206,8 @@ export async function handleSignal(client: RoomClient, message: unknown): Promis
  * รายชื่อ "ในสาย" มาจาก socket ที่ต่ออยู่ ไม่ต้องให้ผู้เข้าร่วมเขียน present ลงการประชุมเอง (ซึ่งโดน 403)
  */
 export async function broadcastRoomState(meetingId: string): Promise<void> {
+  // คนสุดท้ายออกแล้วไม่มีใครให้แจ้ง — ไม่ต้อง query DB
+  if (clientsIn(meetingId).length === 0) return;
   const meeting = await getMeeting(meetingId);
   if (!meeting) return;
   const connectedUserIds = Array.from(new Set(clientsIn(meetingId).map((c) => c.userId)));

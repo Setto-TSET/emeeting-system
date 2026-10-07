@@ -74,6 +74,8 @@ describe('audio frames', () => {
     // แล้ว jest ค้างไม่จบ (handlers.test ไม่เจอเพราะทุกเคสที่นั่นปิด socket ครบก่อน assert สุดท้าย)
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    // event 'close' ฝั่ง server มาช้ากว่าฝั่งเทสต์ แล้วยิง room_state ไป query DB — รอให้จบก่อนปิด pool
+    await new Promise((resolve) => setTimeout(resolve, 200));
     await close();
   });
 
