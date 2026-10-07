@@ -73,7 +73,7 @@ function LoginForm() {
             transition={{ duration: 0.7, delay: 0.2 }}
           >
             <div className="w-24 h-24 rounded-full bg-card p-2 mb-6 shadow-lg flex items-center justify-center">
-              <Image src="/logo.png" alt="ตราสภาเภสัชกรรม" width={56} height={104} className="h-20 w-auto" priority />
+              <Image src="/logo.png" alt="ตราสภาเภสัชกรรม" width={129} height={240} className="h-20 w-auto" priority />
             </div>
             <h1 className="text-4xl font-bold mb-4 leading-tight text-balance">
               ระบบบริหารการประชุม<br />และจองห้องประชุม
@@ -111,7 +111,7 @@ function LoginForm() {
           className="w-full max-w-sm"
         >
           <div className="md:hidden flex flex-col items-center mb-8 text-center">
-            <Image src="/logo.png" alt="ตราสภาเภสัชกรรม" width={48} height={89} className="h-20 w-auto mb-4" priority />
+            <Image src="/logo.png" alt="ตราสภาเภสัชกรรม" width={129} height={240} className="h-20 w-auto mb-4" priority />
             <h1 className="text-xl font-bold text-primary">e-Meeting สภาเภสัชกรรม</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               จองห้อง จัดวาระ ประชุมออนไลน์ และจัดทำรายงานการประชุมในที่เดียว

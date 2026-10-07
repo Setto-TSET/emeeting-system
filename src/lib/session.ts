@@ -26,7 +26,11 @@ export const DEFAULT_EMAIL_DOMAIN = "e-office.cloud";
 
 // ponytail: ช่วงทดสอบ feasibility พิมพ์ชื่อบทบาท (admin, secretary, staff, ...) แทนอีเมลได้
 // จับคู่กับบัญชีแรกของบทบาทนั้นในข้อมูลทดสอบ — ลบทิ้งพร้อมบัญชีทดสอบก่อนใช้งานจริง
-const ROLE_LOGIN = new Map<string, string>();
+const ROLE_LOGIN = new Map<string, string>([
+  // ชื่อที่แจกให้ผู้ทดสอบ — admin, external, room-801 ได้จากกฎด้านล่างอยู่แล้ว
+  ["organizer", "somchai.j@e-office.cloud"], // ผู้จัดการประชุม MT-2569-010
+  ["member", "decha@e-office.cloud"], // ผู้เข้าร่วมประชุมทั่วไป
+]);
 for (const u of users) if (!ROLE_LOGIN.has(u.systemRole)) ROLE_LOGIN.set(u.systemRole, u.email);
 
 /** แปลงสิ่งที่พิมพ์ในช่องล็อกอินเป็นอีเมล: ชื่อบทบาท → บัญชีของบทบาทนั้น, ไม่มี @ → เติมโดเมน */
