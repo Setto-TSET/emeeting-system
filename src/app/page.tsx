@@ -120,7 +120,7 @@ function LoginForm() {
 
           <div className="mb-8">
             <h2 className="text-2xl font-bold text-foreground mb-2">เข้าสู่ระบบ</h2>
-            <p className="text-sm text-muted-foreground">ใช้อีเมลและรหัสผ่านที่ได้รับจากผู้ดูแลระบบ</p>
+            <p className="text-sm text-muted-foreground">ใช้ชื่อบทบาท ชื่อผู้ใช้ หรืออีเมล และรหัสผ่านที่ได้รับจากผู้ดูแลระบบ</p>
           </div>
 
           {notice && (
@@ -132,7 +132,7 @@ function LoginForm() {
           <form className="space-y-5" onSubmit={handleLogin}>
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-foreground" htmlFor="email">
-                  อีเมล
+                  ชื่อผู้ใช้
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-muted-foreground">
@@ -140,11 +140,14 @@ function LoginForm() {
                   </span>
                   <Input
                     id="email"
-                    type="email"
+                    // type="text" ไม่ใช่ email — เบราว์เซอร์ไม่ยอม submit ค่าที่ไม่มี @
+                    type="text"
+                    autoCapitalize="none"
+                    spellCheck={false}
                     autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="อีเมลของคุณ"
+                    placeholder="เช่น secretary หรือ malee.r"
                     className="pl-10 h-11 bg-muted/30 focus-visible:bg-transparent transition-colors"
                   />
                 </div>

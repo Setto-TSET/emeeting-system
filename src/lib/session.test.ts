@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { signIn } from './session';
+import { signIn, loginEmail } from './session';
 import { getAccessToken, setAccessToken } from '@/services/api/client';
 
 describe('signIn', () => {
@@ -50,6 +50,26 @@ describe('signIn', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
     expect(getAccessToken()).toBeNull();
+  });
+
+  it('adds the default domain when only a username is typed, keeps full emails as-is', async () => {
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ error: 'x' }), { status: 401 }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const sentEmail = (call: number) => JSON.parse((fetchSpy.mock.calls[call] as unknown as [string, RequestInit])[1].body as string).email;
+
+    await signIn('  Malee.R ', 'pw');
+    await signIn('guest@external.org', 'pw');
+
+    expect(sentEmail(0)).toBe('malee.r@e-office.cloud');
+    expect(sentEmail(1)).toBe('guest@external.org');
+  });
+
+  it('maps a role name to the first test account with that role', () => {
+    expect(loginEmail('Secretary')).toBe('malee.r@e-office.cloud');
+    expect(loginEmail('staff')).toBe('somchai.j@e-office.cloud');
+    expect(loginEmail('external')).toBe('expert@external.org');
+    expect(loginEmail('room')).toBe('room-801@e-office.cloud');
+    expect(loginEmail('decha')).toBe('decha@e-office.cloud');
   });
 
   it('rejects an empty email without calling the API', async () => {
