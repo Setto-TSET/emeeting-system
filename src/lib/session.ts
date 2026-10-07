@@ -21,8 +21,23 @@ type LoginResponse = {
  * เข้าสู่ระบบผ่าน backend จริง — ตรวจรหัสผ่านที่ server ด้วย bcrypt
  * แล้วเก็บ JWT ไว้ให้ทุก request และ WebSocket ใช้ต่อ
  */
+/** โดเมนของบัญชีในระบบ — พิมพ์แค่ชื่อหน้า @ ก็ล็อกอินได้ ส่วนบัญชีโดเมนอื่นพิมพ์อีเมลเต็มเหมือนเดิม */
+export const DEFAULT_EMAIL_DOMAIN = "e-office.cloud";
+
+// ponytail: ช่วงทดสอบ feasibility พิมพ์ชื่อบทบาท (admin, secretary, staff, ...) แทนอีเมลได้
+// จับคู่กับบัญชีแรกของบทบาทนั้นในข้อมูลทดสอบ — ลบทิ้งพร้อมบัญชีทดสอบก่อนใช้งานจริง
+const ROLE_LOGIN = new Map<string, string>();
+for (const u of users) if (!ROLE_LOGIN.has(u.systemRole)) ROLE_LOGIN.set(u.systemRole, u.email);
+
+/** แปลงสิ่งที่พิมพ์ในช่องล็อกอินเป็นอีเมล: ชื่อบทบาท → บัญชีของบทบาทนั้น, ไม่มี @ → เติมโดเมน */
+export function loginEmail(input: string): string {
+  const trimmed = input.trim().toLowerCase();
+  if (!trimmed || trimmed.includes("@")) return trimmed;
+  return ROLE_LOGIN.get(trimmed) ?? `${trimmed}@${DEFAULT_EMAIL_DOMAIN}`;
+}
+
 export async function signIn(email: string, password: string): Promise<SignInResult> {
-  const normalized = email.trim().toLowerCase();
+  const normalized = loginEmail(email);
   if (!normalized) return { ok: false, reason: "กรุณากรอกอีเมล" };
   if (!password) return { ok: false, reason: "กรุณากรอกรหัสผ่าน" };
 
