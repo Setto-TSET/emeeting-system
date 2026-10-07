@@ -46,8 +46,10 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
 export function errorHandler(err: any, req: Request, res: Response, next: NextFunction) {
   console.error('❌ Error:', err);
 
-  const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
+  // body-parser ใส่ status (413 ก้อนใหญ่, 400 JSON พัง) ส่วนโค้ดเราใส่ statusCode
+  const statusCode = err.statusCode || err.status || 500;
+  // 5xx คือ error ภายใน (DB ล่ม, bug) — ข้อความอาจมี host/SQL/path ห้ามส่งให้ client ดูได้ใน log แทน
+  const message = statusCode >= 500 ? 'Internal Server Error' : err.message || 'Bad Request';
 
   res.status(statusCode).json({
     error: message,
