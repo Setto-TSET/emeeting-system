@@ -74,7 +74,7 @@ export default function MeetingDetailPage({ params }: { params: Promise<{ id: st
 
 function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const { currentUser } = useCurrentUser();
-  const { updateMeeting, removeMeeting, addMeetingFile, addMeetingComment } = useMeetings();
+  const { updateMeeting, removeMeeting, addMeetingFile, addMeetingComment, reload } = useMeetings();
   const router = useRouter();
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -806,6 +806,49 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
               </div>
             </CardContent>
           </Card>
+
+          {/* ผู้ยอมรับข้อตกลงรักษาความลับ — server ส่ง confidentialityAcks มาเฉพาะผู้จัด */}
+          {canEdit && (
+            <Card className="card-shadow">
+              <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm">ผู้ยอมรับข้อตกลงรักษาความลับ ({meeting.confidentialityAcks?.length ?? 0})</CardTitle>
+                  <CardDescription className="text-xs">บันทึกทุกครั้งที่กดยอมรับก่อนเข้าห้องประชุม รวมบุคคลภายนอก</CardDescription>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => void reload()}>
+                  <span className={iconSm}>refresh</span> โหลดใหม่
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {meeting.confidentialityAcks?.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-xs text-muted-foreground">
+                          <th className="text-left py-2 px-2">ชื่อ</th>
+                          <th className="text-left py-2 px-2">ประเภท</th>
+                          <th className="text-left py-2 px-2">เวลาที่ยอมรับ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...meeting.confidentialityAcks].reverse().map((a) => (
+                          <tr key={`${a.userId}-${a.at}`} className="border-b last:border-b-0">
+                            <td className="py-2 px-2 font-medium">{a.name}</td>
+                            <td className="py-2 px-2 text-xs">
+                              {a.userId.startsWith("guest-") ? <span className="text-warning">ภายนอก</span> : "ในระบบ"}
+                            </td>
+                            <td className="py-2 px-2 text-xs text-muted-foreground">{new Date(a.at).toLocaleString("th-TH")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">ยังไม่มีผู้กดยอมรับ</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* FILES */}
