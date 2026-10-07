@@ -5,7 +5,7 @@
 | ส่วน | ที่อยู่ | ค่าใช้จ่าย |
 |---|---|---|
 | frontend (Next.js) | Vercel | ฟรี |
-| backend (Express + WebSocket) | Render — Docker จาก `backend/Dockerfile` | ฟรี |
+| backend (Express + WebSocket) | Render — Node จากโฟลเดอร์ `backend/` | ฟรี |
 | MySQL 8 | Aiven free | ฟรี |
 
 ## ข้อจำกัดของ free tier ที่ต้องรู้ก่อน
@@ -55,6 +55,19 @@
 
 1. สมัคร https://render.com ด้วยบัญชี GitHub แล้วให้สิทธิ์เข้าถึง repo `Setto-TSET/emeeting-system`
 2. **New → Blueprint** → เลือก repo → Render อ่าน `render.yaml` ที่รากอัตโนมัติ
+
+   ถ้าสร้างเป็น **New → Web Service** เองแทน Blueprint ค่าใน `render.yaml` จะไม่ถูกใช้
+   ต้องตั้งใน Settings → Build & Deploy ให้ตรงตารางนี้ (service `emeeting-backend` ปัจจุบันสร้างแบบนี้):
+
+   | ช่อง | ค่า |
+   |---|---|
+   | Branch | `master` |
+   | Root Directory | `backend` — **ห้ามว่าง** ว่างแล้ว Render build frontend (`next build`) แทน API แล้ว deploy Timed Out |
+   | Build Command | `npm ci --include=dev && npm run build` |
+   | Start Command | `npm start` |
+   | Health Check Path | `/health` |
+
+   และต้องเพิ่ม `JWT_SECRET` เอง (สุ่มยาว 32 ตัวขึ้นไป) เพราะไม่มี Blueprint สุ่มให้
 3. Render จะถามค่าที่ตั้ง `sync: false` ไว้ กรอกตอนนี้:
 
    | ตัวแปร | ค่า |
@@ -120,7 +133,8 @@ Vercel ตรวจเจอ repo นี้เป็น monorepo เลยสร
 
 ## 5. อัปเดตหลังจากนี้
 
-`autoDeploy: true` — push เข้า branch หลักแล้ว Render กับ Vercel build ใหม่ให้เอง
+`autoDeploy: true` — push เข้า `master` แล้ว Render กับ Vercel build ใหม่ให้เอง
+ถ้า merge แล้ว API ยังเป็นโค้ดเก่า ให้เช็ก Branch ของ service บน Render ก่อน (เคยผูกกับ branch งานเก่าค้างไว้)
 ถ้าแก้ `schema.sql` ต้องรัน migrate เองอีกรอบจากเครื่องตัวเอง (ชี้ `DATABASE_URL` ไป Aiven)
 migrations เป็น idempotent รันซ้ำได้ปลอดภัย
 

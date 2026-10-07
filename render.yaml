@@ -7,11 +7,16 @@
 services:
   - type: web
     name: emeeting-backend
-    runtime: docker
+    # ตรงกับ service จริงที่ตั้งไว้บน Render (Node ไม่ใช่ Docker) — backend/Dockerfile เหลือไว้ให้ self-host
+    # rootDir ห้ามว่าง: ว่างแล้ว Render รันที่ราก repo ได้ next build ของ frontend แทน API
+    runtime: node
     plan: free
     region: singapore
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    branch: master
+    rootDir: backend
+    # tsc อยู่ใน devDependencies — ไม่ใส่ --include=dev แล้ว build พังถ้า NODE_ENV=production
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true
 
