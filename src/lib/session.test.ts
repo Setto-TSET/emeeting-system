@@ -72,6 +72,14 @@ describe('signIn', () => {
     expect(loginEmail('decha')).toBe('decha@e-office.cloud');
   });
 
+  it('accepts the usernames handed out to testers', () => {
+    expect(loginEmail('admin')).toBe('admin@e-office.cloud');
+    expect(loginEmail('organizer')).toBe('somchai.j@e-office.cloud');
+    expect(loginEmail('member')).toBe('decha@e-office.cloud');
+    expect(loginEmail('external')).toBe('expert@external.org');
+    expect(loginEmail('room-801')).toBe('room-801@e-office.cloud');
+  });
+
   it('rejects an empty email without calling the API', async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
