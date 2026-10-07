@@ -464,6 +464,21 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
   // สิทธิ์แยกตามการกระทำ — เดิมใช้ตัวเดียวเช็คแค่สถานะ ทำให้ใครที่เป็น manager
   // ก็รับรองประชุมของคนอื่น ส่งอีเมลหาองค์ประชุมทุกคน หรือเพิ่มตัวเองเป็นผู้จัดการได้
   const canEdit = canEditMeeting(currentUser, meeting);
+
+  // ส่งออกเป็นหลักฐาน — ชื่อแขกพิมพ์เองได้ จึงกันสูตร Excel (=, +, -, @) ด้วยการเติม ' นำหน้า
+  const exportAcksCsv = () => {
+    const cell = (v: string) => `"${(/^[=+\-@]/.test(v) ? `'${v}` : v).replace(/"/g, '""')}"`;
+    const rows = (meeting.confidentialityAcks ?? []).map((a) =>
+      [a.name, a.userId.startsWith("guest-") ? "ภายนอก" : "ในระบบ", new Date(a.at).toLocaleString("th-TH")].map(cell).join(",")
+    );
+    // BOM ให้ Excel อ่านภาษาไทยถูก
+    const csv = "﻿" + [["ชื่อ", "ประเภท", "เวลาที่ยอมรับ"].map(cell).join(","), ...rows].join("\r\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a.download = `confidentiality-${meeting.id}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
   // ลบได้ = ผู้จัด/ผู้จัดการประชุม/admin (ตรงกับ backend canEditMeeting) โดยไม่ผูกกับสถานะ
   const canDelete = can(currentUser, "meeting.edit", meeting);
   const canManageParticipants = can(currentUser, "meeting.manageParticipants", meeting) && meeting.status !== "endorsed";
@@ -815,9 +830,14 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   <CardTitle className="text-sm">ผู้ยอมรับข้อตกลงรักษาความลับ ({meeting.confidentialityAcks?.length ?? 0})</CardTitle>
                   <CardDescription className="text-xs">บันทึกทุกครั้งที่กดยอมรับก่อนเข้าห้องประชุม รวมบุคคลภายนอก</CardDescription>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => void reload()}>
-                  <span className={iconSm}>refresh</span> โหลดใหม่
-                </Button>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => void reload()}>
+                    <span className={iconSm}>refresh</span> โหลดใหม่
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={exportAcksCsv} disabled={!meeting.confidentialityAcks?.length}>
+                    <span className={iconSm}>download</span> CSV
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {meeting.confidentialityAcks?.length ? (
