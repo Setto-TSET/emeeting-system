@@ -39,7 +39,7 @@ router.post('/request', asyncHandler(async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('❌ Failed to request transcript:', error);
-    res.status(500).json({ error: error.message });
+    throw error; // errorHandler ตอบข้อความกลาง ไม่ส่งรายละเอียดภายในให้ client
   }
 }));
 
@@ -75,7 +75,7 @@ router.get('/result', asyncHandler(async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('❌ Failed to get transcript:', error);
-    res.status(500).json({ error: error.message });
+    throw error; // errorHandler ตอบข้อความกลาง ไม่ส่งรายละเอียดภายในให้ client
   }
 }));
 
@@ -94,7 +94,7 @@ router.post('/poll', asyncHandler(async (req: Request, res: Response) => {
     res.json({ message: 'Polling completed', updated: 0 });
   } catch (error: any) {
     console.error('❌ Polling failed:', error);
-    res.status(500).json({ error: error.message });
+    throw error; // errorHandler ตอบข้อความกลาง ไม่ส่งรายละเอียดภายในให้ client
   }
 }));
 
