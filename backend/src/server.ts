@@ -15,7 +15,7 @@ import roomsRoutes from './routes/rooms';
 import meetingsRoutes, { filesRouter } from './routes/meetings';
 import auditRoutes from './routes/audit';
 import bookingsRoutes from './routes/bookings';
-import { publicInvitesRouter, invitesRouter, meetingInvitesRouter } from './routes/invites';
+import { publicGuestLinksRouter, meetingGuestLinkRouter } from './routes/guestLinks';
 import { attachRealtime } from './realtime/server';
 
 dotenv.config();
@@ -35,8 +35,11 @@ export function createApp(): Express {
       credentials: true,
     })
   );
-  // 25mb รองรับไฟล์ 20MB ที่ถูกเข้ารหัส base64 (บวมขึ้น ~33%)
-  app.use(express.json({ limit: '25mb' }));
+  // อัปโหลดไฟล์ 20MB ส่งมาเป็น base64 ซึ่งบวมขึ้น ~33% (ราว 26.7MB) — ให้ก้อนใหญ่เฉพาะเส้นทางอัปโหลด
+  // ต้องมาก่อน parser กลาง: body-parser ข้าม request ที่ถูก parse ไปแล้ว
+  app.use('/api/meetings/:id/files', express.json({ limit: '28mb' }));
+  // เส้นทางอื่นรับ JSON ไม่เกิน 1MB — กันใครยิงก้อนใหญ่ใส่ /api/auth/login ที่ไม่ต้องล็อกอินจนหน่วยความจำหมด
+  app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true }));
 
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -62,11 +65,10 @@ export function createApp(): Express {
   app.use('/api/summarize', authMiddleware, summarizeRoutes);
   app.use('/api/audit', authMiddleware, auditRoutes);
   app.use('/api/rooms', roomsRoutes);
-  // ลิงก์เชิญของการประชุม — ต้องมาก่อน /api/meetings ไม่งั้น router ของ meetings กลืน :id ไปก่อน
-  app.use('/api/meetings/:id/invites', meetingInvitesRouter);
-  // เปิดลิงก์กับกดยอมรับไม่ต้องล็อกอิน ที่เหลือต้อง — จึงแยกเป็นสอง router บน path เดียวกัน
-  app.use('/api/invites', publicInvitesRouter);
-  app.use('/api/invites', invitesRouter);
+  // ลิงก์เชิญบุคคลภายนอก — ต้องมาก่อน /api/meetings ไม่งั้น router ของ meetings กลืน :id ไปก่อน
+  app.use('/api/meetings/:id/guest-link', meetingGuestLinkRouter);
+  // เปิดลิงก์กับกดเข้าร่วมไม่ต้องล็อกอิน
+  app.use('/api/guest-links', publicGuestLinksRouter);
   app.use('/api/meetings', meetingsRoutes);
   app.use('/api/files', filesRouter);
   app.use('/api/bookings', bookingsRoutes);

@@ -13,6 +13,8 @@ import {
   listMeetingsForUser,
   saveMeeting,
   deleteMeeting,
+  appendAgendaComment,
+  appendConfidentialityAck,
   MeetingPayload,
 } from '../repositories/meetings';
 import * as files from '../repositories/meetingFiles';
@@ -23,6 +25,7 @@ import {
   canViewMeeting,
   findFileEntry,
   Actor,
+  actorFrom,
 } from '../services/meetingAccess';
 
 const router = Router();
@@ -32,11 +35,20 @@ router.use(authMiddleware);
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 function actorOf(req: Request): Actor {
-  return {
-    id: req.user!.id,
-    role: req.user!.role,
-    ...(req.user!.meetingId ? { meetingId: req.user!.meetingId } : {}),
-  };
+  return actorFrom(req.user!);
+}
+
+/**
+ * ลิงก์เชิญบุคคลภายนอก (guestLinkToken) เห็นได้เฉพาะคนที่จัดการการประชุมได้
+ * ผู้เข้าร่วมทั่วไปและแขกไม่ต้องรู้ — ไม่งั้นลิงก์หลุดต่อออกไปได้โดยผู้จัดไม่รู้ตัว
+ */
+function viewFor(actor: Actor, meeting: MeetingPayload): MeetingPayload {
+  if (canEditMeeting(actor, meeting)) return meeting;
+  // รายชื่อผู้ยอมรับข้อตกลงรักษาความลับก็เป็นข้อมูลของผู้จัด — ผู้เข้าร่วมและแขกไม่ต้องเห็นของกันและกัน
+  const { guestLinkToken: _token, confidentialityAcks: _acks, ...rest } = meeting;
+  void _token;
+  void _acks;
+  return rest as MeetingPayload;
 }
 
 /** โหลดการประชุมพร้อมเช็คสิทธิ์ดู — คืน null แล้วตอบไปแล้วถ้าไม่ผ่าน */
@@ -57,8 +69,9 @@ async function loadViewable(req: Request, res: Response): Promise<MeetingPayload
 router.get(
   '/',
   asyncHandler(async (req: Request, res: Response) => {
-    const meetings = await listMeetingsForUser(req.user!.id, req.user!.role, req.user!.meetingId);
-    res.json({ meetings });
+    const actor = actorOf(req);
+    const meetings = await listMeetingsForUser(actor);
+    res.json({ meetings: meetings.map((m) => viewFor(actor, m)) });
   })
 );
 
@@ -67,7 +80,7 @@ router.get(
   '/:id',
   asyncHandler(async (req: Request, res: Response) => {
     const meeting = await loadViewable(req, res);
-    if (meeting) res.json({ meeting });
+    if (meeting) res.json({ meeting: viewFor(actorOf(req), meeting) });
   })
 );
 
@@ -89,7 +102,11 @@ router.post(
     }
 
     // ผู้จัดมาจาก token ไม่ใช่จาก body — กันคนสร้างประชุมสวมชื่อคนอื่นเป็นเจ้าของ
-    const saved = await saveMeeting({ ...payload, organizerId: actor.id });
+    // ลิงก์เชิญออกโดย server เท่านั้น (POST /guest-link) — ถ้ารับจาก body จะตั้งลิงก์ที่เดาได้
+    const { guestLinkToken: _ignored, confidentialityAcks: _ignoredAcks, ...input } = payload;
+    void _ignored;
+    void _ignoredAcks;
+    const saved = await saveMeeting({ ...input, id: payload.id, organizerId: actor.id });
     res.status(201).json({ meeting: saved });
   })
 );
@@ -108,10 +125,16 @@ router.put(
     if (!payload) return res.status(400).json({ error: 'ข้อมูลการประชุมไม่ครบ' });
 
     // id กับผู้จัดยึดของเดิม — เปลี่ยนเจ้าของผ่าน PUT ไม่ได้
+    // แชทเป็นของ server (เขียนผ่าน WebSocket) — ก้อนที่หน้าเว็บส่งมาอาจเก่ากว่า ถ้ารับไว้ข้อความที่เพิ่งส่งจะหาย
     const saved = await saveMeeting({
       ...payload,
       id: req.params.id,
       organizerId: existing.organizerId ?? null,
+      chatMessages: existing.chatMessages ?? [],
+      // ลิงก์เชิญเปลี่ยนได้ทาง POST /guest-link เท่านั้น — ก้อนจากหน้าเว็บอาจเก่าหรือไม่มีค่านี้
+      guestLinkToken: existing.guestLinkToken,
+      // หลักฐานการยอมรับข้อตกลงรักษาความลับ — server เขียนเท่านั้น ห้ามให้ PUT ลบหรือแก้ย้อนหลัง
+      confidentialityAcks: existing.confidentialityAcks ?? [],
     });
     res.json({ meeting: saved });
   })
@@ -128,6 +151,50 @@ router.delete(
     }
     await deleteMeeting(req.params.id);
     res.status(204).end();
+  })
+);
+
+/**
+ * POST /api/meetings/:id/agenda/:agendaId/comments — แสดงความคิดเห็นในวาระ
+ * ผู้เข้าร่วมทั่วไปแก้ทั้งการประชุมไม่ได้ (PUT ต้องเป็นผู้จัดการ) เดิมความคิดเห็นจึงโดน 403 แล้วหายเงียบ
+ */
+router.post(
+  '/:id/agenda/:agendaId/comments',
+  asyncHandler(async (req: Request, res: Response) => {
+    const meeting = await loadViewable(req, res);
+    if (!meeting) return;
+
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+    if (!text) return res.status(400).json({ error: 'กรุณาพิมพ์ความคิดเห็น' });
+    if (text.length > 2000) return res.status(400).json({ error: 'ความคิดเห็นยาวเกิน 2,000 ตัวอักษร' });
+
+    const comment = {
+      by: req.user!.name,
+      byId: req.user!.id,
+      text,
+      time: new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Bangkok' }),
+    };
+    if (!(await appendAgendaComment(meeting.id, req.params.agendaId, comment))) {
+      return res.status(404).json({ error: 'ไม่พบวาระนี้' });
+    }
+    res.status(201).json({ comment });
+  })
+);
+
+/**
+ * POST /api/meetings/:id/confidentiality-ack — ยอมรับข้อตกลงรักษาความลับก่อนเข้าห้องประชุม
+ * ทุกคนที่เข้าห้องได้ (รวมแขกจากลิงก์เชิญ) ต้องกดยอมรับ ชื่อและเวลามาจาก token และนาฬิกาของ server
+ */
+router.post(
+  '/:id/confidentiality-ack',
+  asyncHandler(async (req: Request, res: Response) => {
+    const meeting = await loadViewable(req, res);
+    if (!meeting) return;
+    if (req.body?.accepted !== true) return res.status(400).json({ error: 'ต้องยอมรับข้อตกลงก่อนเข้าห้องประชุม' });
+
+    const ack = { userId: req.user!.id, name: req.user!.name, at: Date.now() };
+    await appendConfidentialityAck(meeting.id, ack);
+    res.status(201).json({ ack });
   })
 );
 

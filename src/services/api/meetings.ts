@@ -95,3 +95,22 @@ function fileToBase64(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
+export type AgendaComment = { by: string; byId?: string; text: string; time: string };
+
+/** แสดงความคิดเห็นในวาระ — ผู้เข้าร่วมทั่วไปใช้ได้ (ไม่ต้องมีสิทธิ์แก้ทั้งการประชุม) */
+export async function postAgendaComment(meetingId: string, agendaId: string, text: string): Promise<AgendaComment> {
+  const { comment } = await apiFetch<{ comment: AgendaComment }>(
+    `/api/meetings/${meetingId}/agenda/${encodeURIComponent(agendaId)}/comments`,
+    { method: "POST", body: JSON.stringify({ text }) }
+  );
+  return comment;
+}
+
+/** ยอมรับข้อตกลงรักษาความลับก่อนเข้าห้องประชุม — server บันทึกชื่อและเวลาจาก token เอง */
+export async function acknowledgeConfidentiality(meetingId: string): Promise<void> {
+  await apiFetch(`/api/meetings/${meetingId}/confidentiality-ack`, {
+    method: "POST",
+    body: JSON.stringify({ accepted: true }),
+  });
+}
