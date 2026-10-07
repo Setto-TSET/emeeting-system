@@ -10,6 +10,7 @@
 // (เร็วกว่าและไม่ต้องขอสิทธิ์ใหม่ทุกครั้งเหมือนการปิดอุปกรณ์จริง)
 // ═══════════════════════════════════════════
 
+import { requestVideoCredential } from "@/services/credentials";
 import type {
   EmbeddedEngine,
   EmbeddedSession,
@@ -198,13 +199,23 @@ export const zegoEngine: EmbeddedEngine = {
         onLevelsCb?.({ ...soundLevels });
       });
 
+      // token มีอายุ 30 นาที — SDK เตือน 30 วินาทีก่อนหมด ต้องขอใหม่แล้วต่ออายุ
+      // ไม่งั้นประชุมที่ยาวเกินครึ่งชั่วโมงทุกคนจะหลุดพร้อมกัน แล้วเห็นข้อความ KICKOUT ที่ไม่ตรงกับสาเหตุ
+      zg.on("tokenWillExpire", async (roomID) => {
+        const result = await requestVideoCredential("zegocloud", ctx.meetingId);
+        if (result.ok) {
+          zg.renewToken(result.credential.token, roomID);
+        } else {
+          emitError(`ต่ออายุการเชื่อมต่อห้องประชุมไม่สำเร็จ (${result.reason}) — วิดีโออาจหลุดในไม่ช้า ลองรีเฟรชหน้า`);
+        }
+      });
+
       zg.on("roomStateChanged", (_roomID, reason, errorCode) => {
-        console.log(`[zegoEngine] สถานะห้อง: ${reason} (code ${errorCode})`);
         if (reason === "KICKOUT") {
           emitError("ถูกนำออกจากห้องประชุม — บัญชีนี้เข้าห้องเดียวกันจากอีกแท็บ/อีกเครื่อง");
           onLeftCb?.();
         } else if (reason === "LOGIN_FAILED") {
-          emitError("เข้าห้องประชุมไม่สำเร็จ — token หมดอายุหรือไม่ตรงกับผู้ใช้ ลองรีเฟรชหน้า");
+          emitError(`เข้าห้องประชุมไม่สำเร็จ (code ${errorCode}) — สิทธิ์เข้าห้องหมดอายุหรือไม่ตรงกับผู้ใช้ ลองรีเฟรชหน้า`);
         } else if (reason === "RECONNECT_FAILED") {
           emitError("การเชื่อมต่อหลุดและต่อกลับไม่ได้");
           onLeftCb?.();

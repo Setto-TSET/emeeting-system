@@ -2,13 +2,18 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* ระบบนี้ใช้ธีมสว่างอย่างเดียว ไม่มีที่ไหนใส่ class "dark" — variant นี้คงไว้เพื่อให้ dark: ที่ติดมากับ
+   component ของ shadcn ไม่ทำงาน ถ้าลบออก Tailwind จะเปลี่ยนไปอิง prefers-color-scheme แล้วหน้าเว็บ
+   จะกลายเป็นมืดครึ่ง ๆ กลาง ๆ บนเครื่องที่ตั้ง dark mode */
 @custom-variant dark (&:is(.dark *));
 
+/* ═══ Design tokens — แหล่งเดียวของสี ฟอนต์ ขนาดตัวอักษร และความกว้าง ═══
+   หน้าไหนต้องการค่าที่ไม่มีในนี้ ให้เพิ่ม token ที่นี่ ไม่ใช่ใส่ค่า [..] ลงใน className */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-kanit), var(--font-sans);
-  --font-mono: var(--font-mono);
+  --font-sans: var(--font-kanit), var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -27,6 +32,12 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -39,10 +50,36 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* เวทีวิดีโอเป็นพื้นมืดเสมอ ไม่ว่าธีมหน้าเว็บจะเป็นอะไร */
+  --color-stage: var(--stage);
+  --color-stage-surface: var(--stage-surface);
+  --color-stage-raised: var(--stage-raised);
+  --color-brand-zego: var(--brand-zego);
+  --color-brand-teams: var(--brand-teams);
+  --color-brand-zoom: var(--brand-zoom);
+  --color-brand-meet: var(--brand-meet);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* ขนาดตัวอักษรเล็กกว่า text-xs (12px) ที่ UI แน่น ๆ ใช้ — แทน text-[9px] / [10px] / [11px] / [13px] */
+  --text-micro: 0.5625rem;
+  --text-micro--line-height: 0.875rem;
+  --text-tiny: 0.625rem;
+  --text-tiny--line-height: 0.875rem;
+  --text-caption: 0.6875rem;
+  --text-caption--line-height: 1rem;
+  --text-compact: 0.8125rem;
+  --text-compact--line-height: 1.25rem;
+
+  /* ความกว้างเนื้อหาของหน้า — max-w-page / max-w-wide / max-w-narrow */
+  --container-narrow: 56.25rem;
+  --container-page: 80rem;
+  --container-wide: 87.5rem;
+
+  /* ระยะเว้นให้ sidebar ลอยด้านซ้าย (left-4 + w-60 + ช่องไฟ) — md:pl-sidebar / md:left-sidebar */
+  --spacing-sidebar: 280px;
 }
 
 :root {
@@ -60,8 +97,14 @@
   --muted-foreground: #6b7280;
   --accent: #f3f4f6;
   --accent-foreground: #111827;
-  --destructive: #ef4444;
+  --destructive: #dc2626;
   --destructive-foreground: #ffffff;
+  --success: #15803d;
+  --success-foreground: #ffffff;
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --info: #1d4ed8;
+  --info-foreground: #ffffff;
   --border: #e5e7eb;
   --input: #e5e7eb;
   --ring: #737300;
@@ -79,36 +122,14 @@
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: #8a8a00;
   --sidebar-ring: #737300;
-}
-
-.dark {
-  --background: #111827;
-  --foreground: #f9fafb;
-  --card: #1f2937;
-  --card-foreground: #f9fafb;
-  --popover: #1f2937;
-  --popover-foreground: #f9fafb;
-  --primary: #8a8a00;
-  --primary-foreground: #ffffff;
-  --secondary: #374151;
-  --secondary-foreground: #f9fafb;
-  --muted: #374151;
-  --muted-foreground: #9ca3af;
-  --accent: #374151;
-  --accent-foreground: #f9fafb;
-  --destructive: #7f1d1d;
-  --destructive-foreground: #fef2f2;
-  --border: #374151;
-  --input: #374151;
-  --ring: #8a8a00;
-  --sidebar: #1f2937;
-  --sidebar-foreground: #f9fafb;
-  --sidebar-primary: #8a8a00;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #374151;
-  --sidebar-accent-foreground: #f9fafb;
-  --sidebar-border: #374151;
-  --sidebar-ring: #8a8a00;
+  --stage: #0a0f1e;
+  --stage-surface: #0c1225;
+  --stage-raised: #141b30;
+  /* สีแบรนด์ของผู้ให้บริการประชุมภายนอก — ใช้กับปุ่ม "เข้าร่วมผ่าน ..." เท่านั้น */
+  --brand-zego: #0055ff;
+  --brand-teams: #4b53bc;
+  --brand-zoom: #0b5cff;
+  --brand-meet: #00832d;
 }
 
 @layer base {
@@ -116,9 +137,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-    background-attachment: fixed;
-    @apply text-foreground;
+    @apply bg-background text-foreground;
   }
   html {
     @apply font-sans;
@@ -148,37 +167,33 @@
 }
 
 .radial-bg {
-  background: radial-gradient(
-    circle at center,
-    #ffffff 0%,
-    #f5f5f5 100%
-  );
+  background: radial-gradient(circle at center, var(--card) 0%, var(--background) 100%);
+}
+
+/* แสงวงกลมบนแบนเนอร์สีหลัก (dashboard / หน้าผู้เข้าร่วม) */
+.hero-glow {
+  background-image: radial-gradient(circle at 70% 30%, color-mix(in srgb, var(--primary-foreground) 15%, transparent), transparent 60%);
 }
 
 .card-shadow {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--foreground) 5%, transparent),
+    0 2px 4px -1px color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
 .glass-panel {
-  background: rgba(255, 255, 255, 0.65);
+  background: color-mix(in srgb, var(--card) 65%, transparent);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 8px 32px 0 rgba(115, 115, 0, 0.05);
+  border: 1px solid color-mix(in srgb, var(--card) 80%, transparent);
+  box-shadow: 0 8px 32px 0 color-mix(in srgb, var(--primary) 5%, transparent);
 }
 
 .glass-panel-primary {
-  background: rgba(115, 115, 0, 0.85);
+  background: color-mix(in srgb, var(--primary) 85%, transparent);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.15);
-}
-
-.dark .glass-panel {
-  background: rgba(31, 41, 55, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+  border: 1px solid color-mix(in srgb, var(--primary-foreground) 15%, transparent);
+  box-shadow: 0 8px 32px 0 color-mix(in srgb, var(--foreground) 15%, transparent);
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -188,9 +203,21 @@
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--border);
   border-radius: 3px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: var(--muted-foreground);
 }
+
+/* ═══ เนื้อหา Markdown (ร่างรายงาน / เอกสาร .md) — ใช้ร่วมกันทั้ง MarkdownViewer และ DocumentPreview ═══ */
+.md-root { font-size: 0.9375rem; line-height: 1.9; color: inherit; }
+.md-h1 { font-size: 1.5em; font-weight: 700; border-bottom: 2px solid currentColor; padding-bottom: 4px; margin: 16px 0 8px; }
+.md-h2 { font-size: 1.2em; font-weight: 700; margin: 20px 0 6px; }
+.md-h3 { font-size: 1.05em; font-weight: 600; margin: 16px 0 4px; }
+.md-p { margin: 6px 0; }
+.md-hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.md-table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+.md-td { border: 1px solid var(--border); padding: 5px 8px; }
+.md-ul { padding-left: 1.4em; margin: 4px 0; }
+.md-blockquote { border-left: 3px solid var(--warning); padding-left: 12px; color: var(--muted-foreground); font-size: 0.88em; margin: 12px 0; }

@@ -7,9 +7,10 @@
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyAccessToken } from '../services/auth';
-import { isMeetingMember } from '../repositories/meetings';
+import { getMeeting } from '../repositories/meetings';
+import { actorFrom, canEditMeeting, canViewMeeting } from '../services/meetingAccess';
 import { addClient, removeClient, clientsIn, roomStartedAt, RoomClient } from './rooms';
-import { handleSignal } from './handlers';
+import { handleSignal, broadcastRoomState } from './handlers';
 import { handleAudioFrame, forgetSpeaker } from './audio';
 
 const CLOSE_UNAUTHORIZED = 4401;
@@ -51,6 +52,7 @@ export function attachRealtime(server: http.Server): WebSocketServer {
       userId: claims.sub,
       userName: claims.name,
       role: claims.role,
+      canManage: false,
     };
 
     // ผูก listener ก่อน await ใดๆ — ถ้า client หลุดระหว่างรอ query membership
@@ -59,19 +61,20 @@ export function attachRealtime(server: http.Server): WebSocketServer {
     socket.on('close', () => {
       removeClient(client);
       forgetSpeaker(client);
+      // คนที่เหลือในห้องต้องเห็นว่าใครออกไปแล้ว — รายชื่อ "ในสาย" มาจากคนที่ต่ออยู่จริง ไม่ได้มาจาก DB
+      broadcastRoomState(meetingId).catch((error) => console.error('[realtime] room_state ไม่สำเร็จ', error));
     });
     socket.on('error', () => {
       removeClient(client);
       forgetSpeaker(client);
     });
 
-    // guest token ผูกกับการประชุมเดียวตอนออก token — เข้าห้องอื่นไม่ได้
-    if (claims.role === 'guest') {
-      if (claims.meetingId !== meetingId) return socket.close(CLOSE_FORBIDDEN, 'not your meeting');
-    } else if (claims.role !== 'admin') {
-      const member = await isMeetingMember(meetingId, claims.sub);
-      if (!member) return socket.close(CLOSE_FORBIDDEN, 'not a participant');
-    }
+    // กฎเดียวกับ REST (canViewMeeting) — แขกผูกห้องเดียว, จอหน้าห้องเห็นเฉพาะห้องตัวเอง
+    const meeting = await getMeeting(meetingId);
+    const actor = actorFrom({ id: claims.sub, role: claims.role, name: claims.name, meetingId: claims.meetingId });
+    if (!meeting || !canViewMeeting(actor, meeting)) return socket.close(CLOSE_FORBIDDEN, 'not a participant');
+    // กฎเดียวกับการแก้การประชุมผ่าน REST — ผู้จัด ผู้รับมอบสิทธิ์ผู้จัดการ และ admin
+    client.canManage = canEditMeeting(actor, meeting);
 
     // socket อาจถูกปิดไปแล้วระหว่างรอ query ข้างบน — ห้ามลงทะเบียน client ที่ตายแล้ว
     if (socket.readyState !== WebSocket.OPEN) return;
@@ -93,6 +96,7 @@ export function attachRealtime(server: http.Server): WebSocketServer {
         roomStartedAt: roomStartedAt(meetingId),
       },
     });
+    broadcastRoomState(meetingId).catch((error) => console.error('[realtime] room_state ไม่สำเร็จ', error));
 
     socket.on('message', async (raw, isBinary) => {
       // ไม่มีใคร await listener ตัวนี้ ถ้าปล่อยให้ reject หลุดออกไป Node 20 จะจบโปรเซสทิ้ง

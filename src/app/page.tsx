@@ -1,29 +1,47 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import Image from "next/image";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { signIn, demoAccounts } from "@/lib/session";
+import { signIn } from "@/lib/session";
+import { getHomeRoute } from "@/lib/access";
 import { useCurrentUser } from "@/context/UserContext";
-import { systemRoleLabels, SystemRole } from "@/data";
 
+// บัญชีสำหรับทดสอบอยู่ใน docs/test-accounts.md — หน้า login ของระบบจริงไม่เปิดเผยรายชื่อผู้ใช้
+
+// useSearchParams ต้องอยู่ใต้ Suspense — ส่วนอื่นของหน้ายัง prerender ได้ตามปกติ
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+const NOTICES: Record<string, string> = {
+  expired: "เซสชันหมดอายุ — กรุณาเข้าสู่ระบบอีกครั้ง",
+  left: "ออกจากห้องประชุมแล้ว ขอบคุณที่เข้าร่วม",
+};
+
+function LoginForm() {
   const router = useRouter();
   const { setCurrentUser } = useCurrentUser();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // apiFetch พามาที่นี่พร้อม ?reason=... เมื่อเซสชันหมดอายุ หรือแขกออกจากห้องประชุม
+  const notice = NOTICES[useSearchParams().get("reason") ?? ""] ?? null;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     toast.loading("กำลังตรวจสอบข้อมูล...", { id: "login" });
 
-    // เดิมฟอร์มนี้ไม่เคยอ่านค่า email/password เลย — กดปุ่มก็เข้าระบบได้เสมอ
     const result = await signIn(email, password);
 
     if (!result.ok) {
@@ -34,18 +52,19 @@ export default function LoginPage() {
 
     setCurrentUser(result.user);
     toast.success(`เข้าสู่ระบบสำเร็จ — ${result.user.name}`, { id: "login" });
-    router.push("/dashboard");
+    // บัญชีห้องประชุมไปหน้า kiosk ตรง ๆ ไม่ต้องผ่าน dashboard ที่ตัวเองเข้าไม่ได้
+    router.push(getHomeRoute(result.user.systemRole));
   };
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-background">
+    <div className="min-h-dvh flex flex-col md:flex-row bg-background">
       {/* Left Panel */}
-      <div className="hidden md:flex md:w-1/2 lg:w-[55%] relative flex-col justify-end p-12 text-white overflow-hidden">
+      <div className="hidden md:flex md:w-1/2 lg:w-[55%] relative flex-col justify-end p-12 text-primary-foreground overflow-hidden">
         <div
           className="absolute inset-0 z-0 bg-cover bg-center"
           style={{ backgroundImage: "url('/login_bg.png')" }}
         />
-        <div className="absolute inset-0 z-10 bg-gradient-to-t from-[#3a3a15]/90 via-[#4e4e1b]/40 to-transparent" />
+        <div className="absolute inset-0 z-10 bg-gradient-to-t from-primary/95 via-primary/40 to-transparent" />
 
         <div className="relative z-20 max-w-xl">
           <motion.div
@@ -53,27 +72,26 @@ export default function LoginPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.2 }}
           >
-            <div className="w-20 h-20 rounded-xl bg-white/10 backdrop-blur-md p-4 mb-6 border border-white/20 shadow-lg flex items-center justify-center">
-              <span className="material-symbols-outlined text-white" style={{ fontSize: 44 }}>event_note</span>
+            <div className="w-24 h-24 rounded-full bg-card p-2 mb-6 shadow-lg flex items-center justify-center">
+              <Image src="/logo.png" alt="ตราสภาเภสัชกรรม" width={56} height={104} className="h-20 w-auto" priority />
             </div>
-            <h1 className="text-4xl font-bold mb-4 leading-tight">
+            <h1 className="text-4xl font-bold mb-4 leading-tight text-balance">
               ระบบบริหารการประชุม<br />และจองห้องประชุม
             </h1>
-            <p className="text-lg text-white/85 font-medium">
-              e-Meeting &amp; Room Booking Portal<br />
-              บริหารจัดการวาระ องค์ประชุม และรายงานการประชุมแบบครบวงจร
+            <p className="text-lg text-primary-foreground/85 font-medium">
+              จองห้อง จัดวาระ ประชุมออนไลน์ และจัดทำรายงานการประชุมของสภาเภสัชกรรมในที่เดียว
             </p>
-            <div className="mt-8 flex items-center gap-6 text-sm text-white/70">
+            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-primary-foreground/70">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">event_available</span>
+                <span className="material-symbols-outlined text-lg">event_available</span>
                 จองห้องออนไลน์
               </div>
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">groups</span>
+                <span className="material-symbols-outlined text-lg">groups</span>
                 จัดการองค์ประชุม
               </div>
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">verified</span>
+                <span className="material-symbols-outlined text-lg">verified</span>
                 รับรองการประชุม
               </div>
             </div>
@@ -81,8 +99,8 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Right Panel */}
-      <div className="flex-1 flex items-center justify-center p-6 sm:p-12 relative">
+      {/* Right Panel — overflow-hidden กันวงแสงตกแต่งล้นจอจนเลื่อนแนวนอนได้บนมือถือ */}
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-12 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -z-10 transform translate-x-1/2 -translate-y-1/2" />
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-secondary/5 rounded-full blur-3xl -z-10 transform -translate-x-1/2 translate-y-1/2" />
 
@@ -92,33 +110,41 @@ export default function LoginPage() {
           transition={{ duration: 0.5 }}
           className="w-full max-w-sm"
         >
-          <div className="md:hidden flex flex-col items-center mb-8">
-            <div className="w-20 h-20 bg-primary rounded-2xl shadow-sm p-4 mb-4 flex items-center justify-center">
-              <span className="material-symbols-outlined text-white" style={{ fontSize: 44 }}>event_note</span>
-            </div>
-            <h1 className="text-xl font-bold text-center text-primary">e-Meeting</h1>
+          <div className="md:hidden flex flex-col items-center mb-8 text-center">
+            <Image src="/logo.png" alt="ตราสภาเภสัชกรรม" width={48} height={89} className="h-20 w-auto mb-4" priority />
+            <h1 className="text-xl font-bold text-primary">e-Meeting สภาเภสัชกรรม</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              จองห้อง จัดวาระ ประชุมออนไลน์ และจัดทำรายงานการประชุมในที่เดียว
+            </p>
           </div>
 
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">ยินดีต้อนรับกลับมา</h2>
-            <p className="text-sm text-muted-foreground">เข้าสู่ระบบเพื่อจองห้องประชุมและบริหารการประชุม</p>
+            <h2 className="text-2xl font-bold text-foreground mb-2">เข้าสู่ระบบ</h2>
+            <p className="text-sm text-muted-foreground">ใช้อีเมลและรหัสผ่านที่ได้รับจากผู้ดูแลระบบ</p>
           </div>
+
+          {notice && (
+            <p role="status" className="mb-5 rounded-lg border border-info/30 bg-info/10 px-3 py-2 text-sm text-info">
+              {notice}
+            </p>
+          )}
 
           <form className="space-y-5" onSubmit={handleLogin}>
               <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-gray-700" htmlFor="email">
-                  Username / อีเมล
+                <label className="text-sm font-semibold text-foreground" htmlFor="email">
+                  อีเมล
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-muted-foreground">
-                    <span className="material-symbols-outlined text-[20px]">mail</span>
+                    <span className="material-symbols-outlined text-xl">mail</span>
                   </span>
                   <Input
                     id="email"
-                    type="text"
+                    type="email"
+                    autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@e-office.cloud"
+                    placeholder="อีเมลของคุณ"
                     className="pl-10 h-11 bg-muted/30 focus-visible:bg-transparent transition-colors"
                   />
                 </div>
@@ -126,43 +152,41 @@ export default function LoginPage() {
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-semibold text-gray-700" htmlFor="password">
-                    รหัสผ่าน (Password)
+                  <label className="text-sm font-semibold text-foreground" htmlFor="password">
+                    รหัสผ่าน
                   </label>
-                  <a href="#" onClick={(e) => { e.preventDefault(); toast.info("กรุณาติดต่อผู้ดูแลระบบเพื่อรีเซ็ตรหัสผ่าน"); }} className="text-xs font-semibold text-primary hover:underline">
+                  <button
+                    type="button"
+                    onClick={() => toast.info("ติดต่อผู้ดูแลระบบของสภาเภสัชกรรมเพื่อขอตั้งรหัสผ่านใหม่")}
+                    className="-my-2 px-1 py-2 text-xs font-semibold text-primary hover:underline pointer-coarse:min-h-11"
+                  >
                     ลืมรหัสผ่าน?
-                  </a>
+                  </button>
                 </div>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-muted-foreground">
-                    <span className="material-symbols-outlined text-[20px]">lock</span>
+                    <span className="material-symbols-outlined text-xl">lock</span>
                   </span>
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="pl-10 pr-10 h-11 bg-muted/30 focus-visible:bg-transparent transition-colors"
+                    className="pl-10 pr-12 h-11 bg-muted/30 focus-visible:bg-transparent transition-colors"
                   />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground transition-colors">
-                    <span className="material-symbols-outlined text-[20px]">
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+                    className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-xl">
                       {showPassword ? "visibility" : "visibility_off"}
                     </span>
                   </button>
                 </div>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="remember"
-                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
-                />
-                <label htmlFor="remember" className="text-sm font-medium leading-none text-gray-600 cursor-pointer">
-                  จดจำฉันไว้ในระบบ
-                </label>
               </div>
 
               <Button type="submit" disabled={isSubmitting} className="w-full h-11 text-base font-semibold shadow-md mt-2">
@@ -177,36 +201,8 @@ export default function LoginPage() {
               </Button>
             </form>
 
-          {/* บัญชีสำหรับทดสอบสิทธิ์ — ส่วนนี้ต้องเอาออกเมื่อมีระบบยืนยันตัวตนจริง */}
-          <div className="mt-6 rounded-lg border border-dashed p-3">
-            <p className="text-[11px] font-medium text-muted-foreground mb-2 flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px]">science</span>
-              บัญชีทดสอบ (ยังไม่ตรวจรหัสผ่าน — กดเพื่อกรอกอีเมลอัตโนมัติ)
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {demoAccounts().map((a) => (
-                <button
-                  key={a.email}
-                  type="button"
-                  onClick={() => setEmail(a.email)}
-                  className="text-[10px] rounded-md border px-2 py-1 hover:border-primary hover:text-primary transition-colors"
-                  title={a.email}
-                >
-                  {a.name}
-                  <span className="text-muted-foreground ml-1">
-                    ({systemRoleLabels[a.roleLabel as SystemRole]})
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-12 pt-6 border-t border-border flex items-center justify-center gap-4 text-xs text-muted-foreground/60">
-            <span>© 2569 e-Office</span>
-            <span>•</span>
-            <a href="#" className="hover:text-primary transition-colors">นโยบายความเป็นส่วนตัว</a>
-            <span>•</span>
-            <a href="#" className="hover:text-primary transition-colors">ติดต่อเรา</a>
+          <div className="mt-12 pt-6 border-t border-border text-center text-xs text-muted-foreground">
+            © 2569 สภาเภสัชกรรม · e-Meeting
           </div>
         </motion.div>
       </div>

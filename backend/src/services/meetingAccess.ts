@@ -12,7 +12,18 @@
 import type { MeetingPayload } from '../repositories/meetings';
 
 // meetingId มีเฉพาะ guest — token ของแขกผูกกับการประชุมเดียวตอนออก token
-export type Actor = { id: string; role: string; meetingId?: string };
+// name ใช้กับบัญชีห้องประชุม (role "room") — ชื่อบัญชีคือชื่อห้อง ซึ่งตรงกับ location ของการประชุม
+export type Actor = { id: string; role: string; meetingId?: string; name?: string };
+
+/** แปลงตัวตนจาก JWT (req.user หรือ claims ของ WebSocket) เป็น Actor — จุดเดียวที่ทุก route ใช้ */
+export function actorFrom(user: { id: string; role: string; name?: string; meetingId?: string }): Actor {
+  return {
+    id: user.id,
+    role: user.role,
+    ...(user.name ? { name: user.name } : {}),
+    ...(user.meetingId ? { meetingId: user.meetingId } : {}),
+  };
+}
 
 function permissionType(meeting: MeetingPayload, userId: string): string | null {
   const list = Array.isArray(meeting.permissions) ? meeting.permissions : [];
@@ -29,6 +40,10 @@ export function canViewMeeting(actor: Actor, meeting: MeetingPayload): boolean {
   if (actor.role === 'admin') return true;
   // แขกไม่มีแถวใน participants (ไม่มีบัญชีในระบบ) — สิทธิ์มาจาก token ที่ผูกห้องไว้แล้ว
   if (actor.role === 'guest') return actor.meetingId === meeting.id;
+  // บัญชีจอหน้าห้องเห็นเฉพาะการประชุมที่จัดในห้องตัวเอง — ตรงกับ can() ฝั่งหน้าเว็บ
+  if (actor.role === 'room') {
+    return Boolean(actor.name) && typeof meeting.location === 'string' && meeting.location.includes(actor.name!);
+  }
   if (meeting.organizerId === actor.id) return true;
   if (isParticipant(meeting, actor.id)) return true;
   if (permissionType(meeting, actor.id)) return true;

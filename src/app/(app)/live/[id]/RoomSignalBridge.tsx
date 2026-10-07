@@ -6,7 +6,7 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { useRoomSignaling } from "@/context/RoomSignalingContext";
-import type { RoomSignal, RaisedHandDto } from "@/services/signaling/types";
+import type { RoomSignal, RaisedHandDto, ChatMessageDto } from "@/services/signaling/types";
 
 export type Broadcast = ReturnType<typeof useRoomSignaling>["broadcast"];
 
@@ -29,9 +29,11 @@ export function RoomSignalBridge({
   setRaisedHands,
   setLatestSubtitle,
   setSharedFileId,
-  setSharedViewerPage,
   handSignalReceivedRef,
   docShareSignalReceivedRef,
+  onChatMessage,
+  onRoomState,
+  onConnectionFailed,
 }: {
   currentUserId: string;
   broadcastRef: React.MutableRefObject<Broadcast | null>;
@@ -41,12 +43,19 @@ export function RoomSignalBridge({
   setRaisedHands: React.Dispatch<React.SetStateAction<RaisedHandDto[]>>;
   setLatestSubtitle: React.Dispatch<React.SetStateAction<RoomSignal<"subtitle_text"> | null>>;
   setSharedFileId: React.Dispatch<React.SetStateAction<string | null>>;
-  setSharedViewerPage: React.Dispatch<React.SetStateAction<number>>;
   // ธงบอกว่าได้รับสัญญาณสดแล้ว — กัน snapshot ที่มาช้ากว่ามาทับข้อมูลสด (ดู Fix 1 ของ code review รอบที่ 1)
   handSignalReceivedRef: React.MutableRefObject<boolean>;
   docShareSignalReceivedRef: React.MutableRefObject<boolean>;
+  onChatMessage: (message: ChatMessageDto) => void;
+  onRoomState: (state: RoomSignal<"room_state">["payload"]) => void;
+  // server ปฏิเสธการต่อห้องถาวร (4401/4403) — หน้าห้องต้องบอกผู้ใช้ ไม่งั้นโหวต/ยกมือหายเงียบ
+  onConnectionFailed: (failed: boolean) => void;
 }) {
-  const { broadcast, sendAudio, useSignal } = useRoomSignaling();
+  const { broadcast, sendAudio, useSignal, connectionFailed } = useRoomSignaling();
+
+  useEffect(() => {
+    onConnectionFailed(connectionFailed);
+  }, [connectionFailed, onConnectionFailed]);
 
   useEffect(() => {
     broadcastRef.current = broadcast;
@@ -90,10 +99,17 @@ export function RoomSignalBridge({
     docShareSignalReceivedRef.current = true;
     const share = signal.payload.share;
     setSharedFileId(share?.fileId ?? null);
-    setSharedViewerPage(share?.page ?? 1);
     if (share && signal.senderId !== currentUserId) {
       toast.info(`${share.sharedName} กำลังแชร์เอกสาร: ${share.fileName}`);
     }
+  });
+
+  useSignal("chat_message", (signal) => {
+    onChatMessage(signal.payload.message);
+  });
+
+  useSignal("room_state", (signal) => {
+    onRoomState(signal.payload);
   });
 
   useSignal("signal_error", (signal) => {

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,8 +15,9 @@ import { useBookings } from "@/context/BookingContext";
 import { ApiError } from "@/services/api/client";
 import { useCurrentUser } from "@/context/UserContext";
 import { today } from "@/lib/clock";
+import { PageError, PageLoading } from "@/components/layout/PageState";
 
-const iconClass = "material-symbols-outlined text-[18px]";
+const iconClass = "material-symbols-outlined text-lg";
 
 const THAI_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 const THAI_DAYS = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
@@ -23,15 +25,29 @@ const THAI_DAYS = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."]
 function pad(n: number) { return n.toString().padStart(2, "0"); }
 function toISO(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 
+// useSearchParams ต้องอยู่ใต้ Suspense
 export default function BookingPage() {
-  const [current, setCurrent] = useState(new Date(2026, 6, 15));
-  const [selectedDate, setSelectedDate] = useState<string>(toISO(new Date(2026, 6, 15)));
+  return (
+    <Suspense fallback={<PageLoading />}>
+      <BookingPageContent />
+    </Suspense>
+  );
+}
+
+function BookingPageContent() {
+  // เริ่มที่วันนี้จริง — เดิมตรึงไว้ที่ 15 ก.ค. 2569
+  const [current, setCurrent] = useState(() => new Date(`${today}T00:00`));
+  const [selectedDate, setSelectedDate] = useState<string>(today);
+  // มาจากปุ่ม "จองห้องนี้" ของหน้าห้องประชุม (/booking?room=R-801) — กรองผลค้นหาให้เหลือห้องนั้น
+  const roomParam = useSearchParams().get("room");
+  const [showAllRooms, setShowAllRooms] = useState(false);
+  const preferredRoomId = !showAllRooms && roomParam && meetingRooms.some((r) => r.id === roomParam) ? roomParam : null;
   const [category, setCategory] = useState("all");
   const [attendees, setAttendees] = useState("6");
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("12:00");
   const [searched, setSearched] = useState(false);
-  const { bookings, addBooking } = useBookings();
+  const { bookings, addBooking, loading: bookingsLoading, error: bookingsError, reload: reloadBookings } = useBookings();
   const { currentUser } = useCurrentUser();
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -53,7 +69,9 @@ export default function BookingPage() {
 
   const bookingsByDate = useMemo(() => {
     const map: Record<string, Booking[]> = {};
+    // การจองที่ยกเลิกแล้วไม่กินเวลาห้อง จึงไม่แสดงในปฏิทินและรายการของวัน
     for (const b of bookings) {
+      if (b.status === "cancelled") continue;
       if (!map[b.date]) map[b.date] = [];
       map[b.date].push(b);
     }
@@ -64,6 +82,7 @@ export default function BookingPage() {
     if (!searched) return [];
     const nAttendees = parseInt(attendees) || 1;
     return meetingRooms.filter(r => {
+      if (preferredRoomId && r.id !== preferredRoomId) return false;
       if (r.status !== "available") return false;
       if (category !== "all" && r.category !== category) return false;
       if (r.capacity < nAttendees) return false;
@@ -74,7 +93,7 @@ export default function BookingPage() {
       );
       return !conflict;
     });
-  }, [searched, category, attendees, startTime, endTime, selectedDate, bookings]);
+  }, [searched, category, attendees, startTime, endTime, selectedDate, bookings, preferredRoomId]);
 
   const selectedDayBookings = bookingsByDate[selectedDate] || [];
 
@@ -82,6 +101,7 @@ export default function BookingPage() {
 
   const submit = async () => {
     if (!selectedRoom || !title.trim()) { toast.error("กรุณากรอกหัวข้อการประชุม"); return; }
+    if (endTime <= startTime) { toast.error("เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม"); return; }
     const newB: Booking = {
       id: `BK-${Date.now()}`,
       roomId: selectedRoom.id,
@@ -114,8 +134,12 @@ export default function BookingPage() {
     }
   };
 
+  // ระหว่างโหลดหรือโหลดไม่สำเร็จ ห้ามถือว่าไม่มีการจอง — ทุกห้องจะดูว่างทั้งที่อาจถูกจองแล้ว
+  if (bookingsLoading && bookings.length === 0) return <PageLoading />;
+  if (bookingsError) return <PageError message={bookingsError} onRetry={() => void reloadBookings()} />;
+
   return (
-    <div className="p-4 md:p-6 pb-16 max-w-[1400px] mx-auto">
+    <div className="p-4 md:p-6 pb-16 max-w-wide mx-auto">
       <header className="mb-5 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
         <div>
           <h1 className="text-lg md:text-xl font-semibold mb-0.5">ปฏิทินและจองห้องประชุม</h1>
@@ -175,20 +199,20 @@ export default function BookingPage() {
               <CardDescription className="text-xs">คลิกเลือกวันที่เพื่อดูการจอง</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="icon-sm" variant="ghost" onClick={() => setCurrent(new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
-                <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+              <Button size="icon-sm" variant="ghost" aria-label="เดือนก่อนหน้า" onClick={() => setCurrent(new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
+                <span className="material-symbols-outlined text-lg">chevron_left</span>
               </Button>
-              <span className="text-sm font-semibold min-w-[110px] text-center">
+              <span className="text-sm font-semibold min-w-28 text-center">
                 {THAI_MONTHS[current.getMonth()]} {current.getFullYear() + 543}
               </span>
-              <Button size="icon-sm" variant="ghost" onClick={() => setCurrent(new Date(current.getFullYear(), current.getMonth() + 1, 1))}>
-                <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+              <Button size="icon-sm" variant="ghost" aria-label="เดือนถัดไป" onClick={() => setCurrent(new Date(current.getFullYear(), current.getMonth() + 1, 1))}>
+                <span className="material-symbols-outlined text-lg">chevron_right</span>
               </Button>
             </div>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-7 gap-1 text-center mb-1">
-              {THAI_DAYS.map(d => <div key={d} className="text-[11px] font-semibold text-muted-foreground py-1">{d}</div>)}
+              {THAI_DAYS.map(d => <div key={d} className="text-caption font-semibold text-muted-foreground py-1">{d}</div>)}
             </div>
             <div className="grid grid-cols-7 gap-1">
               {days.map((d, i) => {
@@ -206,10 +230,17 @@ export default function BookingPage() {
                     }`}
                   >
                     <div className={`text-xs font-semibold ${isToday ? "text-primary" : "text-foreground"}`}>{d.getDate()}</div>
+                    {/* มือถือช่องวันกว้างแค่ ~38px อ่านข้อความไม่ได้ — แสดงเป็นจุดบอกจำนวนแทน รายละเอียดดูที่รายการของวันด้านล่าง */}
+                    {dayBookings.length > 0 && (
+                      <div className="sm:hidden mt-0.5 flex items-center gap-0.5" aria-label={`${dayBookings.length} การจอง`}>
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                        {dayBookings.length > 1 && <span className="text-micro text-primary">{dayBookings.length}</span>}
+                      </div>
+                    )}
                     {dayBookings.slice(0, 2).map((b, j) => (
-                      <div key={j} className="text-[8px] px-1 rounded bg-primary/15 text-primary truncate mt-0.5">{b.startTime} {b.title.substring(0, 8)}</div>
+                      <div key={j} className="hidden sm:block text-micro px-1 rounded bg-primary/15 text-primary truncate mt-0.5">{b.startTime} {b.title.substring(0, 8)}</div>
                     ))}
-                    {dayBookings.length > 2 && <div className="text-[8px] text-muted-foreground mt-0.5">+{dayBookings.length - 2}</div>}
+                    {dayBookings.length > 2 && <div className="hidden sm:block text-micro text-muted-foreground mt-0.5">+{dayBookings.length - 2}</div>}
                   </button>
                 );
               })}
@@ -227,16 +258,24 @@ export default function BookingPage() {
               {searched ? `ห้องที่ว่างในช่วง ${startTime}-${endTime} (${availableRooms.length} ห้อง)` : "ห้องประชุมที่ค้นพบ"}
             </CardTitle>
             <CardDescription className="text-xs">คลิก &quot;จองห้องนี้&quot; เพื่อดำเนินการต่อ</CardDescription>
+            {preferredRoomId && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <span className="rounded-md bg-primary/10 px-2 py-1 text-primary">
+                  เฉพาะ {meetingRooms.find((r) => r.id === preferredRoomId)?.name}
+                </span>
+                <Button size="xs" variant="ghost" onClick={() => setShowAllRooms(true)}>ดูทุกห้อง</Button>
+              </div>
+            )}
           </CardHeader>
           <CardContent>
             {!searched ? (
               <div className="text-center py-12 text-muted-foreground">
-                <span className="material-symbols-outlined text-[40px] mb-2">search</span>
+                <span className="material-symbols-outlined text-4xl mb-2">search</span>
                 <p className="text-sm">กรอกเงื่อนไขและกด &quot;ค้นหาห้อง&quot; เพื่อดูห้องที่ว่าง</p>
               </div>
             ) : availableRooms.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
-                <span className="material-symbols-outlined text-[40px] mb-2">event_busy</span>
+                <span className="material-symbols-outlined text-4xl mb-2">event_busy</span>
                 <p className="text-sm">ไม่พบห้องที่ตรงเงื่อนไข ลองปรับเวลาหรือประเภทห้อง</p>
               </div>
             ) : (
@@ -248,15 +287,15 @@ export default function BookingPage() {
                         <p className="text-sm font-semibold">{r.name}</p>
                         <p className="text-xs text-muted-foreground">{r.categoryLabel}</p>
                       </div>
-                      <Badge variant="secondary" className="text-[10px]">{r.capacity} ที่นั่ง</Badge>
+                      <Badge variant="secondary" className="text-tiny">{r.capacity} ที่นั่ง</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px]">place</span>
+                      <span className="material-symbols-outlined text-sm">place</span>
                       {r.location} {r.floor}
                     </p>
                     <div className="flex flex-wrap gap-1 mb-3">
                       {r.amenities.slice(0, 3).map((a, i) => (
-                        <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{a}</span>
+                        <span key={i} className="text-tiny px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{a}</span>
                       ))}
                     </div>
                     <Button size="sm" className="w-full" onClick={() => openForm(r)}>
@@ -284,14 +323,14 @@ export default function BookingPage() {
               <div key={b.id} className="rounded-lg border p-2.5">
                 <div className="flex items-start justify-between mb-1">
                   <p className="text-xs font-semibold flex-1 line-clamp-2">{b.title}</p>
-                  <Badge className={`text-[9px] ml-2 ${b.status === "confirmed" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                  <Badge className={`text-micro ml-2 ${b.status === "confirmed" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
                     {b.status === "confirmed" ? "ยืนยันแล้ว" : "รอดำเนินการ"}
                   </Badge>
                 </div>
-                <p className="text-[11px] text-muted-foreground">{b.roomName}</p>
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-1">
-                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">schedule</span>{b.startTime}-{b.endTime}</span>
-                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">group</span>{b.attendees}</span>
+                <p className="text-caption text-muted-foreground">{b.roomName}</p>
+                <div className="flex items-center gap-2 text-caption text-muted-foreground mt-1">
+                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">schedule</span>{b.startTime}-{b.endTime}</span>
+                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">group</span>{b.attendees}</span>
                 </div>
               </div>
             ))}

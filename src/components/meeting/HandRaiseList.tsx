@@ -16,7 +16,7 @@ export function HandRaiseList({ raised, isHost, onLower }: Props) {
   if (raised.length === 0) return null;
   const sorted = [...raised].sort((a, b) => a.raisedAt - b.raisedAt);
   return (
-    <div className="border rounded-md p-2 space-y-1 bg-amber-50 dark:bg-amber-950/20">
+    <div className="border rounded-md p-2 space-y-1 bg-warning/10 ">
       <div className="flex items-center gap-1 text-xs font-medium">
         <PanelTopClose className="w-3.5 h-3.5" />
         <span>{sorted.length} คนยกมือ</span>

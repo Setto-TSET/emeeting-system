@@ -10,9 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { meetingStatusLabels, meetingStatusColors, committees, MeetingStatus } from "@/data";
 import { useMeetings } from "@/context/MeetingContext";
+import { PageError, PageLoading } from "@/components/layout/PageState";
 
 function MeetingsPageContent() {
-  const { meetings } = useMeetings();
+  const { meetings, loading: meetingsLoading, error: meetingsError, reload: reloadMeetings } = useMeetings();
   const searchParams = useSearchParams();
   const [q, setQ] = useState("");
   const [committee, setCommittee] = useState(searchParams.get("committee") || "all");
@@ -25,15 +26,19 @@ function MeetingsPageContent() {
     return true;
   }).sort((a, b) => b.date.localeCompare(a.date));
 
+  // ระหว่างโหลดหรือโหลดไม่สำเร็จ ห้ามแสดงสถานะว่าง — ผู้ใช้จะเข้าใจว่าไม่มีการประชุม
+  if (meetingsLoading && meetings.length === 0) return <PageLoading />;
+  if (meetingsError && meetings.length === 0) return <PageError message={meetingsError} onRetry={() => void reloadMeetings()} />;
+
   return (
-    <div className="p-4 md:p-6 pb-16 max-w-[1400px] mx-auto">
+    <div className="p-4 md:p-6 pb-16 max-w-wide mx-auto">
       <header className="mb-5 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
         <div>
           <h1 className="text-lg md:text-xl font-semibold mb-0.5">รายการการประชุม</h1>
           <p className="text-xs text-muted-foreground">ค้นหาและจัดการการประชุมทั้งหมด</p>
         </div>
         <Button asChild size="sm">
-          <Link href="/meetings/new"><span className="material-symbols-outlined text-[18px]">add</span>สร้างการประชุม</Link>
+          <Link href="/meetings/new"><span className="material-symbols-outlined text-lg">add</span>สร้างการประชุม</Link>
         </Button>
       </header>
 
@@ -69,7 +74,7 @@ function MeetingsPageContent() {
             <div className="flex flex-col md:flex-row md:items-center gap-3">
               <div className="flex-shrink-0 flex md:flex-col items-center md:justify-center rounded-lg bg-primary/10 p-3 md:w-20 gap-2 md:gap-0">
                 <span className="text-primary text-2xl font-bold">{new Date(m.date).getDate()}</span>
-                <span className="text-[11px] text-primary">{new Date(m.date).toLocaleDateString("th-TH", { month: "short" })} {new Date(m.date).getFullYear() + 543}</span>
+                <span className="text-caption text-primary">{new Date(m.date).toLocaleDateString("th-TH", { month: "short" })} {new Date(m.date).getFullYear() + 543}</span>
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2 mb-1">
@@ -77,14 +82,14 @@ function MeetingsPageContent() {
                     <p className="text-sm font-semibold leading-tight mb-0.5">{m.name}</p>
                     <p className="text-xs text-muted-foreground">{m.committee} · {m.type}</p>
                   </div>
-                  <Badge className={`${meetingStatusColors[m.status]} text-[10px] border shrink-0`}>{meetingStatusLabels[m.status]}</Badge>
+                  <Badge className={`${meetingStatusColors[m.status]} text-tiny border shrink-0`}>{meetingStatusLabels[m.status]}</Badge>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-2">
-                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[13px]">schedule</span>{m.startTime}-{m.endTime}</span>
-                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[13px]">place</span>{m.location}</span>
-                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[13px]">group</span>{m.participants.length} คน</span>
-                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[13px]">person</span>ผู้จัด: {m.organizer}</span>
-                  {m.conferenceLink && <span className="flex items-center gap-1 text-primary"><span className="material-symbols-outlined text-[13px]">videocam</span>ประชุมทางไกล</span>}
+                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-compact">schedule</span>{m.startTime}-{m.endTime}</span>
+                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-compact">place</span>{m.location}</span>
+                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-compact">group</span>{m.participants.length} คน</span>
+                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-compact">person</span>ผู้จัด: {m.organizer}</span>
+                  {m.conferenceLink && <span className="flex items-center gap-1 text-primary"><span className="material-symbols-outlined text-compact">videocam</span>ประชุมทางไกล</span>}
                 </div>
               </div>
             </div>
@@ -92,7 +97,7 @@ function MeetingsPageContent() {
         ))}
         {filtered.length === 0 && (
           <div className="text-center py-16 text-muted-foreground">
-            <span className="material-symbols-outlined text-[40px] mb-2">event_busy</span>
+            <span className="material-symbols-outlined text-4xl mb-2">event_busy</span>
             <p className="text-sm">ไม่พบการประชุมที่ตรงเงื่อนไข</p>
           </div>
         )}

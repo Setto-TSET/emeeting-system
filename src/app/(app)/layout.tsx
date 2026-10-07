@@ -9,11 +9,11 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-dvh">
       <Sidebar />
-      <div className="flex flex-1 flex-col md:pl-[280px]">
+      <div className="flex flex-1 flex-col md:pl-sidebar">
         <TopNav />
-        <main className="flex-1 pt-20 px-2 md:pr-4">
+        <main className="flex-1 pt-[calc(5rem+env(safe-area-inset-top))] px-2 pb-[env(safe-area-inset-bottom)] md:pr-4 min-w-0">
           <RouteGuard>
             <PageTransition>{children}</PageTransition>
           </RouteGuard>

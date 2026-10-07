@@ -42,8 +42,17 @@ async function openClient(sub: string, name: string, role = 'admin'): Promise<We
   return socket;
 }
 
+// room_state ถูกประกาศทุกครั้งที่มีคนเข้า/ออกห้อง — ข้ามไป ไม่งั้นแย่งที่ข้อความที่เทสต์รออยู่
 function nextMessage(socket: WebSocket): Promise<any> {
-  return new Promise((resolve) => socket.once('message', (raw) => resolve(JSON.parse(raw.toString()))));
+  return new Promise((resolve) => {
+    const onMessage = (raw: WebSocket.RawData) => {
+      const message = JSON.parse(raw.toString());
+      if (message.type === 'room_state') return;
+      socket.off('message', onMessage);
+      resolve(message);
+    };
+    socket.on('message', onMessage);
+  });
 }
 
 describe('audio frames', () => {

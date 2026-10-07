@@ -14,6 +14,7 @@ declare global {
         name: string;
         role: string;
         meetingId?: string;
+        roomId?: string;
       };
     }
   }
@@ -36,6 +37,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     name: claims.name,
     role: claims.role,
     ...(claims.meetingId ? { meetingId: claims.meetingId } : {}),
+    ...(claims.roomId ? { roomId: claims.roomId } : {}),
   };
   next();
 }

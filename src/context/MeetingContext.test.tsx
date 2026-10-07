@@ -18,6 +18,9 @@ const fetchMeetings = vi.fn<() => Promise<Meeting[]>>();
 const createMeeting = vi.fn<(m: Meeting) => Promise<Meeting>>();
 const saveMeeting = vi.fn<(m: Meeting) => Promise<Meeting>>();
 
+const toastError = vi.fn();
+vi.mock("sonner", () => ({ toast: { error: (...args: unknown[]) => toastError(...args) } }));
+
 vi.mock("@/services/api/meetings", () => ({
   fetchMeetings: () => fetchMeetings(),
   createMeeting: (m: Meeting) => createMeeting(m),
@@ -116,12 +119,12 @@ describe("MeetingContext", () => {
     expect(saveMeeting.mock.calls[0][0].name).toBe("แก้ชื่อแล้ว");
   });
 
-  it("server ปฏิเสธการแก้ไข — แจ้ง error แล้วดึงของจริงกลับมาทับ", async () => {
+  it("server ปฏิเสธการแก้ไข — แจ้งผู้ใช้ด้วย toast แล้วดึงของจริงกลับมาทับ", async () => {
     saveMeeting.mockRejectedValue(new ApiError(403, "ไม่มีสิทธิ์แก้ไขการประชุมนี้"));
     await mount();
     await click("rename");
 
-    expect(text("error")).toBe("ไม่มีสิทธิ์แก้ไขการประชุมนี้");
+    expect(toastError).toHaveBeenCalledWith("ไม่มีสิทธิ์แก้ไขการประชุมนี้");
     expect(fetchMeetings).toHaveBeenCalledTimes(2);
     expect(text("names")).toBe(sample.name);
   });

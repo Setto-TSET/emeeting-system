@@ -44,6 +44,7 @@ vi.mock("@/context/RoomSignalingContext", () => ({
     broadcast: broadcastMock,
     sendAudio: sendAudioMock,
     connected: true,
+    connectionFailed: false,
     useSignal: (type: string, handler: AnyHandler) => {
       // eslint-disable-next-line react-hooks/rules-of-hooks
       useEffect(() => {
@@ -96,7 +97,6 @@ function Harness({
 }) {
   const [raisedHands, setRaisedHands] = useState<RaisedHandDto[]>([]);
   const [sharedFileId, setSharedFileId] = useState<string | null>(null);
-  const [sharedViewerPage, setSharedViewerPage] = useState(1);
   const [latestSubtitle, setLatestSubtitle] = useState<RoomSignal<"subtitle_text"> | null>(null);
   const broadcastRef = useRef<((signal: unknown) => void) | null>(null);
   const sendAudioRef = useRef<((frame: ArrayBuffer) => void) | null>(null);
@@ -116,7 +116,6 @@ function Harness({
     <div>
       <div data-testid="raised">{raisedHands.map((h) => h.userId).join(",")}</div>
       <div data-testid="shared-file">{sharedFileId ?? ""}</div>
-      <div data-testid="shared-page">{sharedViewerPage}</div>
       <RoomSignalBridge
         currentUserId={currentUserId}
         broadcastRef={broadcastRef as React.MutableRefObject<((signal: unknown) => void) | null>}
@@ -125,7 +124,9 @@ function Harness({
         setRaisedHands={setRaisedHands}
         setLatestSubtitle={setLatestSubtitle}
         setSharedFileId={setSharedFileId}
-        setSharedViewerPage={setSharedViewerPage}
+        onChatMessage={() => {}}
+        onRoomState={() => {}}
+        onConnectionFailed={() => {}}
         handSignalReceivedRef={handSignalReceivedRef}
         docShareSignalReceivedRef={docShareSignalReceivedRef}
       />
@@ -253,7 +254,7 @@ describe("RoomSignalBridge", () => {
     expect(container.querySelector('[data-testid="raised"]')?.textContent).toBe("");
   });
 
-  it("doc_share_state updates the shared file and page, and a null share clears it", async () => {
+  it("doc_share_state updates the shared file, and a null share clears it", async () => {
     const snap = deferred<RoomSnapshot>();
     await act(async () => {
       root.render(<Harness currentUserId="U-1" snapshotPromise={snap.promise} />);
@@ -266,13 +267,11 @@ describe("RoomSignalBridge", () => {
       });
     });
     expect(container.querySelector('[data-testid="shared-file"]')?.textContent).toBe("F-1");
-    expect(container.querySelector('[data-testid="shared-page"]')?.textContent).toBe("3");
     expect(toastInfoMock).toHaveBeenCalledWith("เลขานุการ กำลังแชร์เอกสาร: วาระ.pdf");
 
     await act(async () => {
       emit("doc_share_state", "U-2", { share: null });
     });
     expect(container.querySelector('[data-testid="shared-file"]')?.textContent).toBe("");
-    expect(container.querySelector('[data-testid="shared-page"]')?.textContent).toBe("1");
   });
 });

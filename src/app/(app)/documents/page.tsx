@@ -16,12 +16,21 @@ import {
   committees,
   FileVisibility,
   MeetingFile,
+  SystemRole,
 } from "@/data";
+import { canAccessRoute } from "@/lib/access";
 import { useCurrentUser } from "@/context/UserContext";
 import { useMeetings } from "@/context/MeetingContext";
+import { PageError, PageLoading } from "@/components/layout/PageState";
 import { DocumentLightbox } from "@/components/meeting/DocumentPreview";
 
-const iconSm = "material-symbols-outlined text-[16px]";
+const iconSm = "material-symbols-outlined text-base";
+
+
+/** ผู้เข้าร่วมทั่วไปเปิดหน้าจัดการการประชุมไม่ได้ — ลิงก์ไปหน้าการประชุมของฉันแทนลิงก์ที่ถูกดีดกลับ */
+function meetingHref(role: SystemRole, meetingId: string): string {
+  return canAccessRoute(role, `/meetings/${meetingId}`) ? `/meetings/${meetingId}` : "/portal";
+}
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
@@ -52,7 +61,7 @@ const visibilityOptions: { value: FileVisibility | "all"; label: string }[] = [
 
 export default function DocumentsPage() {
   const { currentUser } = useCurrentUser();
-  const { meetings } = useMeetings();
+  const { meetings, loading: meetingsLoading, error: meetingsError, reload: reloadMeetings } = useMeetings();
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [visFilter, setVisFilter] = useState<string>("all");
@@ -60,12 +69,8 @@ export default function DocumentsPage() {
   const [view, setView] = useState<"tree" | "list">("tree");
 
   const [previewFile, setPreviewFile] = useState<MeetingFile | null>(null);
-  const [previewPage, setPreviewPage] = useState(1);
-  const [previewZoom, setPreviewZoom] = useState(100);
   const openPreview = (file: MeetingFile) => {
     setPreviewFile(file);
-    setPreviewPage(1);
-    setPreviewZoom(100);
   };
 
   const allDocs = useMemo(() => getVisibleDocuments(currentUser, meetings), [currentUser, meetings]);
@@ -111,8 +116,12 @@ export default function DocumentsPage() {
     return byVis;
   }, [allDocs]);
 
+  // ระหว่างโหลดหรือโหลดไม่สำเร็จ ห้ามแสดงสถานะว่าง — ผู้ใช้จะเข้าใจว่าไม่มีการประชุม
+  if (meetingsLoading && meetings.length === 0) return <PageLoading />;
+  if (meetingsError && meetings.length === 0) return <PageError message={meetingsError} onRetry={() => void reloadMeetings()} />;
+
   return (
-    <div className="p-4 md:p-6 pb-16 max-w-[1400px] mx-auto">
+    <div className="p-4 md:p-6 pb-16 max-w-wide mx-auto">
       {/* Header */}
       <header className="mb-5">
         <h1 className="text-lg md:text-xl font-semibold mb-0.5">คลังเอกสาร</h1>
@@ -130,17 +139,17 @@ export default function DocumentsPage() {
               <p className="text-sm font-medium">
                 กำลังดูในฐานะ: <span className="font-semibold">{currentUser.name}</span>
               </p>
-              <p className="text-[11px] text-muted-foreground">{currentUser.position} · {currentUser.department}</p>
+              <p className="text-caption text-muted-foreground">{currentUser.position} · {currentUser.department}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 md:ml-auto">
-            <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold ${systemRoleColors[currentUser.systemRole]}`}>
+            <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-caption font-semibold ${systemRoleColors[currentUser.systemRole]}`}>
               {systemRoleLabels[currentUser.systemRole]}
             </span>
             <div className="text-xs text-muted-foreground">
               เห็นได้ <span className="font-semibold text-foreground">{allDocs.length}</span> / {totalDocs} ไฟล์
               {hiddenCount > 0 && (
-                <span className="ml-1.5 text-amber-600">
+                <span className="ml-1.5 text-warning">
                   ({hiddenCount} ไฟล์ถูกซ่อนตามสิทธิ์)
                 </span>
               )}
@@ -158,7 +167,7 @@ export default function DocumentsPage() {
                 <span className={iconSm}>{fileVisibilityIcons[v]}</span>
               </div>
               <div className="min-w-0">
-                <p className="text-[11px] text-muted-foreground truncate">{fileVisibilityLabels[v]}</p>
+                <p className="text-caption text-muted-foreground truncate">{fileVisibilityLabels[v]}</p>
                 <p className="text-lg font-semibold leading-none">{stats[v]}</p>
               </div>
             </CardContent>
@@ -169,7 +178,7 @@ export default function DocumentsPage() {
       {/* Filters */}
       <Card className="card-shadow mb-4">
         <CardContent className="p-4 flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-md border px-2 h-9 bg-muted/40 min-w-[240px] flex-1 max-w-md">
+          <div className="flex items-center gap-1.5 rounded-md border px-2 h-9 bg-muted/40 min-w-60 flex-1 max-w-md">
             <span className={iconSm + " text-muted-foreground"}>search</span>
             <input
               type="text"
@@ -210,7 +219,7 @@ export default function DocumentsPage() {
       {filtered.length === 0 ? (
         <Card className="card-shadow">
           <CardContent className="p-10 text-center">
-            <span className="material-symbols-outlined text-muted-foreground text-[40px]">folder_off</span>
+            <span className="material-symbols-outlined text-muted-foreground text-4xl">folder_off</span>
             <p className="text-sm text-muted-foreground mt-2">ไม่พบเอกสารที่ตรงกับเงื่อนไข</p>
             {hiddenCount > 0 && (
               <p className="text-xs text-muted-foreground mt-1">
@@ -239,7 +248,7 @@ export default function DocumentsPage() {
                 <div className="flex items-center gap-2">
                   <span className={iconSm + " text-primary"}>groups</span>
                   <CardTitle className="text-sm">{committeeName}</CardTitle>
-                  <Badge variant="secondary" className="text-[10px] ml-auto">
+                  <Badge variant="secondary" className="text-tiny ml-auto">
                     {Array.from(meetingMap.values()).reduce((s, tm) => s + Array.from(tm.values()).reduce((a, b) => a + b.length, 0), 0)} ไฟล์
                   </Badge>
                 </div>
@@ -251,15 +260,15 @@ export default function DocumentsPage() {
                     <div key={mId} className="rounded-lg border">
                       <div className="px-3 py-2 border-b bg-muted/30 flex items-center gap-2">
                         <span className={iconSm + " text-muted-foreground"}>event_note</span>
-                        <Link href={`/meetings/${m.id}`} className="text-sm font-semibold hover:text-primary hover:underline truncate">
+                        <Link href={meetingHref(currentUser.systemRole, m.id)} className="text-sm font-semibold hover:text-primary hover:underline truncate">
                           {m.name}
                         </Link>
-                        <span className="text-[11px] text-muted-foreground ml-auto flex-shrink-0">{fmtDate(m.date)}</span>
+                        <span className="text-caption text-muted-foreground ml-auto flex-shrink-0">{fmtDate(m.date)}</span>
                       </div>
                       <div className="p-3 space-y-3">
                         {Array.from(typeMap.entries()).map(([type, files]) => (
                           <div key={type}>
-                            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
+                            <p className="text-caption font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
                               <span className={iconSm}>folder</span>
                               {fileTypeLabels[type as MeetingFile["type"]]}
                               <span className="text-muted-foreground/70">({files.length})</span>
@@ -286,10 +295,6 @@ export default function DocumentsPage() {
         <DocumentLightbox
           file={previewFile}
           onClose={() => setPreviewFile(null)}
-          currentPage={previewPage}
-          setCurrentPage={setPreviewPage}
-          zoom={previewZoom}
-          setZoom={setPreviewZoom}
           viewerName={currentUser.name}
         />
       )}
@@ -312,28 +317,29 @@ function FileRow({
   compact?: boolean;
   onPreview?: (file: MeetingFile) => void;
 }) {
+  const { currentUser } = useCurrentUser();
   return (
     <div className={`rounded-lg border p-2.5 flex items-center gap-3 hover:border-primary/50 transition-colors ${compact ? "" : "bg-card"}`}>
       <div className="h-9 w-9 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
-        <span className="material-symbols-outlined text-primary text-[20px]">{fileIcon(file.name)}</span>
+        <span className="material-symbols-outlined text-primary text-xl">{fileIcon(file.name)}</span>
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{file.name}</p>
-        <p className="text-[11px] text-muted-foreground truncate">{file.description}</p>
+        <p className="text-caption text-muted-foreground truncate">{file.description}</p>
         {!compact && (
           <div className="flex items-center gap-2 mt-0.5">
-            <Link href={`/meetings/${meetingId}`} className="text-[11px] text-primary hover:underline truncate">
+            <Link href={meetingHref(currentUser.systemRole, meetingId)} className="text-caption text-primary hover:underline truncate">
               {meetingName}
             </Link>
-            <span className="text-[10px] text-muted-foreground">· {fmtDate(meetingDate)}</span>
+            <span className="text-tiny text-muted-foreground">· {fmtDate(meetingDate)}</span>
           </div>
         )}
-        <p className="text-[10px] text-muted-foreground mt-0.5">
+        <p className="text-tiny text-muted-foreground mt-0.5">
           {file.uploadedBy} · {file.uploadedAt} · {file.size}
         </p>
       </div>
-      <Badge className={`text-[10px] border ${fileVisibilityColors[file.visibility]}`} variant="secondary">
-        <span className="material-symbols-outlined text-[11px] mr-0.5">{fileVisibilityIcons[file.visibility]}</span>
+      <Badge className={`text-tiny border ${fileVisibilityColors[file.visibility]}`} variant="secondary">
+        <span className="material-symbols-outlined text-caption mr-0.5">{fileVisibilityIcons[file.visibility]}</span>
         {fileVisibilityLabels[file.visibility]}
       </Badge>
       {/* ดูอย่างเดียวทุกบทบาท — ระบบไม่มีการดาวน์โหลดไฟล์ออกนอกเว็บ */}

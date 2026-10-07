@@ -2,9 +2,10 @@
 //
 // สัญญาณแบ่งเป็นสองทาง:
 //   client → server: hand_raise, hand_lower, vote_create, vote_cast, vote_close,
-//                    subtitle_text, doc_share, doc_share_page, doc_share_stop
+//                    doc_share, doc_share_stop, chat_send, meeting_refresh
 //   server → client: room_joined, signal_error, vote_state, hand_state,
-//                    doc_share_state, subtitle_text
+//                    doc_share_state, subtitle_text, chat_message, room_state
+// (คำบรรยายมาจาก ASR ฝั่ง server เท่านั้น — server ไม่รับ subtitle_text จาก client แล้ว)
 // server เป็นคนตัดสินสถานะจริงเสมอ — client ส่ง "เจตนา" ไป ไม่ได้ส่ง "ผลลัพธ์"
 
 export type SignalType =
@@ -21,7 +22,11 @@ export type SignalType =
   | "signal_error"
   | "vote_state"
   | "hand_state"
-  | "doc_share_state";
+  | "doc_share_state"
+  | "chat_send"
+  | "chat_message"
+  | "meeting_refresh"
+  | "room_state";
 
 export type VoteOptionDto = { id: string; label: string };
 export type VoteRecordDto = { userId: string; userName: string; optionId: string; timestamp: number };
@@ -80,4 +85,12 @@ export interface SignalPayloadMap {
   // ของ raised list เอง (เดาไม่ได้แน่นอน เพราะ payload เหมือนกันไม่ว่าใครเป็นคนลด)
   hand_state: { raised: RaisedHandDto[]; lastAction?: { userId: string; byUserId: string } };
   doc_share_state: { share: DocShareDto | null };
+  chat_send: { text: string };
+  chat_message: { message: ChatMessageDto };
+  // ผู้จัดเปลี่ยนวาระ/สถานะผ่าน REST แล้ว ขอให้ server ประกาศสถานะล่าสุดจาก DB ให้ทุกคน
+  meeting_refresh: Record<string, never>;
+  // connectedUserIds = คนที่ต่อห้องอยู่จริงตอนนี้ — ใช้แทนการเขียน present ลงการประชุม
+  room_state: { status: string | null; activeAgendaId: string | null; connectedUserIds: string[] };
 }
+
+export type ChatMessageDto = { id: string; senderId: string; sender: string; text: string; time: string };

@@ -1,38 +1,43 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from "react";
-import { Meeting, MeetingFile, MeetingParticipant } from "@/data";
+import { toast } from "sonner";
+import { Meeting, MeetingFile } from "@/data";
 import { ApiError } from "@/services/api/client";
-import { createMeeting, fetchMeetings, saveMeeting, deleteMeeting } from "@/services/api/meetings";
+import { createMeeting, fetchMeetings, saveMeeting, deleteMeeting, postAgendaComment } from "@/services/api/meetings";
 import { useCurrentUser } from "@/context/UserContext";
 
 type MeetingContextType = {
   meetings: Meeting[];
-  /** true ระหว่างดึงรายการจาก server ครั้งแรกของผู้ใช้คนนี้ */
+  /** true ระหว่างดึงรายการจาก server */
   loading: boolean;
-  /** ข้อความผิดพลาดล่าสุดจากการคุยกับ server — null คือปกติ */
+  /** ข้อความผิดพลาดล่าสุดจากการโหลดรายการ — null คือปกติ */
   error: string | null;
   reload: () => Promise<void>;
-  addMeeting: (meeting: Meeting) => void;
+  /** คืน true เมื่อ server สร้างสำเร็จ — ผู้เรียกต้องรอก่อนบอกผู้ใช้ว่าสำเร็จหรือพาไปหน้ารายละเอียด */
+  addMeeting: (meeting: Meeting) => Promise<boolean>;
   removeMeeting: (meetingId: string) => Promise<void>;
-  updateMeeting: (meetingId: string, updated: Partial<Meeting>) => void;
-  addMeetingFile: (meetingId: string, file: MeetingFile) => void;
-  addMeetingComment: (meetingId: string, agendaId: string, comment: { by: string; text: string; time: string }) => void;
-  updateActiveAgenda: (meetingId: string, agendaId: string | null) => void;
-  joinMeetingAsExternal: (meetingId: string, name: string, role: string) => MeetingParticipant;
-  addChatMessage: (meetingId: string, message: { sender: string; text: string; time: string }) => void;
+  /** คืน true เมื่อ server บันทึกสำเร็จ ถ้าล้มเหลวจะแจ้งผู้ใช้และดึงของจริงกลับมาทับให้เอง */
+  updateMeeting: (meetingId: string, updated: Partial<Meeting>) => Promise<boolean>;
+  addMeetingFile: (meetingId: string, file: MeetingFile) => Promise<boolean>;
+  addMeetingComment: (meetingId: string, agendaId: string, text: string) => Promise<boolean>;
+  updateActiveAgenda: (meetingId: string, agendaId: string | null) => Promise<boolean>;
+  /** ใส่ค่าที่ server ประกาศมาทาง realtime ลงหน้าจอเฉย ๆ — ไม่ยิงกลับขึ้น server */
+  patchLocal: (meetingId: string, patch: (meeting: Meeting) => Meeting) => void;
 };
 
 const MeetingContext = createContext<MeetingContextType | null>(null);
 
+function messageOf(e: unknown, fallback: string): string {
+  return e instanceof ApiError ? e.message : fallback;
+}
+
 /**
- * การประชุมทั้งหมดอยู่ที่ server แล้ว (เดิม localStorage คีย์ meeting_system_meetings_v9)
- *
- * ทำไมต้องย้าย: ประชุมที่เลขาฯ สร้างไม่มีใครเห็นนอกจากเครื่องตัวเอง และ WebSocket
- * ปฏิเสธการเข้าห้อง (รหัส 4403) เพราะ backend หาการประชุมนั้นใน MySQL ไม่เจอ
+ * การประชุมทั้งหมดอยู่ที่ server
  *
  * รูปแบบการเขียน: อัปเดตหน้าจอทันทีแล้วค่อยยิงขึ้น server (optimistic)
- * ถ้า server ปฏิเสธ — ดึงของจริงกลับมาทับ ไม่ปล่อยให้หน้าจอโชว์สิ่งที่ไม่ได้ถูกบันทึก
+ * ถ้า server ปฏิเสธ — แจ้งผู้ใช้ด้วย toast จากจุดนี้จุดเดียว แล้วดึงของจริงกลับมาทับ
+ * เดิมความล้มเหลวเก็บไว้ใน error ที่ไม่มีหน้าไหนอ่าน ผู้ใช้เห็นค่าเด้งกลับหลังขึ้นว่า "สำเร็จ" ไปแล้ว
  */
 export function MeetingProvider({ children }: { children: ReactNode }) {
   const { currentUser } = useCurrentUser();
@@ -57,11 +62,12 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       setError(null);
     } catch (e) {
       // ยังไม่ล็อกอิน (หน้า login) — ไม่ใช่ความผิดพลาดที่ต้องแจ้งผู้ใช้
+      // ส่วน token หมดอายุ apiFetch พาไปหน้า login ให้เองแล้ว
       if (e instanceof ApiError && e.status === 401) {
         apply([]);
         setError(null);
       } else {
-        setError(e instanceof ApiError ? e.message : "โหลดรายการประชุมไม่สำเร็จ");
+        setError(messageOf(e, "โหลดรายการประชุมไม่สำเร็จ"));
       }
     } finally {
       setLoading(false);
@@ -73,22 +79,28 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     void reload();
   }, [currentUser.id, reload]);
 
+  /** ล้มเหลวแล้ว: บอกผู้ใช้ก่อน แล้วค่อยดึงของจริงกลับมาทับสิ่งที่หน้าจอแสดงไปล่วงหน้า */
+  const rollback = useCallback(
+    async (e: unknown, fallback: string) => {
+      toast.error(messageOf(e, fallback));
+      await reload();
+    },
+    [reload]
+  );
+
   /** เขียนการประชุมที่เปลี่ยนไปขึ้น server แล้วเอาค่าที่ server ยืนยันกลับมาทับ */
   const persist = useCallback(
-    async (meeting: Meeting) => {
+    async (meeting: Meeting): Promise<boolean> => {
       try {
         const saved = await saveMeeting(meeting);
         apply(meetingsRef.current.map((m) => (m.id === saved.id ? saved : m)));
-        setError(null);
+        return true;
       } catch (e) {
-        const message = e instanceof ApiError ? e.message : "บันทึกการประชุมไม่สำเร็จ";
-        // ดึงของจริงกลับมาทับก่อน แล้วค่อยตั้ง error — reload ล้าง error ทุกครั้งที่สำเร็จ
-        // ถ้าตั้งก่อนจะโดนล้างทิ้ง ผู้ใช้เห็นค่าเด้งกลับโดยไม่รู้ว่าเพราะอะไร
-        await reload();
-        setError(message);
+        await rollback(e, "บันทึกการประชุมไม่สำเร็จ");
+        return false;
       }
     },
-    [apply, reload]
+    [apply, rollback]
   );
 
   /**
@@ -96,35 +108,32 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
    * ที่เนื้อหาเปลี่ยนจริงขึ้น server (ไม่ยิงทั้งรายการทุกครั้ง)
    */
   const mutate = useCallback(
-    (updater: (prev: Meeting[]) => Meeting[]) => {
+    async (updater: (prev: Meeting[]) => Meeting[]): Promise<boolean> => {
       const prev = meetingsRef.current;
       const next = updater(prev);
       apply(next);
 
       const before = new Map(prev.map((m) => [m.id, JSON.stringify(m)]));
-      for (const meeting of next) {
-        if (before.get(meeting.id) !== JSON.stringify(meeting)) void persist(meeting);
-      }
+      const changed = next.filter((m) => before.get(m.id) !== JSON.stringify(m));
+      const results = await Promise.all(changed.map(persist));
+      return results.every(Boolean);
     },
     [apply, persist]
   );
 
   const addMeeting = useCallback(
-    (meeting: Meeting) => {
+    async (meeting: Meeting): Promise<boolean> => {
       apply([meeting, ...meetingsRef.current]);
-      void (async () => {
-        try {
-          const saved = await createMeeting(meeting);
-          apply(meetingsRef.current.map((m) => (m.id === saved.id ? saved : m)));
-          setError(null);
-        } catch (e) {
-          const message = e instanceof ApiError ? e.message : "สร้างการประชุมไม่สำเร็จ";
-          await reload();
-          setError(message);
-        }
-      })();
+      try {
+        const saved = await createMeeting(meeting);
+        apply(meetingsRef.current.map((m) => (m.id === saved.id ? saved : m)));
+        return true;
+      } catch (e) {
+        await rollback(e, "สร้างการประชุมไม่สำเร็จ");
+        return false;
+      }
     },
-    [apply, reload]
+    [apply, rollback]
   );
 
   // ลบทั้งการประชุม — เอาออกจากจอทันที ถ้า server ปฏิเสธก็ดึงกลับมาแล้วโยน error ต่อ
@@ -135,11 +144,8 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       apply(prev.filter((m) => m.id !== meetingId));
       try {
         await deleteMeeting(meetingId);
-        setError(null);
       } catch (e) {
         apply(prev);
-        const message = e instanceof ApiError ? e.message : "ลบการประชุมไม่สำเร็จ";
-        setError(message);
         throw e;
       }
     },
@@ -147,90 +153,45 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
   );
 
   const updateMeeting = useCallback(
-    (meetingId: string, updated: Partial<Meeting>) => {
-      mutate((prev) => prev.map((m) => (m.id === meetingId ? { ...m, ...updated } : m)));
-    },
+    (meetingId: string, updated: Partial<Meeting>) =>
+      mutate((prev) => prev.map((m) => (m.id === meetingId ? { ...m, ...updated } : m))),
     [mutate]
   );
 
   const addMeetingFile = useCallback(
-    (meetingId: string, file: MeetingFile) => {
-      mutate((prev) =>
-        prev.map((m) => (m.id === meetingId ? { ...m, files: [...m.files, file] } : m))
-      );
-    },
+    (meetingId: string, file: MeetingFile) =>
+      mutate((prev) => prev.map((m) => (m.id === meetingId ? { ...m, files: [...m.files, file] } : m))),
     [mutate]
   );
 
-  const addMeetingComment = useCallback(
-    (meetingId: string, agendaId: string, comment: { by: string; text: string; time: string }) => {
-      mutate((prev) =>
-        prev.map((m) =>
-          m.id === meetingId
-            ? {
-                ...m,
-                agenda: m.agenda.map((a) =>
-                  a.id === agendaId ? { ...a, comments: [...a.comments, comment] } : a
-                ),
-              }
-            : m
-        )
-      );
+  const patchLocal = useCallback(
+    (meetingId: string, patch: (meeting: Meeting) => Meeting) => {
+      apply(meetingsRef.current.map((m) => (m.id === meetingId ? patch(m) : m)));
     },
-    [mutate]
+    [apply]
+  );
+
+  // ความคิดเห็นมี route ของตัวเอง — ผู้เข้าร่วมทั่วไปไม่มีสิทธิ์ PUT ทั้งการประชุม
+  const addMeetingComment = useCallback(
+    async (meetingId: string, agendaId: string, text: string): Promise<boolean> => {
+      try {
+        const comment = await postAgendaComment(meetingId, agendaId, text);
+        patchLocal(meetingId, (m) => ({
+          ...m,
+          agenda: m.agenda.map((a) => (a.id === agendaId ? { ...a, comments: [...a.comments, comment] } : a)),
+        }));
+        return true;
+      } catch (e) {
+        toast.error(messageOf(e, "ส่งความคิดเห็นไม่สำเร็จ"));
+        return false;
+      }
+    },
+    [patchLocal]
   );
 
   const updateActiveAgenda = useCallback(
-    (meetingId: string, agendaId: string | null) => {
-      mutate((prev) =>
-        prev.map((m) => (m.id === meetingId ? { ...m, activeAgendaId: agendaId } : m))
-      );
-    },
-    [mutate]
-  );
-
-  const joinMeetingAsExternal = useCallback(
-    (meetingId: string, name: string, role: string) => {
-      // dedup ด้วย sessionId ไม่ใช่ชื่อ — คนสองคนที่ชื่อซ้ำต้องแยกกันได้
-      const sessionId = `P-EXT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const newParticipant: MeetingParticipant = {
-        id: sessionId,
-        userId: null, // แขกภายนอก ไม่มีบัญชีในระบบ
-        name,
-        position: "ผู้เข้าร่วมประชุม",
-        role,
-        department: "ภายนอกองค์กร",
-        email: `${name.toLowerCase().replace(/\s+/g, ".")}@guest.external`,
-        attendance: "attend",
-        present: true,
-        inSystem: false,
-      };
-      mutate((prev) =>
-        prev.map((m) =>
-          m.id === meetingId ? { ...m, participants: [...m.participants, newParticipant] } : m
-        )
-      );
-      return newParticipant;
-    },
-    [mutate]
-  );
-
-  const addChatMessage = useCallback(
-    (meetingId: string, msg: { sender: string; text: string; time: string }) => {
-      mutate((prev) =>
-        prev.map((m) =>
-          m.id === meetingId
-            ? {
-                ...m,
-                chatMessages: [
-                  ...(m.chatMessages || []),
-                  { id: `msg-${Date.now()}-${Math.random()}`, ...msg },
-                ],
-              }
-            : m
-        )
-      );
-    },
+    (meetingId: string, agendaId: string | null) =>
+      mutate((prev) => prev.map((m) => (m.id === meetingId ? { ...m, activeAgendaId: agendaId } : m))),
     [mutate]
   );
 
@@ -247,8 +208,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
         addMeetingFile,
         addMeetingComment,
         updateActiveAgenda,
-        joinMeetingAsExternal,
-        addChatMessage,
+        patchLocal,
       }}
     >
       {children}

@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { ApiError } from "@/services/api/client";
+import { useBookings } from "@/context/BookingContext";
+import { today } from "@/lib/clock";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,14 +21,16 @@ const meetingTypes = ["การประชุมคณะกรรมการ
 export default function NewMeetingPage() {
   const router = useRouter();
   const { addMeeting } = useMeetings();
+  const { addBooking, cancelBooking } = useBookings();
   const { currentUser } = useCurrentUser();
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     name: "",
     shortName: "",
     type: "การประชุมคณะกรรมการ",
     committeeId: committees[0].id,
     organizer: "",
-    date: "2026-07-25",
+    date: today,
     startTime: "09:00",
     endTime: "12:00",
     roomId: meetingRooms[0].id,
@@ -47,9 +52,11 @@ export default function NewMeetingPage() {
   const provider = form.conferenceEngine === "external" ? externalProvider : "zegocloud" as const;
   const detectedSpec = conferenceProviders[provider];
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     if (!form.name.trim()) { toast.error("กรุณากรอกชื่อการประชุม"); return; }
+    if (form.endTime <= form.startTime) { toast.error("เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม"); return; }
 
     const committee = committees.find(c => c.id === form.committeeId)!;
     // ฟอร์มเก็บ roomId แต่ทุกหน้าที่แสดงผลคาดหวัง "ชื่อห้อง" — แปลงตรงนี้จุดเดียว
@@ -115,13 +122,48 @@ export default function NewMeetingPage() {
       createdAt: new Date().toISOString().split("T")[0],
     };
 
-    addMeeting(newMeeting);
-    toast.success("สร้างการประชุมสำเร็จ", { description: "ระบบจะนำท่านไปยังหน้ารายละเอียดเพื่อจัดการองค์ประชุม" });
-    router.push(`/meetings/${newMeeting.id}`);
+    setSubmitting(true);
+    try {
+      // จองห้องก่อน — server ตัดสินเวลาชนในทรานแซกชันเดียว (409) เดิมสร้างประชุมได้แม้ห้องถูกจองไว้แล้ว
+      let bookingId: string;
+      try {
+        const booking = await addBooking({
+          id: "",
+          roomId: room.id,
+          roomName: room.name,
+          title: newMeeting.name,
+          bookedById: currentUser.id,
+          bookedBy: currentUser.name,
+          department: currentUser.department,
+          date: form.date,
+          startTime: form.startTime,
+          endTime: form.endTime,
+          attendees: participants.length,
+          purpose: `การประชุม ${newMeeting.name}`,
+          status: "confirmed",
+        });
+        bookingId = booking.id;
+      } catch (err) {
+        toast.error(err instanceof ApiError && err.status === 409 ? `${room.name} ไม่ว่างในช่วงเวลานี้` : "จองห้องไม่สำเร็จ", {
+          description: err instanceof ApiError ? err.message : "ตรวจสอบการเชื่อมต่อแล้วลองใหม่",
+        });
+        return;
+      }
+
+      // รอ server ยืนยันก่อนบอกว่าสำเร็จ — เดิมพาไปหน้ารายละเอียดทันที ถ้าสร้างไม่สำเร็จจะเจอ "ไม่พบการประชุม"
+      if (!(await addMeeting(newMeeting))) {
+        await cancelBooking(bookingId).catch(() => undefined);
+        return;
+      }
+      toast.success("สร้างการประชุมและจองห้องสำเร็จ", { description: "ไปจัดการองค์ประชุมและวาระต่อได้เลย" });
+      router.push(`/meetings/${newMeeting.id}`);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="p-4 md:p-6 pb-16 max-w-[900px] mx-auto">
+    <div className="p-4 md:p-6 pb-16 max-w-narrow mx-auto">
       <header className="mb-5">
         <h1 className="text-lg md:text-xl font-semibold mb-0.5">สร้างการประชุม</h1>
         <p className="text-xs text-muted-foreground">กรอกข้อมูลการประชุมและกำหนดผู้จัดการประชุม</p>
@@ -201,7 +243,7 @@ export default function NewMeetingPage() {
                     placeholder="วางลิงก์จาก Teams / Zoom / Google Meet ได้เลย"
                   />
                   <div className="mt-2 flex items-center gap-2 text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-muted-foreground">
+                    <span className="material-symbols-outlined text-base text-muted-foreground">
                       {detectedSpec.icon}
                     </span>
                     <span className="text-muted-foreground">ระบบตรวจพบ:</span>
@@ -214,8 +256,8 @@ export default function NewMeetingPage() {
               )}
               {form.conferenceEngine === "zegocloud" && (
                 <div className="md:col-span-2">
-                  <div className="rounded-lg bg-[#0055FF]/5 border border-[#0055FF]/20 px-3 py-2 flex items-center gap-2 text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-[#0055FF]">videocam</span>
+                  <div className="rounded-lg bg-brand-zego/5 border border-brand-zego/20 px-3 py-2 flex items-center gap-2 text-xs">
+                    <span className="material-symbols-outlined text-base text-brand-zego">videocam</span>
                     <span className="text-muted-foreground">ผู้เข้าร่วมจะประชุมผ่าน ZegoCloud ในหน้าเว็บนี้โดยตรง ไม่ต้องติดตั้งแอป (ต้องอนุญาตให้ใช้ไมค์)</span>
                   </div>
                 </div>
@@ -283,7 +325,7 @@ export default function NewMeetingPage() {
 
         <div className="mt-4 flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={() => router.push("/meetings")}>ยกเลิก</Button>
-          <Button type="submit">บันทึกการประชุม</Button>
+          <Button type="submit" disabled={submitting}>{submitting ? "กำลังบันทึก..." : "บันทึกการประชุม"}</Button>
         </div>
       </form>
     </div>

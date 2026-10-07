@@ -4,6 +4,7 @@ import { runMigrations } from '../../src/database/migrations';
 import { seedFromMockData } from '../../src/database/seed';
 import { signAccessToken } from '../../src/services/auth';
 import { createApp } from '../../src/server';
+import { appendChatMessage, getMeeting } from '../../src/repositories/meetings';
 
 const app = createApp();
 
@@ -145,6 +146,49 @@ describe('/api/meetings', () => {
 
   it('ไม่มี token เข้าไม่ได้เลย', async () => {
     expect((await request(app).get('/api/meetings')).status).toBe(401);
+  });
+
+  it('ผู้ได้รับมอบสิทธิ์ (ไม่ได้อยู่ในรายชื่อ) เห็นการประชุมในรายการด้วย ไม่ใช่เปิดตรงได้แต่หาในรายการไม่เจอ', async () => {
+    await request(app)
+      .put('/api/meetings/MT-TEST-001')
+      .set('Authorization', `Bearer ${admin}`)
+      .send(meetingBody('MT-TEST-001', { permissions: [{ userId: 'U-006', name: 'คนนอก', type: 'reader' }] }));
+
+    const list = await request(app).get('/api/meetings').set('Authorization', `Bearer ${outsider}`);
+    expect(list.body.meetings.map((m: { id: string }) => m.id)).toContain('MT-TEST-001');
+  });
+
+  it('ผู้เข้าร่วมแสดงความคิดเห็นในวาระได้โดยไม่ต้องมีสิทธิ์แก้ทั้งการประชุม — คนนอกไม่ได้', async () => {
+    await request(app)
+      .put('/api/meetings/MT-TEST-001')
+      .set('Authorization', `Bearer ${admin}`)
+      .send(meetingBody('MT-TEST-001', { agenda: [{ id: 'AG-1', no: '1', title: 'รับรองรายงาน', comments: [] }] }));
+
+    const ok = await request(app)
+      .post('/api/meetings/MT-TEST-001/agenda/AG-1/comments')
+      .set('Authorization', `Bearer ${secretary}`)
+      .send({ text: 'เห็นด้วย', by: 'ปลอมตัว' });
+    const denied = await request(app)
+      .post('/api/meetings/MT-TEST-002/agenda/AG-1/comments')
+      .set('Authorization', `Bearer ${outsider}`)
+      .send({ text: 'แทรก' });
+
+    expect(ok.status).toBe(201);
+    expect(ok.body.comment).toEqual(expect.objectContaining({ by: 'นางสาว มาลี รักษาสัตย์', byId: 'U-003', text: 'เห็นด้วย' }));
+    const stored = await getMeeting('MT-TEST-001');
+    expect((stored!.agenda as { comments: { text: string }[] }[])[0].comments.map((c) => c.text)).toEqual(['เห็นด้วย']);
+    expect([403, 404]).toContain(denied.status);
+  });
+
+  it('PUT ไม่ลบแชทที่ server เก็บไว้ แม้ก้อนที่ส่งมาจะไม่มีแชท', async () => {
+    await appendChatMessage('MT-TEST-001', { id: 'msg-1', senderId: 'U-003', sender: 'มาลี', text: 'ข้อความ', time: '10:00' });
+    await request(app)
+      .put('/api/meetings/MT-TEST-001')
+      .set('Authorization', `Bearer ${admin}`)
+      .send(meetingBody('MT-TEST-001', { chatMessages: [] }));
+
+    const stored = await getMeeting('MT-TEST-001');
+    expect((stored!.chatMessages as { id: string }[]).map((m) => m.id)).toContain('msg-1');
   });
 });
 

@@ -11,6 +11,8 @@ export type RoomClient = {
   userId: string;
   userName: string;
   role: string;
+  // จัดการห้องได้ไหม (สร้าง/ปิดโหวต ลดมือคนอื่น แชร์ทับ) — คิดจากการประชุมนี้ตอนต่อ ไม่ใช่จาก role ของทั้งระบบ
+  canManage: boolean;
 };
 
 const rooms = new Map<string, Set<RoomClient>>();

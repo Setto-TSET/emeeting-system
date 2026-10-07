@@ -49,9 +49,9 @@ describe('voting store', () => {
     expect(topics[0].title).toBe('มติที่ 1');
   });
 
-  it('returns an empty list when the request fails, so the room still renders', async () => {
+  it('rejects when the request fails, so the panel shows an error instead of "no votes yet"', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
 
-    await expect(listTopics('MT-2569-007')).resolves.toEqual([]);
+    await expect(listTopics('MT-2569-007')).rejects.toThrow();
   });
 });

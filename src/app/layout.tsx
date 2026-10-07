@@ -1,11 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Kanit } from "next/font/google";
 import { Toaster } from "sonner";
 import { AppProviders } from "@/components/providers/AppProviders";
 import "./globals.css";
 
 const geist = Geist({
-  variable: "--font-sans",
+  // ชื่อแยกจาก --font-sans ที่ globals.css ประกอบเป็น stack (Kanit ก่อน แล้วค่อย Geist) — ใช้ชื่อเดียวกันจะอ้างตัวเองวน
+  variable: "--font-geist",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
@@ -17,6 +18,7 @@ const kanit = Kanit({
 });
 
 export const metadata: Metadata = {
+  applicationName: "e-Meeting",
   title: {
     default: "ระบบบริหารการประชุมและจองห้องประชุม — e-Meeting",
     template: "%s — e-Meeting",
@@ -31,6 +33,16 @@ export const metadata: Metadata = {
     shortcut: "/favicon.ico",
     apple: "/apple-icon.png",
   },
+  // ระบบภายในของหน่วยงาน — ไม่ให้เครื่องมือค้นหาเก็บหน้าใดไปแสดง
+  robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // ให้หน้าเว็บกินพื้นที่ใต้รอยบาก/แถบโฮม แล้วจัดระยะเองด้วย env(safe-area-inset-*)
+  viewportFit: "cover",
+  themeColor: "#737300",
 };
 
 export default function RootLayout({

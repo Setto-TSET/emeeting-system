@@ -7,6 +7,8 @@ import { seedFromMockData } from '../../src/database/seed';
 import { signAccessToken } from '../../src/services/auth';
 import { createApp } from '../../src/server';
 import { attachRealtime } from '../../src/realtime/server';
+import * as votes from '../../src/repositories/votes';
+import { getMeeting } from '../../src/repositories/meetings';
 
 let server: http.Server;
 let port: number;
@@ -33,8 +35,17 @@ async function openClient(sub: string, name: string, role = 'admin'): Promise<We
   return socket;
 }
 
+// room_state ถูกประกาศทุกครั้งที่มีคนเข้า/ออกห้อง — ข้ามไป ไม่งั้นแย่งที่ข้อความที่เทสต์รออยู่
 function nextMessage(socket: WebSocket): Promise<any> {
-  return new Promise((resolve) => socket.once('message', (raw) => resolve(JSON.parse(raw.toString()))));
+  return new Promise((resolve) => {
+    const onMessage = (raw: WebSocket.RawData) => {
+      const message = JSON.parse(raw.toString());
+      if (message.type === 'room_state') return;
+      socket.off('message', onMessage);
+      resolve(message);
+    };
+    socket.on('message', onMessage);
+  });
 }
 
 describe('signal handlers', () => {
@@ -182,7 +193,8 @@ describe('signal handlers', () => {
 
   it('refuses vote_close from a participant who did not create the topic and is not a manager', async () => {
     const a = await openClient('U-999', 'IT Admin');
-    const b = await openClient('U-001', 'นาย สมชาย ใจดี', 'staff');
+    // U-005 เป็นผู้เข้าร่วมทั่วไป — สิทธิ์ผู้จัดการคิดจากการประชุมนี้ (ผู้จัด/ผู้รับมอบสิทธิ์) ไม่ใช่จาก role
+    const b = await openClient('U-005', 'นาย เดชา เก่งจริง', 'staff');
 
     const created = nextMessage(b);
     a.send(
@@ -224,9 +236,9 @@ describe('signal handlers', () => {
   });
 
   it('refuses hand_lower from a non-manager targeting someone else, but lets a manager lower it — and stamps lastAction with the real actor', async () => {
-    const manager = await openClient('U-999', 'IT Admin'); // role admin ∈ MANAGER_ROLES
+    const manager = await openClient('U-999', 'IT Admin'); // admin จัดการได้ทุกห้อง
     const target = await openClient('U-003', 'นางสาว มาลี รักษาสัตย์', 'staff');
-    const outsider = await openClient('U-001', 'นาย สมชาย ใจดี', 'staff');
+    const outsider = await openClient('U-005', 'นาย เดชา เก่งจริง', 'staff'); // ผู้เข้าร่วมทั่วไป ไม่ใช่ผู้จัดการ
 
     // broadcast กระจายไปทุก socket ในห้อง (รวมทั้ง target/outsider เอง) — ต้องดักรับให้ครบ
     // ทุกตัวก่อนไปทำ action ถัดไป ไม่งั้นข้อความเก่าที่ยังไม่ถูกอ่านจะมาปนกับผลลัพธ์รอบถัดไป
@@ -235,7 +247,7 @@ describe('signal handlers', () => {
     await raisedAll;
 
     // ผู้ใช้ทั่วไปที่ไม่ใช่เจ้าของมือและไม่ใช่ manager ต้องเอามือคนอื่นลงไม่ได้ — ถ้าเอาการเช็คสิทธิ์
-    // ออก (targetUserId !== client.userId && !MANAGER_ROLES.has(...)) เทสต์นี้จะจับได้ทันที
+    // ออก (targetUserId !== client.userId && !client.canManage) เทสต์นี้จะจับได้ทันที
     const rejected = nextMessage(outsider);
     outsider.send(JSON.stringify({ type: 'hand_lower', payload: { targetUserId: 'U-003' } }));
     expect((await rejected).type).toBe('signal_error');
@@ -274,7 +286,10 @@ describe('signal handlers', () => {
     const a = await openClient('U-999', 'IT Admin');
     const b = await openClient('U-003', 'นางสาว มาลี รักษาสัตย์');
     const received: unknown[] = [];
-    a.on('message', (m) => received.push(JSON.parse(m.toString())));
+    a.on('message', (m) => {
+      const message = JSON.parse(m.toString());
+      if (message.type !== 'room_state') received.push(message);
+    });
 
     b.send(JSON.stringify({ type: 'subtitle_text', payload: { text: 'มติปลอม', isFinal: true, lang: 'th-TH' } }));
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -298,7 +313,7 @@ describe('signal handlers', () => {
 
   it('starts a document share, lets the sharer change pages, and refuses an unrelated non-manager', async () => {
     const sharer = await openClient('U-001', 'นาย สมชาย ใจดี', 'staff');
-    const outsider = await openClient('U-003', 'นางสาว มาลี รักษาสัตย์', 'staff');
+    const outsider = await openClient('U-005', 'นาย เดชา เก่งจริง', 'staff');
 
     const started = nextMessage(outsider);
     sharer.send(JSON.stringify({ type: 'doc_share', payload: { fileId: 'F-1', fileName: 'สรุปการประชุม.pdf' } }));
@@ -363,7 +378,7 @@ describe('signal handlers', () => {
 
   it('lets a manager stop another participant\'s document share', async () => {
     const sharer = await openClient('U-001', 'นาย สมชาย ใจดี', 'staff');
-    const manager = await openClient('U-999', 'IT Admin'); // role admin ∈ MANAGER_ROLES
+    const manager = await openClient('U-999', 'IT Admin'); // admin จัดการได้ทุกห้อง
 
     const started = nextMessage(manager);
     sharer.send(JSON.stringify({ type: 'doc_share', payload: { fileId: 'F-2', fileName: 'วาระ.pdf' } }));
@@ -384,8 +399,8 @@ describe('signal handlers', () => {
 
   it('lets anyone start a share when none is active, but blocks starting over someone else\'s active share unless a manager takes over', async () => {
     const sharer = await openClient('U-001', 'นาย สมชาย ใจดี', 'staff');
-    const outsider = await openClient('U-003', 'นางสาว มาลี รักษาสัตย์', 'staff');
-    const manager = await openClient('U-999', 'IT Admin'); // role admin ∈ MANAGER_ROLES
+    const outsider = await openClient('U-005', 'นาย เดชา เก่งจริง', 'staff');
+    const manager = await openClient('U-999', 'IT Admin'); // admin จัดการได้ทุกห้อง
 
     // ไม่มีใครแชร์อยู่ — ใครก็เริ่มแชร์ได้
     const started = Promise.all([nextMessage(outsider), nextMessage(manager)]);
@@ -462,5 +477,66 @@ describe('signal handlers', () => {
 
     expect(a.readyState).toBe(WebSocket.OPEN);
     a.close();
+  });
+
+  it('stores chat in the meeting and broadcasts it with the sender taken from the token', async () => {
+    const a = await openClient('U-999', 'IT Admin');
+    const b = await openClient('U-005', 'นาย เดชา เก่งจริง', 'staff');
+
+    const received = nextMessage(a);
+    b.send(JSON.stringify({ type: 'chat_send', payload: { text: '  สวัสดีครับ  ', sender: 'ปลอมตัว' } }));
+    const message = (await received).payload.message;
+
+    expect(message).toEqual(expect.objectContaining({ senderId: 'U-005', sender: 'นาย เดชา เก่งจริง', text: 'สวัสดีครับ' }));
+    const meeting = await getMeeting(MEETING);
+    expect((meeting!.chatMessages as { id: string }[]).some((m) => m.id === message.id)).toBe(true);
+
+    a.close();
+    b.close();
+  });
+
+  it('refuses a vote on a topic that belongs to another meeting', async () => {
+    await votes.createTopic({
+      id: 'vote-other-room',
+      meetingId: 'MT-SOMEWHERE-ELSE',
+      title: 'มติห้องอื่น',
+      options: [{ id: 'opt-1', label: 'เห็นด้วย' }],
+      createdBy: 'U-999',
+      createdByName: 'IT Admin',
+    });
+    const a = await openClient('U-999', 'IT Admin');
+
+    const rejected = nextMessage(a);
+    a.send(JSON.stringify({ type: 'vote_cast', payload: { topicId: 'vote-other-room', optionId: 'opt-1' } }));
+    expect((await rejected).type).toBe('signal_error');
+
+    const rows = (await query('SELECT user_id FROM vote_records WHERE topic_id = ?', ['vote-other-room'])) as unknown[];
+    expect(rows).toHaveLength(0);
+    a.close();
+  });
+
+  it('meeting_refresh announces the stored status and who is connected — values come from the server, not the payload', async () => {
+    const a = await openClient('U-999', 'IT Admin');
+    const b = await openClient('U-005', 'นาย เดชา เก่งจริง', 'staff');
+
+    const state = new Promise<any>((resolve) => {
+      const onMessage = (raw: WebSocket.RawData) => {
+        const message = JSON.parse(raw.toString());
+        if (message.type === 'room_state' && message.payload.connectedUserIds.length === 2) {
+          a.off('message', onMessage);
+          resolve(message);
+        }
+      };
+      a.on('message', onMessage);
+    });
+    b.send(JSON.stringify({ type: 'meeting_refresh', payload: { status: 'endorsed' } }));
+    const { payload } = await state;
+
+    const stored = await getMeeting(MEETING);
+    expect(payload.status).toBe(stored!.status);
+    expect([...payload.connectedUserIds].sort()).toEqual(['U-005', 'U-999']);
+
+    a.close();
+    b.close();
   });
 });

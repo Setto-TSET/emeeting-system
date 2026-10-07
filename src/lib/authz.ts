@@ -47,29 +47,15 @@ export function isParticipantOf(user: AppUser, meeting: Meeting): boolean {
   return meeting.participants.some((p) => p.userId !== null && p.userId === user.id);
 }
 
-/** อยู่ในคณะทำงานที่เป็นเจ้าของการประชุมนี้ */
-export function isInCommittee(user: AppUser, meeting: Meeting): boolean {
-  return user.committeeIds.includes(meeting.committeeId);
-}
-
-/** เลขานุการของคณะนี้ — ตามที่คำอธิบายบทบาทระบุว่า "จัดการคณะที่รับผิดชอบ" */
-export function isSecretaryOfCommittee(user: AppUser, meeting: Meeting): boolean {
-  return user.systemRole === "secretary" && isInCommittee(user, meeting);
-}
-
-/** ผู้บริหารที่ดูแลคณะนี้ */
-export function isExecutiveOfCommittee(user: AppUser, meeting: Meeting): boolean {
-  return user.systemRole === "executive" && isInCommittee(user, meeting);
-}
-
-/** มีสิทธิ์ระดับ "ผู้ดูแลการประชุมนี้" หรือไม่ — ใช้เป็นฐานของ action ส่วนใหญ่ */
+/**
+ * มีสิทธิ์ระดับ "ผู้ดูแลการประชุมนี้" หรือไม่ — ใช้เป็นฐานของ action ส่วนใหญ่
+ *
+ * ต้องตรงกับ canEditMeeting ใน backend/src/services/meetingAccess.ts — เดิมหน้าเว็บนับ
+ * "เลขาฯ/ผู้บริหารของคณะ" เป็นผู้ดูแลด้วย แต่ server ไม่มีข้อมูลคณะของผู้ใช้ ปุ่มจึงโผล่ให้กด
+ * แล้วทุกการบันทึกโดน 403 เงียบ ๆ จนกว่าจะย้ายข้อมูลคณะขึ้น DB อย่าเพิ่มกฎที่ server ตรวจไม่ได้
+ */
 function isManagerOfMeeting(user: AppUser, meeting: Meeting): boolean {
-  return (
-    isAdmin(user) ||
-    isOrganizer(user, meeting) ||
-    isDelegatedManager(user, meeting) ||
-    isSecretaryOfCommittee(user, meeting)
-  );
+  return isAdmin(user) || isOrganizer(user, meeting) || isDelegatedManager(user, meeting);
 }
 
 // ───────── จุดตัดสินหลัก ─────────
@@ -115,33 +101,18 @@ export function can(user: AppUser, action: MeetingAction, meeting: Meeting): boo
     case "meeting.edit":
     case "meeting.manageParticipants":
     case "meeting.changeStatus":
+    case "meeting.notify":
+    case "meeting.endorse":
+    case "meeting.host":
+    case "meeting.manageVoting":
       return isManager;
 
     // มอบสิทธิ์ให้คนอื่นได้เฉพาะเจ้าของงานจริง — ผู้รับมอบสิทธิ์ต่อสิทธิ์ไม่ได้
     case "meeting.managePermissions":
-      return isOrganizer(user, meeting) || isSecretaryOfCommittee(user, meeting);
-
-    // ส่งอีเมลถึงทุกคนเป็นการกระทำที่ถอนคืนไม่ได้ จำกัดเท่าที่จำเป็น
-    case "meeting.notify":
-      return isOrganizer(user, meeting) || isSecretaryOfCommittee(user, meeting);
-
-    // รับรองรายงาน = ปิดงานถาวร ให้เฉพาะผู้จัด เลขาฯ ของคณะ และผู้บริหารของคณะ
-    case "meeting.endorse":
-      return (
-        isOrganizer(user, meeting) ||
-        isSecretaryOfCommittee(user, meeting) ||
-        isExecutiveOfCommittee(user, meeting)
-      );
-
-    // คุมห้องประชุม — เดิมให้แค่ admin กับ secretary ทำให้ผู้จัดที่เป็น staff คุมห้องตัวเองไม่ได้
-    case "meeting.host":
-      return isManager || isExecutiveOfCommittee(user, meeting);
+      return isOrganizer(user, meeting);
 
     case "meeting.join":
-      return isManager || isParticipantOf(user, meeting) || isExecutiveOfCommittee(user, meeting);
-
-    case "meeting.manageVoting":
-      return can(user, "meeting.host", meeting);
+      return isManager || isParticipantOf(user, meeting);
 
     default:
       return false;
@@ -158,7 +129,8 @@ export function canEditMeeting(user: AppUser, meeting: Meeting): boolean {
 
 /** สร้างการประชุมใหม่ได้ไหม — ไม่ผูกกับประชุมใดประชุมหนึ่ง */
 export function canCreateMeeting(user: AppUser): boolean {
-  return user.systemRole === "admin" || user.systemRole === "secretary" || user.systemRole === "executive";
+  // ตรงกับ canCreateMeeting ฝั่ง server — เจ้าหน้าที่ (staff) เป็นผู้จัดประชุมได้
+  return ["admin", "secretary", "executive", "staff"].includes(user.systemRole);
 }
 
 /** ข้อความอธิบายว่าทำไมทำไม่ได้ — ใช้เป็น tooltip ให้ผู้ใช้เข้าใจ ไม่ใช่เดาเอง */
@@ -166,11 +138,5 @@ export function denialReason(user: AppUser, action: MeetingAction, meeting: Meet
   if (meeting.status === "endorsed" && action === "meeting.edit") {
     return "การประชุมนี้รับรองแล้ว ไม่สามารถแก้ไขได้";
   }
-  if (!isInCommittee(user, meeting) && user.systemRole === "secretary") {
-    return `คุณเป็นเลขานุการของคณะอื่น จึงแก้ไขการประชุมของ "${meeting.committee}" ไม่ได้`;
-  }
-  if (user.systemRole === "executive") {
-    return "ผู้บริหารดูข้อมูลได้ แต่การแก้ไขเป็นหน้าที่ของผู้จัดหรือเลขานุการ";
-  }
-  return "คุณไม่มีสิทธิ์ดำเนินการนี้ — เฉพาะผู้จัดการประชุมเท่านั้น";
+  return "เฉพาะผู้จัดการประชุมหรือผู้ที่ได้รับมอบสิทธิ์ผู้จัดการเท่านั้น — ติดต่อผู้จัดเพื่อขอสิทธิ์";
 }

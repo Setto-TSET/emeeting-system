@@ -5,7 +5,8 @@
 
 import { Router, Request, Response } from 'express';
 import { authMiddleware, asyncHandler } from '../middleware';
-import { isMeetingMember, meetingExists } from '../repositories/meetings';
+import { getMeeting } from '../repositories/meetings';
+import { actorFrom, canViewMeeting } from '../services/meetingAccess';
 import { listTopics } from '../repositories/votes';
 import { listRaised } from '../repositories/handRaises';
 import { listSegments } from '../repositories/transcript';
@@ -20,15 +21,11 @@ router.get(
     const { meetingId } = req.params;
     const user = req.user!;
 
-    if (!(await meetingExists(meetingId))) {
-      return res.status(404).json({ error: 'ไม่พบการประชุมนี้' });
-    }
+    const meeting = await getMeeting(meetingId);
+    if (!meeting) return res.status(404).json({ error: 'ไม่พบการประชุมนี้' });
 
-    const allowed =
-      user.role === 'admin' ||
-      (user.role === 'guest' ? user.meetingId === meetingId : await isMeetingMember(meetingId, user.id));
-
-    if (!allowed) return res.status(403).json({ error: 'ไม่มีสิทธิ์เข้าถึงการประชุมนี้' });
+    // กฎเดียวกับ REST และ WebSocket — ผู้รับมอบสิทธิ์ ผู้บริหาร และจอหน้าห้องเข้าได้ด้วย
+    if (!canViewMeeting(actorFrom(user), meeting)) return res.status(403).json({ error: 'ไม่มีสิทธิ์เข้าถึงการประชุมนี้' });
 
     const [voteTopics, raisedHands, transcript, docShare] = await Promise.all([
       listTopics(meetingId),

@@ -73,14 +73,11 @@ describe('realtime connection', () => {
   });
 
   it('rejects a valid token for a meeting the user is not a member of', async () => {
-    await query('DELETE FROM meeting_participants WHERE meeting_id = ? AND user_id = ?', [
-      MEETING_ID,
-      'U-005',
-    ]);
+    // สิทธิ์ตัดสินจากก้อนการประชุม (กฎเดียวกับ REST) — ใช้ผู้ใช้ที่ไม่มีชื่อในการประชุมเลย
     const token = signAccessToken({
-      sub: 'U-005',
-      email: 'decha@e-office.cloud',
-      name: 'นาย เดชา เก่งจริง',
+      sub: 'U-OUTSIDER',
+      email: 'outsider@e-office.cloud',
+      name: 'คนนอก',
       role: 'staff',
     });
     const result = await connect(`ws://localhost:${port}/ws?meetingId=${MEETING_ID}&token=${token}`);
@@ -126,17 +123,17 @@ describe('realtime connection', () => {
 
   it('does not leak a client that disconnects while the membership check is in flight', async () => {
     // U-003 เป็นสมาชิกจริงของ MT-2569-010 และไม่ถูกแตะโดยเทสต์อื่น — ต้องผ่านการ
-    // ตรวจ isMeetingMember (มี await คั่นกลาง) ก่อนถึงจะลงทะเบียนได้
+    // โหลดการประชุมมาตรวจสิทธิ์ (getMeeting มี await คั่นกลาง) ก่อนถึงจะลงทะเบียนได้
     //
-    // หน่วง isMeetingMember ไว้ชั่วคราวเพื่อบังคับให้ "ปิด socket ระหว่างรอ query"
+    // หน่วง getMeeting ไว้ชั่วคราวเพื่อบังคับให้ "ปิด socket ระหว่างรอ query"
     // เกิดขึ้นแน่นอน — ถ้าไม่หน่วง การแข่งกับ query จริงบน local DB ที่เร็วมากจะ
     // ไม่ทริกเกอร์บั๊กอย่างเสถียร (query อาจจบก่อนที่ close frame จะมาถึง)
-    const real = meetingsRepo.isMeetingMember;
+    const real = meetingsRepo.getMeeting;
     const spy = jest
-      .spyOn(meetingsRepo, 'isMeetingMember')
-      .mockImplementation(async (meetingId, userId) => {
+      .spyOn(meetingsRepo, 'getMeeting')
+      .mockImplementation(async (meetingId) => {
         await new Promise((resolve) => setTimeout(resolve, 150));
-        return real(meetingId, userId);
+        return real(meetingId);
       });
 
     try {
@@ -148,7 +145,7 @@ describe('realtime connection', () => {
       });
       const socket = new WebSocket(`ws://localhost:${port}/ws?meetingId=${MEETING_ID}&token=${token}`);
 
-      // ปิด socket ทันทีที่ handshake เสร็จ — แข่งกับ query isMeetingMember ที่ยัง
+      // ปิด socket ทันทีที่ handshake เสร็จ — แข่งกับ query getMeeting ที่ยัง
       // ค้างอยู่ฝั่ง server โดยเจตนา
       socket.on('open', () => socket.close());
       await new Promise<void>((resolve) => socket.on('close', () => resolve()));

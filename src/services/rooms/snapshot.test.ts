@@ -36,9 +36,9 @@ describe('fetchRoomSnapshot', () => {
     expect(snapshot.docShare?.page).toBe(2);
   });
 
-  it('falls back to an empty snapshot on failure', async () => {
+  it('falls back to an empty snapshot on failure and flags it so the room can tell the user', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })));
 
-    await expect(fetchRoomSnapshot('MT-2569-007')).resolves.toEqual(EMPTY_SNAPSHOT);
+    await expect(fetchRoomSnapshot('MT-2569-007')).resolves.toEqual({ ...EMPTY_SNAPSHOT, failed: true });
   });
 });

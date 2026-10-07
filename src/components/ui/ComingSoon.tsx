@@ -44,9 +44,9 @@ export function ComingSoonBadge({ reason }: { reason?: string }) {
   return (
     <span
       title={reason}
-      className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+      className="inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-tiny font-medium text-warning"
     >
-      <span className="material-symbols-outlined text-[12px]">schedule</span>
+      <span className="material-symbols-outlined text-xs">schedule</span>
       ยังไม่เปิดใช้งาน
     </span>
   );

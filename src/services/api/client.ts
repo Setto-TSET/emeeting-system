@@ -6,6 +6,8 @@
 // ═══════════════════════════════════════════
 
 const TOKEN_KEY = "meeting_system_access_token";
+/** ตัวตนของผู้ใช้ที่ UserContext เก็บไว้ — อยู่ที่นี่เพราะ apiFetch ต้องล้างด้วยเมื่อ token หมดอายุ */
+export const USER_STORAGE_KEY = "meeting_system_current_user";
 
 let memoryToken: string | null = null;
 
@@ -48,9 +50,26 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   }
 
   const body = await response.json().catch(() => ({}));
+  // token หมดอายุ (8 ชม.) หรือถูกเพิกถอน — เดิมหน้าเว็บค้างอยู่ในระบบแต่ทุกรายการว่างเปล่า
+  // ล้างเซสชันแล้วพากลับหน้า login พร้อมบอกเหตุผล (ยกเว้นตอนกำลังล็อกอินอยู่ ซึ่ง 401 = รหัสผิด)
+  if (response.status === 401 && token) {
+    expireSession();
+  }
   if (!response.ok) {
     const message = typeof body?.error === "string" ? body.error : "เกิดข้อผิดพลาดที่เซิร์ฟเวอร์";
     throw new ApiError(response.status, message);
   }
   return body as T;
+}
+
+function expireSession(): void {
+  setAccessToken(null);
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
+  } catch {
+    // storage ถูกบล็อก — ไม่เป็นไร token ถูกล้างแล้ว
+  }
+  if (window.location.pathname !== "/") window.location.assign("/?reason=expired");
 }
