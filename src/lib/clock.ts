@@ -15,7 +15,10 @@ function localDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export const today: string = DEMO_TODAY ?? localDate(new Date());
+// เป็นฟังก์ชันเพื่ออ่านวันใหม่ทุกครั้งที่เรียก — เดิมเป็นค่าคงที่ตอนโหลดโมดูล เปิดแท็บค้างข้ามวันจะได้วันเก่า
+export function todayNow(): string {
+  return DEMO_TODAY ?? localDate(new Date());
+}
 
 /** เวลาปัจจุบัน — ใช้เมื่อต้องการ Date object เช่น จับเวลาเริ่มประชุม */
 export function now(): Date {

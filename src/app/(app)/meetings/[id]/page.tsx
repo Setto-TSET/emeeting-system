@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import { meetingStatusLabels, meetingStatusColors, displayFormats, MeetingStatus, Meeting, canViewFile, fileVisibilityLabels, fileVisibilityColors, fileVisibilityIcons, users, fileTypeLabels, MeetingFile, FileVisibility } from "@/data";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { today } from "@/lib/clock";
+import { todayNow } from "@/lib/clock";
 import { ComingSoon, ComingSoonBadge } from "@/components/ui/ComingSoon";
 import { DocumentLightbox } from "@/components/meeting/DocumentPreview";
 import { TranscriptTimeline } from "@/components/meeting/TranscriptTimeline";
@@ -319,7 +319,7 @@ function MeetingDetail({ meeting }: { meeting: Meeting }) {
         name,
         description: fileDesc.trim() || "เอกสารประกอบการประชุม",
         size: formatBytes(pendingFile.size),
-        uploadedAt: today,
+        uploadedAt: todayNow(),
         uploadedBy: currentUser.name,
         type: fileType,
         visibility: fileVisibility,

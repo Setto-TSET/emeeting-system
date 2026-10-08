@@ -9,7 +9,7 @@ import { useCurrentUser } from "@/context/UserContext";
 import { isParticipant } from "@/lib/access";
 import ParticipantHome from "@/components/layout/ParticipantHome";
 import { useBookings } from "@/context/BookingContext";
-import { today } from "@/lib/clock";
+import { todayNow } from "@/lib/clock";
 import {
   meetingRooms,
   meetingStatusLabels,
@@ -32,8 +32,8 @@ export default function DashboardPage() {
 
   // ผู้เข้าร่วมได้หน้าหลักแบบเรียบง่าย ไม่มีสถิติห้อง/การจอง
   const participantView = isParticipant(currentUser.systemRole);
-  const recent = meetings.filter(m => m.date < today).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
-  const upcoming = meetings.filter(m => m.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+  const recent = meetings.filter(m => m.date < todayNow()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
+  const upcoming = meetings.filter(m => m.date >= todayNow()).sort((a, b) => a.date.localeCompare(b.date));
   const next = upcoming[0];
 
   const activeRooms = meetingRooms.filter(r => r.status === "available").length;
