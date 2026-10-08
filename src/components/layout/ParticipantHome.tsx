@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
 import { canViewFile, isMyMeeting } from "@/data";
-import { today } from "@/lib/clock";
+import { todayNow } from "@/lib/clock";
 import { PageError, PageLoading } from "@/components/layout/PageState";
 
 // ═══════════════════════════════════════════
@@ -29,7 +29,7 @@ export default function ParticipantHome() {
 
   const live = myMeetings.find((m) => m.status === "in_progress");
   const upcoming = myMeetings
-    .filter((m) => m.date >= today && m.status !== "in_progress")
+    .filter((m) => m.date >= todayNow() && m.status !== "in_progress")
     .sort((a, b) => a.date.localeCompare(b.date));
   const next = live ?? upcoming[0];
 

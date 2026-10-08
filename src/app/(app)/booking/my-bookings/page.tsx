@@ -9,7 +9,7 @@ import Link from "next/link";
 import { useBookings } from "@/context/BookingContext";
 import { ApiError } from "@/services/api/client";
 import { useCurrentUser } from "@/context/UserContext";
-import { today } from "@/lib/clock";
+import { todayNow } from "@/lib/clock";
 import { PageError, PageLoading } from "@/components/layout/PageState";
 
 export default function MyBookingsPage() {
@@ -20,8 +20,8 @@ export default function MyBookingsPage() {
   // จับคู่ด้วย id — เดิมเทียบชื่อ ซึ่งพังเมื่อชื่อในข้อมูลไม่ตรงกับชื่อผู้ใช้เป๊ะๆ
   const myBookings = bookings.filter(b => b.bookedById === currentUser.id);
   const filtered = myBookings.filter(b => {
-    if (filter === "upcoming") return b.date >= today && b.status !== "cancelled";
-    if (filter === "past") return b.date < today;
+    if (filter === "upcoming") return b.date >= todayNow() && b.status !== "cancelled";
+    if (filter === "past") return b.date < todayNow();
     return true;
   }).sort((a, b) => a.date.localeCompare(b.date));
 
@@ -116,7 +116,7 @@ export default function MyBookingsPage() {
                           <span className="truncate">{b.purpose}</span>
                         </div>
                       </div>
-                      {b.status !== "cancelled" && b.date >= today && (
+                      {b.status !== "cancelled" && b.date >= todayNow() && (
                         <Button
                           size="sm"
                           variant="destructive"

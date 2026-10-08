@@ -14,7 +14,7 @@ import { meetingRooms, roomCategoryOptions, Booking, Room } from "@/data";
 import { useBookings } from "@/context/BookingContext";
 import { ApiError } from "@/services/api/client";
 import { useCurrentUser } from "@/context/UserContext";
-import { today } from "@/lib/clock";
+import { todayNow } from "@/lib/clock";
 import { PageError, PageLoading } from "@/components/layout/PageState";
 
 const iconClass = "material-symbols-outlined text-lg";
@@ -36,8 +36,8 @@ export default function BookingPage() {
 
 function BookingPageContent() {
   // เริ่มที่วันนี้จริง — เดิมตรึงไว้ที่ 15 ก.ค. 2569
-  const [current, setCurrent] = useState(() => new Date(`${today}T00:00`));
-  const [selectedDate, setSelectedDate] = useState<string>(today);
+  const [current, setCurrent] = useState(() => new Date(`${todayNow()}T00:00`));
+  const [selectedDate, setSelectedDate] = useState<string>(todayNow);
   // มาจากปุ่ม "จองห้องนี้" ของหน้าห้องประชุม (/booking?room=R-801) — กรองผลค้นหาให้เหลือห้องนั้น
   const roomParam = useSearchParams().get("room");
   const [showAllRooms, setShowAllRooms] = useState(false);
@@ -220,7 +220,7 @@ function BookingPageContent() {
                 const iso = toISO(d);
                 const dayBookings = bookingsByDate[iso] || [];
                 const isSelected = iso === selectedDate;
-                const isToday = iso === today;
+                const isToday = iso === todayNow();
                 return (
                   <button
                     key={i}

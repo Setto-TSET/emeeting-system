@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useMeetings } from "@/context/MeetingContext";
 import { useCurrentUser } from "@/context/UserContext";
 import { meetingStatusLabels, meetingStatusColors, meetingRooms } from "@/data";
-import { today, currentClockTime } from "@/lib/clock";
+import { todayNow, currentClockTime } from "@/lib/clock";
 import { can } from "@/lib/authz";
 import { PageError, PageLoading } from "@/components/layout/PageState";
 
@@ -34,7 +34,7 @@ export default function KioskPage() {
   const roomName = room?.name ?? currentUser.name;
 
   const todayMeetings = meetings
-    .filter((m) => m.date === today && can(currentUser, "meeting.view", m))
+    .filter((m) => m.date === todayNow() && can(currentUser, "meeting.view", m))
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
   const currentMeeting = todayMeetings.find((m) => m.status === "in_progress");
@@ -68,7 +68,7 @@ export default function KioskPage() {
         <div className="text-right">
           <p className="text-4xl md:text-5xl font-mono font-light tabular-nums">{clockTime}</p>
           <p className="text-sm text-muted-foreground mt-1">
-            {new Date(`${today}T00:00`).toLocaleDateString("th-TH", {
+            {new Date(`${todayNow()}T00:00`).toLocaleDateString("th-TH", {
               weekday: "long",
               year: "numeric",
               month: "long",

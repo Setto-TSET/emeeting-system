@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ApiError } from "@/services/api/client";
 import { useBookings } from "@/context/BookingContext";
-import { today } from "@/lib/clock";
+import { todayNow } from "@/lib/clock";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,13 +24,14 @@ export default function NewMeetingPage() {
   const { addBooking, cancelBooking } = useBookings();
   const { currentUser } = useCurrentUser();
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => ({
     name: "",
     shortName: "",
     type: "การประชุมคณะกรรมการ",
     committeeId: committees[0].id,
     organizer: "",
-    date: today,
+    // วันตั้งต้น = วันที่เปิดฟอร์มสร้างห้อง
+    date: todayNow(),
     startTime: "09:00",
     endTime: "12:00",
     roomId: meetingRooms[0].id,
@@ -44,7 +45,7 @@ export default function NewMeetingPage() {
     inviteCommitteeMembers: true,
     /** เปิดให้คนนอกที่ได้รับลิงก์เข้าเองได้ — จำเป็นตอนทดสอบหลายเครื่อง/หลายหน้าต่าง */
     allowGuestJoin: true,
-  });
+  }));
 
   const update = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(p => ({ ...p, [k]: v }));
 
@@ -119,7 +120,7 @@ export default function NewMeetingPage() {
       // ผู้สร้างเป็นผู้จัดการประชุมโดยอัตโนมัติ
       permissions: [{ userId: currentUser.id, name: currentUser.name, type: "manager" }],
       savedToDrive: false,
-      createdAt: new Date().toISOString().split("T")[0],
+      createdAt: todayNow(),
     };
 
     setSubmitting(true);
