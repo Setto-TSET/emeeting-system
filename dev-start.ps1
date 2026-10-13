@@ -1,4 +1,4 @@
-# dev-start.ps1 - run 3 together: MySQL80 (service) + backend :3001 + frontend :3005
+# dev-start.ps1 - run together: MySQL80 (service) + backend :3001 + frontend :3005 + ASR :8000 (if set up)
 # usage:  right-click > Run with PowerShell   OR   powershell -ExecutionPolicy Bypass -File .\dev-start.ps1
 # MySQL80 needs admin to start - this script self-elevates only that step.
 
@@ -26,6 +26,14 @@ Start-Process powershell -ArgumentList '-NoExit','-Command',"Set-Location '$root
 # 3) frontend :3005 - separate window
 Write-Host "[frontend] opening window on :3005" -ForegroundColor Cyan
 Start-Process powershell -ArgumentList '-NoExit','-Command',"Set-Location '$root'; npx next dev --webpack -p 3005"
+
+# 4) ASR sidecar :8000 - only if asr/.venv was set up (see README); live subtitles need it
+if (Test-Path "$root\asr\.venv\Scripts\python.exe") {
+  Write-Host "[asr] opening window on :8000 (model load takes a while on first run)" -ForegroundColor Cyan
+  Start-Process powershell -ArgumentList '-NoExit','-Command',"Set-Location '$root\asr'; .venv\Scripts\python -m uvicorn server:app --port 8000"
+} else {
+  Write-Host "[asr] asr\.venv not found - skip (live subtitles off)" -ForegroundColor Yellow
+}
 
 Write-Host ""
 Write-Host "All launched - wait ~10s for compile, then open http://localhost:3005" -ForegroundColor Green
