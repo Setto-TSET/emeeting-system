@@ -138,3 +138,26 @@ CREATE TABLE IF NOT EXISTS room_bookings (
   INDEX idx_bookings_room_date (room_id, booking_date, status),
   INDEX idx_bookings_owner (booked_by_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- audit trail — ใครทำอะไรกับ resource ไหน เมื่อไหร่ (routes/audit.ts)
+-- created_at ให้ฐานข้อมูลเติมเอง เพราะ route ไม่ส่งค่ามา และเวลาจาก DB เชื่อถือได้กว่าเวลาที่ client อ้าง
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id          BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id     VARCHAR(64)  NULL,
+  action      VARCHAR(100) NOT NULL,
+  meeting_id  VARCHAR(64)  NULL,
+  resource    VARCHAR(100) NULL,
+  ip_address  VARCHAR(64)  NULL,
+  created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_audit_meeting (meeting_id, created_at),
+  INDEX idx_audit_user (user_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- สถานะถอดเสียงหลังประชุม หนึ่งแถวต่อการประชุม (routes/transcription.ts ใช้ ON DUPLICATE KEY)
+-- segments เป็นข้อความ ไม่ใช่ JSON เพราะ mysql2 แปลงคอลัมน์ JSON เป็น object ให้ แล้ว route
+-- เรียก JSON.parse ซ้ำจะพัง
+CREATE TABLE IF NOT EXISTS transcriptions (
+  meeting_id        VARCHAR(64) NOT NULL PRIMARY KEY,
+  transcript_status VARCHAR(16) NOT NULL,
+  segments          MEDIUMTEXT  NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
