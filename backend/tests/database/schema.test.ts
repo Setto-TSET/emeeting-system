@@ -11,6 +11,8 @@ const TABLES = [
   'hand_raises',
   'transcript_segments',
   'doc_shares',
+  'audit_logs',
+  'transcriptions',
 ];
 
 describe('schema', () => {
@@ -69,5 +71,32 @@ describe('schema', () => {
         Date.now(),
       ])
     ).rejects.toThrow(/Duplicate entry/);
+  });
+
+  it('accepts the audit insert from routes/audit.ts and fills created_at', async () => {
+    await query('DELETE FROM audit_logs WHERE action = ?', ['schema-test']);
+    await query(
+      'INSERT INTO audit_logs (user_id, action, meeting_id, resource, ip_address) VALUES (?, ?, ?, ?, ?)',
+      ['U-001', 'schema-test', 'MT-TEST', 'file-1', '::ffff:127.0.0.1']
+    );
+    const rows = (await query('SELECT created_at FROM audit_logs WHERE action = ?', ['schema-test'])) as {
+      created_at: Date | null;
+    }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].created_at).not.toBeNull();
+  });
+
+  it('upserts one transcription row per meeting and returns segments as text', async () => {
+    const upsert =
+      'INSERT INTO transcriptions (meeting_id, transcript_status) VALUES (?, ?) ON DUPLICATE KEY UPDATE transcript_status = ?';
+    await query('DELETE FROM transcriptions WHERE meeting_id = ?', ['MT-TEST']);
+    await query(upsert, ['MT-TEST', 'processing', 'processing']);
+    await query(upsert, ['MT-TEST', 'processing', 'processing']);
+    await query('UPDATE transcriptions SET segments = ? WHERE meeting_id = ?', ['[{"text":"ทดสอบ"}]', 'MT-TEST']);
+    const rows = (await query('SELECT segments FROM transcriptions WHERE meeting_id = ?', ['MT-TEST'])) as {
+      segments: string;
+    }[];
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0].segments)).toEqual([{ text: 'ทดสอบ' }]);
   });
 });
